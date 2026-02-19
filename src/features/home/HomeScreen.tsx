@@ -1,11 +1,8 @@
 import React from 'react';
-import {
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Colors } from '../../design/colors';
+import { Typography } from '../../design/typography';
 
 const HomeScreen: React.FC = () => {
   return (
@@ -23,7 +20,7 @@ const HomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0D0D0D',
+    backgroundColor: Colors.background,
   },
   content: {
     flex: 1,
@@ -32,21 +29,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   title: {
-    fontSize: 36,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    ...Typography.hero,
+    color: Colors.textPrimary,
     marginBottom: 40,
   },
   button: {
-    backgroundColor: '#6C5CE7',
+    backgroundColor: Colors.primary,
     paddingVertical: 16,
     paddingHorizontal: 48,
     borderRadius: 12,
   },
   buttonText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    ...Typography.button,
+    color: Colors.textPrimary,
   },
 });
 
