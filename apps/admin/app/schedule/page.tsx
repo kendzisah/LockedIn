@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { CoverageCalendar } from '../../components/CoverageCalendar';
 import { SlotUploadPanel } from '../../components/SlotUploadPanel';
 
@@ -15,7 +16,18 @@ export default function SchedulePage() {
           <CoverageCalendar />
         </div>
         <div>
-          <SlotUploadPanel />
+          <Suspense fallback={
+            <div className="bg-surface border border-border rounded-lg p-6 animate-pulse">
+              <div className="h-4 bg-border rounded w-32 mb-4" />
+              <div className="space-y-3">
+                <div className="h-8 bg-border rounded" />
+                <div className="h-8 bg-border rounded" />
+                <div className="h-8 bg-border rounded" />
+              </div>
+            </div>
+          }>
+            <SlotUploadPanel />
+          </Suspense>
         </div>
       </div>
     </div>
