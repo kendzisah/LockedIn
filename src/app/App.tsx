@@ -11,6 +11,7 @@ import { InterTight_600SemiBold } from '@expo-google-fonts/inter-tight/600SemiBo
 import { InterTight_700Bold } from '@expo-google-fonts/inter-tight/700Bold';
 import { InterTight_800ExtraBold } from '@expo-google-fonts/inter-tight/800ExtraBold';
 import { OnboardingProvider } from '../features/onboarding/state/OnboardingProvider';
+import { SessionProvider } from '../features/home/state/SessionProvider';
 import RootNavigator from '../navigation/RootNavigator';
 import { Colors } from '../design/colors';
 
@@ -40,10 +41,12 @@ const App: React.FC = () => {
     <View style={styles.root} onLayout={onLayoutRootView}>
       <SafeAreaProvider>
         <OnboardingProvider>
-          <NavigationContainer>
-            <StatusBar style="light" />
-            <RootNavigator />
-          </NavigationContainer>
+          <SessionProvider>
+            <NavigationContainer>
+              <StatusBar style="light" />
+              <RootNavigator />
+            </NavigationContainer>
+          </SessionProvider>
         </OnboardingProvider>
       </SafeAreaProvider>
     </View>
