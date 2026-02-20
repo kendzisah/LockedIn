@@ -1,0 +1,10 @@
+{
+  "extends": ["expo/tsconfig.base", "../../tsconfig.base.json"],
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@lockedin/shared-types": ["../../packages/shared-types/src"],
+      "@lockedin/supabase-client": ["../../packages/supabase-client/src"]
+    }
+  }
+}
