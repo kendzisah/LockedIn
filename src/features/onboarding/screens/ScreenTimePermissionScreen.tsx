@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
   Animated,
   Easing,
@@ -25,7 +25,9 @@ type Props = NativeStackScreenProps<
 
 const ScreenTimePermissionScreen: React.FC<Props> = ({ navigation }) => {
   const { dispatch } = useOnboarding();
-  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  // ── Screen-level fade ──
+  const screenOpacity = useRef(new Animated.Value(1)).current;
 
   // ── Pulse ring ──
   const pulseScale = useRef(new Animated.Value(1)).current;
@@ -39,10 +41,6 @@ const ScreenTimePermissionScreen: React.FC<Props> = ({ navigation }) => {
   const bodyTranslateY = useRef(new Animated.Value(SLIDE)).current;
   const reassureOpacity = useRef(new Animated.Value(0)).current;
   const buttonOpacity = useRef(new Animated.Value(0)).current;
-
-  // ── Transition phase ──
-  const transitionOpacity = useRef(new Animated.Value(0)).current;
-  const transitionScale = useRef(new Animated.Value(0.94)).current;
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -146,141 +144,89 @@ const ScreenTimePermissionScreen: React.FC<Props> = ({ navigation }) => {
   const handleRequest = useCallback(async () => {
     const status = await PermissionService.requestScreenTimePermission();
     dispatch({ type: 'SET_SCREEN_TIME_STATUS', payload: status });
-
-    setIsTransitioning(true);
-
-    // Fade out all current content
-    Animated.parallel([
-      Animated.timing(dotOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
-      Animated.timing(headlineOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
-      Animated.timing(bodyOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
-      Animated.timing(reassureOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
-      Animated.timing(buttonOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
-    ]).start(() => {
-      // Fade in confirmation text
-      Animated.parallel([
-        Animated.timing(transitionOpacity, {
-          toValue: 1,
-          duration: 600,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(transitionScale, {
-          toValue: 1,
-          duration: 600,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        // Hold, then navigate
-        setTimeout(() => {
-          navigation.navigate('NotificationPermission');
-        }, 1800);
-      });
+    Animated.timing(screenOpacity, {
+      toValue: 0,
+      duration: 500,
+      useNativeDriver: true,
+    }).start(() => {
+      navigation.navigate('NotificationPermission');
     });
-  }, [
-    navigation,
-    dispatch,
-    dotOpacity,
-    headlineOpacity,
-    bodyOpacity,
-    reassureOpacity,
-    buttonOpacity,
-    transitionOpacity,
-    transitionScale,
-  ]);
+  }, [navigation, dispatch, screenOpacity]);
 
   return (
+    <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer>
-      <ProgressIndicator current={5} total={8} />
+      <ProgressIndicator current={7} total={11} />
 
-      {!isTransitioning ? (
-        <>
-          <View style={styles.body}>
-            {/* Subtle animated pulse ring */}
-            <View style={styles.pulseWrap}>
-              <Animated.View
-                style={[
-                  styles.pulseRing,
-                  {
-                    opacity: pulseOpacity,
-                    transform: [{ scale: pulseScale }],
-                  },
-                ]}
-              />
-              <Animated.View style={[styles.pulseDot, { opacity: dotOpacity }]} />
-            </View>
-
-            {/* Headline */}
-            <Animated.Text
-              style={[
-                styles.title,
-                {
-                  opacity: headlineOpacity,
-                  transform: [{ translateY: headlineTranslateY }],
-                },
-              ]}
-            >
-              Let us enforce your{'\n'}commitment.
-            </Animated.Text>
-
-            {/* Divider */}
-            <Animated.View
-              style={[styles.divider, { opacity: headlineOpacity }]}
-            />
-
-            {/* Body — tactical, not explanatory */}
-            <Animated.View
-              style={{
-                opacity: bodyOpacity,
-                transform: [{ translateY: bodyTranslateY }],
-              }}
-            >
-              <Text style={styles.bodyLine}>
-                During Lock In, selected apps are blocked.
-              </Text>
-              <Text style={styles.bodyLine}>
-                No notifications. No exits. No loopholes.
-              </Text>
-              <Text style={styles.bodyEmphasis}>
-                Focus becomes non-negotiable.
-              </Text>
-            </Animated.View>
-
-            {/* Micro-reassurance */}
-            <Animated.Text style={[styles.reassure, { opacity: reassureOpacity }]}>
-              Only active during Lock In sessions.
-            </Animated.Text>
-          </View>
-
-          {/* CTA */}
-          <Animated.View style={[styles.buttonWrap, { opacity: buttonOpacity }]}>
-            <TouchableOpacity
-              onPress={handleRequest}
-              activeOpacity={0.9}
-              style={styles.ctaButton}
-            >
-              <Text style={styles.ctaText}>Enforce My Focus</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </>
-      ) : (
-        /* Transition page — confirmation centered */
-        <View style={styles.transitionCenter}>
-          <Animated.Text
+      <View style={styles.body}>
+        {/* Subtle animated pulse ring */}
+        <View style={styles.pulseWrap}>
+          <Animated.View
             style={[
-              styles.transitionText,
+              styles.pulseRing,
               {
-                opacity: transitionOpacity,
-                transform: [{ scale: transitionScale }],
+                opacity: pulseOpacity,
+                transform: [{ scale: pulseScale }],
               },
             ]}
-          >
-            Enforcement will activate{'\n'}after your trial starts.
-          </Animated.Text>
+          />
+          <Animated.View style={[styles.pulseDot, { opacity: dotOpacity }]} />
         </View>
-      )}
+
+        {/* Headline */}
+        <Animated.Text
+          style={[
+            styles.title,
+            {
+              opacity: headlineOpacity,
+              transform: [{ translateY: headlineTranslateY }],
+            },
+          ]}
+        >
+          Let us enforce your{'\n'}commitment.
+        </Animated.Text>
+
+        {/* Divider */}
+        <Animated.View
+          style={[styles.divider, { opacity: headlineOpacity }]}
+        />
+
+        {/* Body — tactical, not explanatory */}
+        <Animated.View
+          style={{
+            opacity: bodyOpacity,
+            transform: [{ translateY: bodyTranslateY }],
+          }}
+        >
+          <Text style={styles.bodyLine}>
+            During Lock In, selected apps are blocked.
+          </Text>
+          <Text style={styles.bodyLine}>
+            No notifications. No exits. No loopholes.
+          </Text>
+          <Text style={styles.bodyEmphasis}>
+            Focus becomes non-negotiable.
+          </Text>
+        </Animated.View>
+
+        {/* Micro-reassurance */}
+        <Animated.Text style={[styles.reassure, { opacity: reassureOpacity }]}>
+          Only active during Lock In sessions.
+        </Animated.Text>
+      </View>
+
+      {/* CTA */}
+      <Animated.View style={[styles.buttonWrap, { opacity: buttonOpacity }]}>
+        <TouchableOpacity
+          onPress={handleRequest}
+          activeOpacity={0.9}
+          style={styles.ctaButton}
+        >
+          <Text style={styles.ctaText}>Enforce My Focus</Text>
+        </TouchableOpacity>
+      </Animated.View>
     </ScreenContainer>
+    </Animated.View>
   );
 };
 
@@ -367,21 +313,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     letterSpacing: 0.2,
     color: Colors.textPrimary,
-  },
-  // ── Transition page ──
-  transitionCenter: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  transitionText: {
-    fontFamily: FontFamily.heading,
-    fontSize: 24,
-    letterSpacing: -0.3,
-    lineHeight: 32,
-    color: Colors.primary,
-    textAlign: 'center',
   },
 });
 

@@ -6,6 +6,8 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 export type OnboardingStackParamList = {
   ConfrontTruth: undefined;
   SurfacePain: undefined;
+  PhoneUsageReality: undefined;
+  TimeDedication: undefined;
   MechanismIntro: undefined;
   Projection: undefined;
   ScreenTimePermission: undefined;
@@ -14,6 +16,7 @@ export type OnboardingStackParamList = {
   QuickLockInSession: undefined;
   QuickLockInComplete: undefined;
   IdentityReinforcement: undefined;
+  SignatureCommitment: undefined;
   PaywallPlaceholder: undefined;
 };
 

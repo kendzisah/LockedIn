@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   StyleSheet,
@@ -30,6 +30,9 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'SurfacePain'>;
 const SurfacePainScreen: React.FC<Props> = ({ navigation }) => {
   const { dispatch } = useOnboarding();
   const [selected, setSelected] = useState<string | null>(null);
+
+  // ── Screen-level fade ──
+  const screenOpacity = useRef(new Animated.Value(1)).current;
 
   // ── Animations ──
   const titleOpacity = useRef(new Animated.Value(0)).current;
@@ -112,15 +115,21 @@ const SurfacePainScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  const handleContinue = () => {
-    if (selected) {
-      navigation.navigate('MechanismIntro');
-    }
-  };
+  const handleContinue = useCallback(() => {
+    if (!selected) return;
+    Animated.timing(screenOpacity, {
+      toValue: 0,
+      duration: 500,
+      useNativeDriver: true,
+    }).start(() => {
+      navigation.navigate('PhoneUsageReality');
+    });
+  }, [selected, screenOpacity, navigation]);
 
   return (
+    <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer centered={false}>
-      <ProgressIndicator current={2} total={8} />
+      <ProgressIndicator current={2} total={11} />
 
       <View style={styles.body}>
         {/* Title — slides in first */}
@@ -172,6 +181,7 @@ const SurfacePainScreen: React.FC<Props> = ({ navigation }) => {
         </TouchableOpacity>
       </Animated.View>
     </ScreenContainer>
+    </Animated.View>
   );
 };
 

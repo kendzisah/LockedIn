@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   AppState,
   AppStateStatus,
   BackHandler,
@@ -45,6 +46,9 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
+  // ── Screen-level fade ──
+  const screenOpacity = useRef(new Animated.Value(1)).current;
+
   // --- Timer logic ---
   const startTimer = useCallback(() => {
     if (intervalRef.current) return;
@@ -78,9 +82,15 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
     if (remaining === 0) {
       LockModeService.endSession();
       dispatch({ type: 'SET_DEMO_COMPLETED' });
-      navigation.replace('QuickLockInComplete');
+      Animated.timing(screenOpacity, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }).start(() => {
+        navigation.replace('QuickLockInComplete');
+      });
     }
-  }, [remaining, dispatch, navigation]);
+  }, [remaining, dispatch, navigation, screenOpacity]);
 
   // --- Android back handler ---
   useEffect(() => {
@@ -134,13 +144,19 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
     setPaused(false);
     stopTimer();
     LockModeService.endSession();
-    navigation.replace('QuickLockInComplete');
+    Animated.timing(screenOpacity, {
+      toValue: 0,
+      duration: 500,
+      useNativeDriver: true,
+    }).start(() => {
+      navigation.replace('QuickLockInComplete');
+    });
   };
 
   const elapsed = TOTAL_SECONDS - remaining;
 
   return (
-    <View style={styles.container}>
+    <Animated.View style={[styles.container, { opacity: screenOpacity }]}>
       <View style={styles.content}>
         <Text style={styles.timer}>{formatTime(remaining)}</Text>
         <Text style={styles.phase}>{getPhaseText(elapsed)}</Text>
@@ -168,7 +184,7 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
           </View>
         </View>
       </Modal>
-    </View>
+    </Animated.View>
   );
 };
 

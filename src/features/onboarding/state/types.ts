@@ -11,6 +11,8 @@ export type ScreenTimeStatus =
 
 export interface OnboardingState {
   selectedPainPoint: string | null;
+  phoneUsageHours: string | null;
+  dailyDedication: string | null;
   screenTimeStatus: ScreenTimeStatus;
   notificationsGranted: boolean | null; // null = not yet asked
   demoCompleted: boolean;
@@ -19,6 +21,8 @@ export interface OnboardingState {
 
 export type OnboardingAction =
   | { type: 'SET_PAIN_POINT'; payload: string }
+  | { type: 'SET_PHONE_USAGE'; payload: string }
+  | { type: 'SET_DAILY_DEDICATION'; payload: string }
   | { type: 'SET_SCREEN_TIME_STATUS'; payload: ScreenTimeStatus }
   | { type: 'SET_NOTIFICATIONS_GRANTED'; payload: boolean }
   | { type: 'SET_DEMO_COMPLETED' }

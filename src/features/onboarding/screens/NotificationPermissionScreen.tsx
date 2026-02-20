@@ -28,6 +28,9 @@ const NotificationPermissionScreen: React.FC<Props> = ({ navigation }) => {
   const [denied, setDenied] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
+  // ── Screen-level fade ──
+  const screenOpacity = useRef(new Animated.Value(1)).current;
+
   // ── Content stagger ──
   const headlineOpacity = useRef(new Animated.Value(0)).current;
   const headlineTranslateY = useRef(new Animated.Value(SLIDE)).current;
@@ -110,12 +113,22 @@ const NotificationPermissionScreen: React.FC<Props> = ({ navigation }) => {
     buttonOpacity,
   ]);
 
+  const fadeAndNavigate = useCallback(() => {
+    Animated.timing(screenOpacity, {
+      toValue: 0,
+      duration: 500,
+      useNativeDriver: true,
+    }).start(() => {
+      navigation.navigate('QuickLockInIntro');
+    });
+  }, [screenOpacity, navigation]);
+
   const handleRequest = useCallback(async () => {
     const granted = await PermissionService.requestNotificationPermission();
     dispatch({ type: 'SET_NOTIFICATIONS_GRANTED', payload: granted });
 
     if (granted) {
-      navigation.navigate('QuickLockInIntro');
+      fadeAndNavigate();
     } else {
       setDenied(true);
       Animated.timing(deniedOpacity, {
@@ -124,15 +137,16 @@ const NotificationPermissionScreen: React.FC<Props> = ({ navigation }) => {
         useNativeDriver: true,
       }).start();
     }
-  }, [navigation, dispatch, deniedOpacity]);
+  }, [dispatch, deniedOpacity, fadeAndNavigate]);
 
   const handleContinueAfterDeny = useCallback(() => {
-    navigation.navigate('QuickLockInIntro');
-  }, [navigation]);
+    fadeAndNavigate();
+  }, [fadeAndNavigate]);
 
   return (
+    <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer>
-      <ProgressIndicator current={6} total={8} />
+      <ProgressIndicator current={8} total={11} />
 
       <View style={styles.body}>
         {/* Headline */}
@@ -193,6 +207,7 @@ const NotificationPermissionScreen: React.FC<Props> = ({ navigation }) => {
         )}
       </Animated.View>
     </ScreenContainer>
+    </Animated.View>
   );
 };
 

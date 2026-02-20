@@ -1,10 +1,13 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../types/navigation';
+import { Colors } from '../design/colors';
 
-// Screens — will be created in subsequent steps
+// Screens
 import ConfrontTruthScreen from '../features/onboarding/screens/ConfrontTruthScreen';
 import SurfacePainScreen from '../features/onboarding/screens/SurfacePainScreen';
+import PhoneUsageRealityScreen from '../features/onboarding/screens/PhoneUsageRealityScreen';
+import TimeDedicationScreen from '../features/onboarding/screens/TimeDedicationScreen';
 import MechanismIntroScreen from '../features/onboarding/screens/MechanismIntroScreen';
 import ProjectionScreen from '../features/onboarding/screens/ProjectionScreen';
 import ScreenTimePermissionScreen from '../features/onboarding/screens/ScreenTimePermissionScreen';
@@ -13,6 +16,7 @@ import QuickLockInIntroScreen from '../features/onboarding/screens/QuickLockInIn
 import QuickLockInSessionScreen from '../features/onboarding/screens/QuickLockInSessionScreen';
 import QuickLockInCompleteScreen from '../features/onboarding/screens/QuickLockInCompleteScreen';
 import IdentityReinforcementScreen from '../features/onboarding/screens/IdentityReinforcementScreen';
+import SignatureCommitmentScreen from '../features/onboarding/screens/SignatureCommitmentScreen';
 import PaywallPlaceholderScreen from '../features/onboarding/screens/PaywallPlaceholderScreen';
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
@@ -23,21 +27,77 @@ const OnboardingNavigator: React.FC = () => {
       initialRouteName="ConfrontTruth"
       screenOptions={{
         headerShown: false,
-        gestureEnabled: false, // Fix 2: disable back swipe globally
+        gestureEnabled: false,
         animation: 'fade',
+        contentStyle: { backgroundColor: Colors.background },
       }}
     >
       <Stack.Screen name="ConfrontTruth" component={ConfrontTruthScreen} />
-      <Stack.Screen name="SurfacePain" component={SurfacePainScreen} />
-      <Stack.Screen name="MechanismIntro" component={MechanismIntroScreen} />
-      <Stack.Screen name="Projection" component={ProjectionScreen} />
-      <Stack.Screen name="ScreenTimePermission" component={ScreenTimePermissionScreen} />
-      <Stack.Screen name="NotificationPermission" component={NotificationPermissionScreen} />
-      <Stack.Screen name="QuickLockInIntro" component={QuickLockInIntroScreen} />
-      <Stack.Screen name="QuickLockInSession" component={QuickLockInSessionScreen} />
-      <Stack.Screen name="QuickLockInComplete" component={QuickLockInCompleteScreen} />
-      <Stack.Screen name="IdentityReinforcement" component={IdentityReinforcementScreen} />
-      <Stack.Screen name="PaywallPlaceholder" component={PaywallPlaceholderScreen} />
+      <Stack.Screen
+        name="SurfacePain"
+        component={SurfacePainScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="PhoneUsageReality"
+        component={PhoneUsageRealityScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="TimeDedication"
+        component={TimeDedicationScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="MechanismIntro"
+        component={MechanismIntroScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="Projection"
+        component={ProjectionScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="ScreenTimePermission"
+        component={ScreenTimePermissionScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="NotificationPermission"
+        component={NotificationPermissionScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="QuickLockInIntro"
+        component={QuickLockInIntroScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="QuickLockInSession"
+        component={QuickLockInSessionScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="QuickLockInComplete"
+        component={QuickLockInCompleteScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="IdentityReinforcement"
+        component={IdentityReinforcementScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="SignatureCommitment"
+        component={SignatureCommitmentScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="PaywallPlaceholder"
+        component={PaywallPlaceholderScreen}
+        options={{ animation: 'none' }}
+      />
     </Stack.Navigator>
   );
 };

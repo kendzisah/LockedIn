@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
   Animated,
   Easing,
@@ -26,6 +26,9 @@ const SLIDE = 20;
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'MechanismIntro'>;
 
 const MechanismIntroScreen: React.FC<Props> = ({ navigation }) => {
+  // ── Screen-level fade ──
+  const screenOpacity = useRef(new Animated.Value(1)).current;
+
   // Lock icon — fade in + subtle pulse
   const lockOpacity = useRef(new Animated.Value(0)).current;
   const lockPulse = useRef(new Animated.Value(1)).current;
@@ -158,8 +161,9 @@ const MechanismIntroScreen: React.FC<Props> = ({ navigation }) => {
   ]);
 
   return (
+    <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer>
-      <ProgressIndicator current={3} total={8} />
+      <ProgressIndicator current={5} total={11} />
 
       <View style={styles.body}>
         {/* Minimal lock icon — white, thin, small */}
@@ -228,7 +232,15 @@ const MechanismIntroScreen: React.FC<Props> = ({ navigation }) => {
       {/* CTA — declarative */}
       <Animated.View style={[styles.buttonWrap, { opacity: buttonOpacity }]}>
         <TouchableOpacity
-          onPress={() => navigation.navigate('Projection')}
+          onPress={() => {
+            Animated.timing(screenOpacity, {
+              toValue: 0,
+              duration: 500,
+              useNativeDriver: true,
+            }).start(() => {
+              navigation.navigate('Projection');
+            });
+          }}
           activeOpacity={0.85}
           style={styles.ctaButton}
         >
@@ -236,6 +248,7 @@ const MechanismIntroScreen: React.FC<Props> = ({ navigation }) => {
         </TouchableOpacity>
       </Animated.View>
     </ScreenContainer>
+    </Animated.View>
   );
 };
 

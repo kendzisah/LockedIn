@@ -23,6 +23,9 @@ type Props = NativeStackScreenProps<
 >;
 
 const QuickLockInIntroScreen: React.FC<Props> = ({ navigation }) => {
+  // ── Screen-level fade ──
+  const screenOpacity = useRef(new Animated.Value(1)).current;
+
   // ── Content stagger ──
   const headlineOpacity = useRef(new Animated.Value(0)).current;
   const headlineTranslateY = useRef(new Animated.Value(SLIDE)).current;
@@ -123,12 +126,19 @@ const QuickLockInIntroScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleLockIn = useCallback(() => {
     LockModeService.beginSession();
-    navigation.navigate('QuickLockInSession');
-  }, [navigation]);
+    Animated.timing(screenOpacity, {
+      toValue: 0,
+      duration: 500,
+      useNativeDriver: true,
+    }).start(() => {
+      navigation.navigate('QuickLockInSession');
+    });
+  }, [navigation, screenOpacity]);
 
   return (
+    <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer>
-      <ProgressIndicator current={7} total={8} />
+      <ProgressIndicator current={9} total={11} />
 
       <View style={styles.body}>
         {/* Headline — commanding, not inviting */}
@@ -179,6 +189,7 @@ const QuickLockInIntroScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       </Animated.View>
     </ScreenContainer>
+    </Animated.View>
   );
 };
 

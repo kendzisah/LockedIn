@@ -258,7 +258,7 @@ const ProjectionScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={[styles.pageWrap, { opacity: pageOpacity }]}>
       <ScreenContainer>
-        <ProgressIndicator current={4} total={8} />
+        <ProgressIndicator current={6} total={11} />
 
         <Animated.View style={[styles.signalBar, { opacity: signalOpacity }]} />
 

@@ -106,9 +106,15 @@ const ConfrontTruthScreen: React.FC<Props> = ({ navigation }) => {
           useNativeDriver: true,
         }),
       ]).start(() => {
-        // Hold for 1.5s, then navigate
+        // Hold for 1.5s, then fade out awareness before navigating
         setTimeout(() => {
-          navigation.navigate('SurfacePain');
+          Animated.timing(awarenessOpacity, {
+            toValue: 0,
+            duration: 500,
+            useNativeDriver: true,
+          }).start(() => {
+            navigation.navigate('SurfacePain');
+          });
         }, 1500);
       });
     });
@@ -118,7 +124,7 @@ const ConfrontTruthScreen: React.FC<Props> = ({ navigation }) => {
     <ScreenContainer>
       {/* Intro content — fades out on Continue */}
       <Animated.View style={[styles.introWrap, { opacity: introOpacity }]}>
-        <ProgressIndicator current={1} total={8} />
+        <ProgressIndicator current={1} total={11} />
 
         <Animated.Text
           style={[

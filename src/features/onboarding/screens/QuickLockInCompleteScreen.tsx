@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
   Animated,
   Easing,
@@ -22,6 +22,9 @@ type Props = NativeStackScreenProps<
 >;
 
 const QuickLockInCompleteScreen: React.FC<Props> = ({ navigation }) => {
+  // ── Screen-level fade ──
+  const screenOpacity = useRef(new Animated.Value(1)).current;
+
   // ── Content stagger ──
   const headlineOpacity = useRef(new Animated.Value(0)).current;
   const headlineTranslateY = useRef(new Animated.Value(SLIDE)).current;
@@ -99,9 +102,20 @@ const QuickLockInCompleteScreen: React.FC<Props> = ({ navigation }) => {
     buttonOpacity,
   ]);
 
+  const handleUnlock = useCallback(() => {
+    Animated.timing(screenOpacity, {
+      toValue: 0,
+      duration: 500,
+      useNativeDriver: true,
+    }).start(() => {
+      navigation.navigate('IdentityReinforcement');
+    });
+  }, [screenOpacity, navigation]);
+
   return (
+    <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer>
-      <ProgressIndicator current={8} total={8} />
+      <ProgressIndicator current={10} total={11} />
 
       <View style={styles.body}>
         {/* Headline — verdict, not explanation */}
@@ -140,7 +154,7 @@ const QuickLockInCompleteScreen: React.FC<Props> = ({ navigation }) => {
       {/* CTA — transitions into paywall */}
       <Animated.View style={[styles.buttonWrap, { opacity: buttonOpacity }]}>
         <TouchableOpacity
-          onPress={() => navigation.navigate('IdentityReinforcement')}
+          onPress={handleUnlock}
           activeOpacity={0.9}
           style={styles.ctaButton}
         >
@@ -148,6 +162,7 @@ const QuickLockInCompleteScreen: React.FC<Props> = ({ navigation }) => {
         </TouchableOpacity>
       </Animated.View>
     </ScreenContainer>
+    </Animated.View>
   );
 };
 

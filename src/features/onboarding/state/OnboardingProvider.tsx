@@ -3,6 +3,8 @@ import type { OnboardingState, OnboardingAction } from './types';
 
 const initialState: OnboardingState = {
   selectedPainPoint: null,
+  phoneUsageHours: null,
+  dailyDedication: null,
   screenTimeStatus: 'not_requested',
   notificationsGranted: null,
   demoCompleted: false,
@@ -16,6 +18,10 @@ function onboardingReducer(
   switch (action.type) {
     case 'SET_PAIN_POINT':
       return { ...state, selectedPainPoint: action.payload };
+    case 'SET_PHONE_USAGE':
+      return { ...state, phoneUsageHours: action.payload };
+    case 'SET_DAILY_DEDICATION':
+      return { ...state, dailyDedication: action.payload };
     case 'SET_SCREEN_TIME_STATUS':
       return { ...state, screenTimeStatus: action.payload };
     case 'SET_NOTIFICATIONS_GRANTED':
