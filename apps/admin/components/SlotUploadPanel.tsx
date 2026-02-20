@@ -111,7 +111,7 @@ export function SlotUploadPanel() {
         a.addEventListener('loadedmetadata', () => resolve(Math.round(a.duration)));
       });
 
-      const { data: track, error: trackError } = await supabase
+      const { data: trackData, error: trackError } = await supabase
         .from('audio_tracks')
         .insert({
           title,
@@ -120,14 +120,15 @@ export function SlotUploadPanel() {
           storage_path: storagePath,
           duration_seconds: audioDuration,
           script_version: scriptVersion || null,
-        })
+        } as Record<string, unknown>)
         .select('id')
         .single();
 
       if (trackError) throw new Error(trackError.message);
+      const track = trackData as unknown as { id: string };
 
       // Check if slot already exists (replace flow)
-      const { data: existing } = await supabase
+      const { data: existingData } = await supabase
         .from('scheduled_sessions')
         .select('id')
         .eq('scheduled_date', date)
@@ -135,11 +136,13 @@ export function SlotUploadPanel() {
         .eq('duration_minutes', duration)
         .single();
 
+      const existing = existingData as unknown as { id: string } | null;
+
       if (existing) {
         // Archive existing session
         await supabase
           .from('scheduled_sessions')
-          .update({ status: 'archived', is_active: false })
+          .update({ status: 'archived', is_active: false } as Record<string, unknown>)
           .eq('id', existing.id);
       }
 
@@ -154,7 +157,7 @@ export function SlotUploadPanel() {
           status: targetStatus,
           published_at: targetStatus === 'published' ? new Date().toISOString() : null,
           is_active: targetStatus === 'published',
-        });
+        } as Record<string, unknown>);
 
       if (sessionError) throw new Error(sessionError.message);
 

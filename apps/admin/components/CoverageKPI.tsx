@@ -11,6 +11,13 @@ interface SlotStatus {
   status: 'published' | 'draft' | 'missing';
 }
 
+interface SessionRow {
+  scheduled_date: string;
+  phase: string;
+  duration_minutes: number;
+  status: string;
+}
+
 const PHASES: ContentPhase[] = ['lock_in', 'unlock'];
 const DURATIONS: SessionDuration[] = [5, 10, 15, 20];
 
@@ -36,17 +43,19 @@ export function CoverageKPI() {
       const startDate = days[0];
       const endDate = days[days.length - 1];
 
-      const { data: sessions } = await supabase
+      const { data } = await supabase
         .from('scheduled_sessions')
         .select('scheduled_date, phase, duration_minutes, status')
         .gte('scheduled_date', startDate)
         .lte('scheduled_date', endDate);
 
+      const sessions = (data ?? []) as unknown as SessionRow[];
+
       const allSlots: SlotStatus[] = [];
       for (const date of days) {
         for (const phase of PHASES) {
           for (const duration of DURATIONS) {
-            const match = sessions?.find(
+            const match = sessions.find(
               (s) =>
                 s.scheduled_date === date &&
                 s.phase === phase &&

@@ -25,11 +25,11 @@ export async function POST(request: NextRequest) {
     .from('audio_tracks')
     .select('duration_seconds')
     .eq('id', audioTrackId)
-    .single();
+    .single() as { data: { duration_seconds: number } | null; error: unknown };
 
   if (error || !track) {
     return NextResponse.json(
-      { error: error?.message ?? 'Track not found' },
+      { error: (error as Error)?.message ?? 'Track not found' },
       { status: 404 },
     );
   }
