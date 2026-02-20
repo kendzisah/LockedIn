@@ -26,4 +26,5 @@ export type OnboardingAction =
   | { type: 'SET_SCREEN_TIME_STATUS'; payload: ScreenTimeStatus }
   | { type: 'SET_NOTIFICATIONS_GRANTED'; payload: boolean }
   | { type: 'SET_DEMO_COMPLETED' }
-  | { type: 'COMPLETE_ONBOARDING' };
+  | { type: 'COMPLETE_ONBOARDING' }
+  | { type: 'HYDRATE_ONBOARDING'; payload: boolean };

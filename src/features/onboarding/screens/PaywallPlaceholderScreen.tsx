@@ -1,7 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { CommonActions } from '@react-navigation/native';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
@@ -14,25 +13,13 @@ type Props = NativeStackScreenProps<
   'PaywallPlaceholder'
 >;
 
-const PaywallPlaceholderScreen: React.FC<Props> = ({ navigation }) => {
+const PaywallPlaceholderScreen: React.FC<Props> = () => {
   const { dispatch } = useOnboarding();
 
   const handleContinue = () => {
+    // Just flip the flag — RootNavigator conditionally renders Main vs Onboarding,
+    // so the screen swap happens automatically via React re-render.
     dispatch({ type: 'COMPLETE_ONBOARDING' });
-
-    const rootNav = navigation.getParent();
-    if (rootNav) {
-      rootNav.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [{ name: 'Main' }],
-        }),
-      );
-    }
-  };
-
-  const handleBack = () => {
-    navigation.goBack();
   };
 
   return (
@@ -45,8 +32,6 @@ const PaywallPlaceholderScreen: React.FC<Props> = ({ navigation }) => {
       </View>
       <View style={styles.buttonWrap}>
         <PrimaryButton title="Continue (Dev)" onPress={handleContinue} />
-        <View style={styles.spacer} />
-        <PrimaryButton title="Back" onPress={handleBack} secondary />
       </View>
     </ScreenContainer>
   );
@@ -68,9 +53,6 @@ const styles = StyleSheet.create({
   },
   buttonWrap: {
     paddingBottom: 24,
-  },
-  spacer: {
-    height: 12,
   },
 });
 

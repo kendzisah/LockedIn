@@ -1,5 +1,8 @@
-import React, { createContext, useContext, useReducer } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { OnboardingState, OnboardingAction } from './types';
+
+const STORAGE_KEY = '@lockedin/onboarding_complete';
 
 const initialState: OnboardingState = {
   selectedPainPoint: null,
@@ -30,6 +33,8 @@ function onboardingReducer(
       return { ...state, demoCompleted: true };
     case 'COMPLETE_ONBOARDING':
       return { ...state, onboardingComplete: true };
+    case 'HYDRATE_ONBOARDING':
+      return { ...state, onboardingComplete: action.payload };
     default:
       return state;
   }
@@ -38,6 +43,7 @@ function onboardingReducer(
 interface OnboardingContextValue {
   state: OnboardingState;
   dispatch: React.Dispatch<OnboardingAction>;
+  isHydrated: boolean;
 }
 
 const OnboardingContext = createContext<OnboardingContextValue | null>(null);
@@ -46,9 +52,37 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [state, dispatch] = useReducer(onboardingReducer, initialState);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const prevComplete = useRef(state.onboardingComplete);
+
+  // ── Load persisted onboarding flag on mount ──
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        if (raw === 'true') {
+          dispatch({ type: 'HYDRATE_ONBOARDING', payload: true });
+        }
+      } catch (e) {
+        console.warn('[OnboardingProvider] Hydration failed:', e);
+      } finally {
+        setIsHydrated(true);
+      }
+    })();
+  }, []);
+
+  // ── Persist when onboardingComplete flips to true ──
+  useEffect(() => {
+    if (state.onboardingComplete && !prevComplete.current) {
+      AsyncStorage.setItem(STORAGE_KEY, 'true').catch((e) => {
+        console.warn('[OnboardingProvider] Persist failed:', e);
+      });
+    }
+    prevComplete.current = state.onboardingComplete;
+  }, [state.onboardingComplete]);
 
   return (
-    <OnboardingContext.Provider value={{ state, dispatch }}>
+    <OnboardingContext.Provider value={{ state, dispatch, isHydrated }}>
       {children}
     </OnboardingContext.Provider>
   );
