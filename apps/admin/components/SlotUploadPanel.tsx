@@ -124,39 +124,48 @@ export function SlotUploadPanel() {
       if (trackError) throw new Error(trackError.message);
       const track = trackData as unknown as { id: string };
 
-      // Check if slot already exists (replace flow)
+      // Check if slot already exists (update-in-place to avoid UNIQUE constraint conflict)
       const { data: existingData } = await supabase
         .from('scheduled_sessions')
         .select('id')
         .eq('scheduled_date', date)
         .eq('phase', phase)
         .eq('duration_minutes', duration)
-        .single();
+        .maybeSingle();
 
       const existing = existingData as unknown as { id: string } | null;
 
       if (existing) {
-        // Archive existing session
-        await supabase
+        // Update existing session in place (same UNIQUE key slot)
+        const { error: sessionError } = await supabase
           .from('scheduled_sessions')
-          .update({ status: 'archived', is_active: false } as Record<string, unknown>)
+          .update({
+            audio_track_id: track.id,
+            title,
+            status: targetStatus,
+            published_at: targetStatus === 'published' ? new Date().toISOString() : null,
+            is_active: targetStatus === 'published',
+          } as Record<string, unknown>)
           .eq('id', existing.id);
+
+        if (sessionError) throw new Error(sessionError.message);
+      } else {
+        // No existing session — insert new
+        const { error: sessionError } = await supabase
+          .from('scheduled_sessions')
+          .insert({
+            scheduled_date: date,
+            phase,
+            duration_minutes: duration,
+            audio_track_id: track.id,
+            title,
+            status: targetStatus,
+            published_at: targetStatus === 'published' ? new Date().toISOString() : null,
+            is_active: targetStatus === 'published',
+          } as Record<string, unknown>);
+
+        if (sessionError) throw new Error(sessionError.message);
       }
-
-      const { error: sessionError } = await supabase
-        .from('scheduled_sessions')
-        .insert({
-          scheduled_date: date,
-          phase,
-          duration_minutes: duration,
-          audio_track_id: track.id,
-          title,
-          status: targetStatus,
-          published_at: targetStatus === 'published' ? new Date().toISOString() : null,
-          is_active: targetStatus === 'published',
-        } as Record<string, unknown>);
-
-      if (sessionError) throw new Error(sessionError.message);
 
       setStatus(
         targetStatus === 'published'
