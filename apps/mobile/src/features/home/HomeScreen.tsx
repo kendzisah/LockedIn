@@ -1,21 +1,20 @@
 /**
  * HomeScreen — Primary screen composing all home components.
  *
- * Layout (no ScrollView):
- * 1. AnimatedGradient — absolute base
- * 2. SafeAreaView overlay
- * 3. Top: DayOfWeekRow
- * 4. Upper third: ProgressBlock
- * 5. Center (35-40%): LockButton
- * 6. Below: StatsRow
- * 7. Bottom: IdentityCard
+ * CTA state machine driven by ClockService.getCTAState():
+ *   lock_in              → open lock, "Tap to Lock In"
+ *   lock_in_done_waiting → closed lock, "Locked In Today", hint
+ *   unlock               → closed lock, "Tap to Reflect"
+ *   all_done             → closed lock, "Complete Today"
  *
- * Includes crash-resume interstitial modal and fade transition.
+ * Prefetches session audio on mount. Re-evaluates CTA on AppState resume.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  AppState,
+  type AppStateStatus,
   Modal,
   StyleSheet,
   Text,
@@ -35,6 +34,9 @@ import StatsRow from './components/StatsRow';
 import IdentityCard from './components/IdentityCard';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
+import { ClockService, type CTAState } from '../../services/ClockService';
+import { SessionRepository } from '../../services/SessionRepository';
+import type { SessionDuration, ContentPhase } from '@lockedin/shared-types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'Home'>;
 
@@ -45,6 +47,43 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const [resumeRemaining, setResumeRemaining] = useState(0);
   const autoResumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── CTA state (re-evaluated on mount, focus, and AppState resume) ──
+  const ctaState: CTAState = useMemo(
+    () =>
+      ClockService.getCTAState(
+        state.lastLockInCompletedDate,
+        state.lastUnlockCompletedDate,
+      ),
+    [state.lastLockInCompletedDate, state.lastUnlockCompletedDate],
+  );
+
+  // Force re-render on AppState resume (phase may have changed)
+  const [, setAppStateCounter] = useState(0);
+
+  useEffect(() => {
+    const handleAppState = (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active') {
+        // Force re-evaluation of ctaState via re-render
+        setAppStateCounter((c) => c + 1);
+      }
+    };
+
+    const sub = AppState.addEventListener('change', handleAppState);
+    return () => sub.remove();
+  }, []);
+
+  // ── Prefetch session on mount / CTA change ──
+  useEffect(() => {
+    if (!isHydrated) return;
+
+    const phase: ContentPhase =
+      ctaState.mode === 'unlock' ? 'unlock' : 'lock_in';
+    const duration = state.sessionDurationMinutes as SessionDuration;
+
+    // Fire and forget — failure is silent
+    SessionRepository.prefetchToday(phase, duration);
+  }, [isHydrated, ctaState.mode, state.sessionDurationMinutes]);
+
   // ── Crash-resume check on hydration ──
   useEffect(() => {
     if (!isHydrated) return;
@@ -53,7 +92,6 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
     const remaining = getRemaining(state.activeSession.expectedEndTimestamp);
 
     if (remaining <= 0 || remaining < 10) {
-      // Auto-complete silently
       dispatch({
         type: 'COMPLETE_SESSION',
         payload: { durationMinutes: state.activeSession.durationMinutes },
@@ -61,11 +99,9 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       return;
     }
 
-    // Show resume interstitial
     setResumeRemaining(remaining);
     setShowResumeModal(true);
 
-    // Auto-resume after 1.5s
     autoResumeTimer.current = setTimeout(() => {
       handleResume();
     }, 1500);
@@ -79,13 +115,13 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
     if (autoResumeTimer.current) clearTimeout(autoResumeTimer.current);
     setShowResumeModal(false);
 
-    // Navigate to session screen with resuming flag (replace to avoid stale Home in stack)
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 400,
       useNativeDriver: true,
     }).start(() => {
       navigation.replace('Session', {
+        phase: 'lock_in', // crash-resume is always for Lock In
         duration: state.activeSession?.durationMinutes || state.sessionDurationMinutes,
         resuming: true,
       });
@@ -106,33 +142,51 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
   // ── Lock animation complete → start session → navigate ──
   const handleLockAnimationComplete = useCallback(() => {
-    const session = createSession(state.sessionDurationMinutes);
+    const phase: ContentPhase =
+      ctaState.mode === 'unlock' ? 'unlock' : 'lock_in';
 
-    dispatch({
-      type: 'START_SESSION',
-      payload: {
-        startTimestamp: session.startTimestamp,
-        expectedEndTimestamp: session.expectedEndTimestamp,
-        durationMinutes: state.sessionDurationMinutes,
-      },
-    });
+    if (phase === 'lock_in') {
+      // Lock In: create active session, animate, navigate
+      const session = createSession(state.sessionDurationMinutes);
 
-    // Fade to black then navigate (replace to ensure clean stack)
-    Animated.timing(screenOpacity, {
-      toValue: 0,
-      duration: 500,
-      useNativeDriver: true,
-    }).start(() => {
-      navigation.replace('Session', {
-        duration: state.sessionDurationMinutes,
-        resuming: false,
+      dispatch({
+        type: 'START_SESSION',
+        payload: {
+          startTimestamp: session.startTimestamp,
+          expectedEndTimestamp: session.expectedEndTimestamp,
+          durationMinutes: state.sessionDurationMinutes,
+        },
       });
-    });
-  }, [dispatch, navigation, screenOpacity, state.sessionDurationMinutes]);
+
+      Animated.timing(screenOpacity, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }).start(() => {
+        navigation.replace('Session', {
+          phase: 'lock_in',
+          duration: state.sessionDurationMinutes,
+          resuming: false,
+        });
+      });
+    } else {
+      // Unlock: navigate directly (no lock animation, no crash-resume)
+      Animated.timing(screenOpacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => {
+        navigation.replace('Session', {
+          phase: 'unlock',
+          duration: state.sessionDurationMinutes,
+          resuming: false,
+        });
+      });
+    }
+  }, [ctaState.mode, dispatch, navigation, screenOpacity, state.sessionDurationMinutes]);
 
   // ── Reset opacity when screen mounts or comes back into focus ──
   useEffect(() => {
-    // Always start visible — handles both fresh mount (replace) and focus regain (goBack)
     screenOpacity.setValue(1);
 
     const unsubscribe = navigation.addListener('focus', () => {
@@ -147,28 +201,25 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <Animated.View style={[styles.root, { opacity: screenOpacity }]}>
-      {/* Background gradient */}
       <AnimatedGradient />
 
-      {/* Content overlay */}
       <SafeAreaView style={styles.safeArea}>
-        {/* Top: Day of week */}
         <DayOfWeekRow />
 
-        {/* Upper: Progress block */}
         <View style={styles.progressSection}>
           <ProgressBlock />
         </View>
 
-        {/* Center: Lock button (35-40% height) */}
         <View style={styles.lockSection}>
-          <LockButton onAnimationComplete={handleLockAnimationComplete} />
+          <LockButton
+            ctaMode={ctaState.mode}
+            hint={ctaState.hint}
+            onAnimationComplete={handleLockAnimationComplete}
+          />
         </View>
 
-        {/* Below: Stats */}
         <StatsRow />
 
-        {/* Bottom: Identity card */}
         <View style={styles.identitySection}>
           <IdentityCard />
         </View>
@@ -234,7 +285,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingHorizontal: 4,
   },
-  // ── Modal ──
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.85)',

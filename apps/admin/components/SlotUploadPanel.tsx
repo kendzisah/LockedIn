@@ -38,7 +38,7 @@ export function SlotUploadPanel() {
     if (searchParams.get('duration')) setDuration(Number(searchParams.get('duration')) as SessionDuration);
   }, [searchParams]);
 
-  // Client-side duration check (advisory only)
+  // Client-side duration info (advisory only — duration is the general session length, not exact audio length)
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0] ?? null;
     setFile(selected);
@@ -48,14 +48,11 @@ export function SlotUploadPanel() {
       const audio = new Audio(URL.createObjectURL(selected));
       audio.addEventListener('loadedmetadata', () => {
         const actualSeconds = Math.round(audio.duration);
-        const expectedSeconds = duration * 60;
-        const diff = Math.abs(actualSeconds - expectedSeconds);
-        const tolerance = expectedSeconds * 0.1;
-        if (diff > tolerance) {
-          setDurationWarning(
-            `Audio is ${actualSeconds}s but slot expects ${expectedSeconds}s (${duration}m). Mismatch > 10%.`,
-          );
-        }
+        const mins = Math.floor(actualSeconds / 60);
+        const secs = actualSeconds % 60;
+        setDurationWarning(
+          `Audio length: ${mins}m ${secs}s — session slot is ${duration}m.`,
+        );
       });
     }
   }
@@ -260,7 +257,7 @@ export function SlotUploadPanel() {
                          hover:file:bg-border transition-colors"
             />
             {durationWarning && (
-              <p className="text-status-red text-xs mt-1">{durationWarning}</p>
+              <p className="text-text-secondary text-xs mt-1">{durationWarning}</p>
             )}
           </div>
         </div>

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@lockedin/supabase-client';
 
+/**
+ * Advisory duration check — returns audio length vs session slot for info purposes.
+ * Duration is the general session length, NOT the required audio length.
+ * Always returns valid: true (audio can be any length).
+ */
 export async function POST(request: NextRequest) {
   const supabase = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,7 +25,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Fetch the audio track to get its actual stored duration
   const { data: track, error } = await supabase
     .from('audio_tracks')
     .select('duration_seconds')
@@ -34,15 +38,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const tolerance = 0.1; // 10%
-  const actualDuration = track.duration_seconds;
-  const diff = Math.abs(actualDuration - expectedDurationSeconds);
-  const isValid = diff <= expectedDurationSeconds * tolerance;
-
   return NextResponse.json({
-    valid: isValid,
-    actualDurationSeconds: actualDuration,
+    valid: true, // duration is advisory, not a hard constraint
+    actualDurationSeconds: track.duration_seconds,
     expectedDurationSeconds,
-    diffSeconds: diff,
+    diffSeconds: Math.abs(track.duration_seconds - expectedDurationSeconds),
   });
 }

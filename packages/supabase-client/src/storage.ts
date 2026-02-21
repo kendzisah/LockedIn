@@ -1,16 +1,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-const SIGNED_URL_TTL = 900; // 15 minutes
-
-/** Generate a short-lived signed URL for audio playback */
+/** Generate a short-lived signed URL for audio playback.
+ *  @param ttlSeconds - URL lifetime; default 1800 (30 min).
+ *    SessionRepository passes a duration-aware value:
+ *    Math.max(1800, durationMinutes * 60 * 2.5)
+ */
 export async function getSignedAudioUrl(
   client: SupabaseClient,
   bucket: string,
   path: string,
+  ttlSeconds: number = 1800,
 ): Promise<string> {
   const { data, error } = await client.storage
     .from(bucket)
-    .createSignedUrl(path, SIGNED_URL_TTL);
+    .createSignedUrl(path, ttlSeconds);
 
   if (error || !data?.signedUrl) {
     throw new Error(`Failed to create signed URL: ${error?.message ?? 'unknown'}`);

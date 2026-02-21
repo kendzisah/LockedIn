@@ -3,16 +3,18 @@
  *
  * No React dependencies. No side effects. Independently testable.
  * All day comparisons use timezone-safe local day keys (YYYY-MM-DD).
+ *
+ * Day key computation is delegated to ClockService (single source of truth).
  */
 
 import type { DayKey } from '../state/types';
+import { ClockService } from '../../../services/ClockService';
 
 // ─── Day Key Helpers ─────────────────────────────────────────────
 
-/** Returns today's date as a local day key: 'YYYY-MM-DD' */
+/** Returns today's date as a local day key: 'YYYY-MM-DD' (delegates to ClockService) */
 export function getTodayKey(): DayKey {
-  const d = new Date();
-  return formatDayKey(d);
+  return ClockService.getLocalDateKey();
 }
 
 /** Returns yesterday's date as a local day key */
@@ -66,7 +68,7 @@ export function getRemaining(expectedEndTimestamp: number): number {
 
 // ─── Timer Phase Text ────────────────────────────────────────────
 
-/** Deterministic phase text based on elapsed proportion */
+/** Deterministic Lock In phase text based on elapsed proportion */
 export function getPhaseText(elapsedSeconds: number, totalSeconds: number): string {
   const ratio = elapsedSeconds / totalSeconds;
 
@@ -76,6 +78,18 @@ export function getPhaseText(elapsedSeconds: number, totalSeconds: number): stri
   if (ratio < 0.75) return 'Discipline is choosing discomfort.';
   if (ratio < 0.90) return 'Almost there. Stay locked.';
   return 'Finishing strong.';
+}
+
+/** Deterministic Unlock/Reflect phase text based on elapsed proportion */
+export function getUnlockPhaseText(elapsedSeconds: number, totalSeconds: number): string {
+  const ratio = elapsedSeconds / totalSeconds;
+
+  if (ratio < 0.15) return 'Let the noise settle.';
+  if (ratio < 0.35) return 'Process what surfaced.';
+  if (ratio < 0.55) return 'What did you overcome today?';
+  if (ratio < 0.75) return 'Stillness is earned.';
+  if (ratio < 0.90) return 'You showed up. Acknowledge it.';
+  return 'Reflection complete.';
 }
 
 // ─── Streak Calculation ──────────────────────────────────────────

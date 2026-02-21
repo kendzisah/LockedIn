@@ -3,6 +3,9 @@
  *
  * Explicit state machine prevents invalid phase transitions.
  * All dates stored as local day keys (YYYY-MM-DD) in user's timezone.
+ *
+ * Date-keyed completion: lastLockInCompletedDate / lastUnlockCompletedDate
+ * prevent midnight bugs and make the AM/PM state machine deterministic.
  */
 
 /** Lock button / session lifecycle phases */
@@ -17,9 +20,9 @@ export interface SessionState {
 
   // ── 90-day program ──
   startDayKey: DayKey | null;
-  completedDayKeys: DayKey[]; // unique days with a completed session
+  completedDayKeys: DayKey[]; // unique days with a completed Lock In session
 
-  // ── Streak ──
+  // ── Streak (Lock In only) ──
   lastSessionDayKey: DayKey | null;
   consecutiveStreak: number;
   longestStreak: number;
@@ -34,8 +37,9 @@ export interface SessionState {
     durationMinutes: number;
   } | null;
 
-  // ── Derived (cached) ──
-  completedToday: boolean;
+  // ── Date-keyed completion (replaces completedToday boolean) ──
+  lastLockInCompletedDate: DayKey | null;   // e.g. "2026-02-20"
+  lastUnlockCompletedDate: DayKey | null;   // e.g. "2026-02-20"
 
   // ── Duration from onboarding ──
   sessionDurationMinutes: number;
@@ -51,6 +55,8 @@ export interface PersistedSessionState {
   totalMinutes: number;
   activeSession: SessionState['activeSession'];
   sessionDurationMinutes: number;
+  lastLockInCompletedDate: DayKey | null;
+  lastUnlockCompletedDate: DayKey | null;
 }
 
 /** All possible session actions */
@@ -59,5 +65,6 @@ export type SessionAction =
   | { type: 'SET_ANIMATING' }
   | { type: 'START_SESSION'; payload: { startTimestamp: number; expectedEndTimestamp: number; durationMinutes: number } }
   | { type: 'COMPLETE_SESSION'; payload: { durationMinutes: number } }
+  | { type: 'COMPLETE_UNLOCK'; payload: { durationMinutes: number } }
   | { type: 'RESET_PHASE' }
   | { type: 'SET_DURATION'; payload: number };

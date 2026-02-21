@@ -8,12 +8,13 @@
  *   Frame 69 = open lock (shackle up)
  *   Frame 180 = open lock (static tail)
  *
- * Our mapping:
- *   IDLE + !completed  → progress ≈ 0.381 (open, frame 69)
- *   On tap             → animate progress 0.381 → 0 (close)
- *   IDLE + completed   → progress = 0 (closed, frame 0)
+ * CTA modes (from ClockService.getCTAState):
+ *   lock_in              → progress ≈ 0.381 (open)  | "Tap to Lock In"
+ *   lock_in_done_waiting → progress = 0 (closed)    | "Locked In Today" + hint
+ *   unlock               → progress = 0 (closed)    | "Tap to Reflect"
+ *   all_done             → progress = 0 (closed)    | "Complete Today"
  *
- * Double-tap guard: only triggers from IDLE && !completedToday.
+ * On tap: animate lock closed → fire onAnimationComplete.
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
@@ -29,91 +30,121 @@ import * as Haptics from 'expo-haptics';
 import { useSession } from '../state/SessionProvider';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import type { CTAMode } from '../../../services/ClockService';
 
 interface LockButtonProps {
+  ctaMode: CTAMode;
+  hint?: string;
   onAnimationComplete: () => void;
 }
 
 // ── Lottie frame constants ──────────────────────────────────
 const OPEN_FRAME = 69;
-const TOTAL_OP = 181;                            // "op" in the JSON (exclusive end)
-const OPEN_PROGRESS = OPEN_FRAME / TOTAL_OP;     // ≈ 0.381
-const CLOSED_PROGRESS = 0;                        // frame 0
+const TOTAL_OP = 181;
+const OPEN_PROGRESS = OPEN_FRAME / TOTAL_OP;
+const CLOSED_PROGRESS = 0;
+const CLOSE_DURATION = 1400;
 
-const CLOSE_DURATION = 1400; // ms for the closing animation
-
-// Wrap LottieView so Animated can drive its `progress` prop natively
 const AnimatedLottieView = Animated.createAnimatedComponent(LottieView);
 
-const LockButton: React.FC<LockButtonProps> = ({ onAnimationComplete }) => {
+// ── Label + accent per CTA mode ──
+function getLabelForMode(mode: CTAMode): string {
+  switch (mode) {
+    case 'lock_in': return 'Tap to Lock In';
+    case 'unlock': return 'Tap to Reflect';
+    case 'lock_in_done_waiting': return 'Locked In Today';
+    case 'all_done': return 'Complete Today';
+  }
+}
+
+function isTappable(mode: CTAMode): boolean {
+  return mode === 'lock_in' || mode === 'unlock';
+}
+
+const LockButton: React.FC<LockButtonProps> = ({ ctaMode, hint, onAnimationComplete }) => {
   const { state, dispatch } = useSession();
   const labelOpacity = useRef(new Animated.Value(1)).current;
-
-  // Lottie progress: OPEN_PROGRESS = open, 0 = closed
   const lottieProgress = useRef(new Animated.Value(OPEN_PROGRESS)).current;
 
   const isIdle = state.phase === 'IDLE';
   const isAnimating = state.phase === 'ANIMATING';
-  const isCompleted = state.completedToday;
+  const tappable = isTappable(ctaMode);
 
-  // ── Sync visual state with session phase ──
+  // ── Sync visual state with CTA mode ──
   useEffect(() => {
-    if (isCompleted) {
-      lottieProgress.setValue(CLOSED_PROGRESS);
-      labelOpacity.setValue(1);
-    } else if (isIdle) {
+    if (ctaMode === 'lock_in') {
       lottieProgress.setValue(OPEN_PROGRESS);
       labelOpacity.setValue(1);
+    } else {
+      // All non-lock_in modes show closed lock
+      lottieProgress.setValue(CLOSED_PROGRESS);
+      labelOpacity.setValue(1);
     }
-  }, [isCompleted, isIdle, lottieProgress, labelOpacity]);
+  }, [ctaMode, lottieProgress, labelOpacity]);
 
-  // ── Tap handler: close the lock ──
+  // ── Tap handler ──
   const handlePress = useCallback(() => {
-    // Double-tap guard
-    if (!isIdle || isCompleted) return;
+    if (!isIdle || !tappable) return;
 
-    dispatch({ type: 'SET_ANIMATING' });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    if (ctaMode === 'lock_in') {
+      dispatch({ type: 'SET_ANIMATING' });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
-    // Fade out label
-    Animated.timing(labelOpacity, {
-      toValue: 0,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
+      // Fade out label
+      Animated.timing(labelOpacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
 
-    // Animate lock from open → closed
-    Animated.timing(lottieProgress, {
-      toValue: CLOSED_PROGRESS,
-      duration: CLOSE_DURATION,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false, // progress not on native thread
-    }).start(() => {
+      // Animate lock from open → closed
+      Animated.timing(lottieProgress, {
+        toValue: CLOSED_PROGRESS,
+        duration: CLOSE_DURATION,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start(() => {
+        onAnimationComplete();
+      });
+    } else if (ctaMode === 'unlock') {
+      // For unlock, skip the lock animation — go directly
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       onAnimationComplete();
-    });
-  }, [isIdle, isCompleted, dispatch, labelOpacity, lottieProgress, onAnimationComplete]);
+    }
+  }, [isIdle, tappable, ctaMode, dispatch, labelOpacity, lottieProgress, onAnimationComplete]);
+
+  // ── Label styling based on mode ──
+  const labelStyle = [
+    styles.label,
+    ctaMode === 'unlock' && styles.labelUnlock,
+    (ctaMode === 'lock_in_done_waiting' || ctaMode === 'all_done') && styles.labelMuted,
+    { opacity: labelOpacity },
+  ];
 
   return (
     <View style={styles.container} pointerEvents={isAnimating ? 'none' : 'auto'}>
-      <TouchableWithoutFeedback onPress={handlePress} disabled={isCompleted}>
+      <TouchableWithoutFeedback onPress={handlePress} disabled={!tappable}>
         <View style={styles.lottieWrap}>
           <AnimatedLottieView
             source={require('../../../../assets/lottie/lock_close.json')}
             progress={lottieProgress}
-            style={styles.lottie}
+            style={[
+              styles.lottie,
+              (ctaMode === 'lock_in_done_waiting' || ctaMode === 'all_done') && styles.lottieMuted,
+            ]}
           />
         </View>
       </TouchableWithoutFeedback>
 
-      <Animated.Text
-        style={[
-          styles.label,
-          isCompleted && styles.labelCompleted,
-          { opacity: labelOpacity },
-        ]}
-      >
-        {isCompleted ? 'Locked In Today' : 'Tap to Lock In'}
+      <Animated.Text style={labelStyle}>
+        {getLabelForMode(ctaMode)}
       </Animated.Text>
+
+      {hint ? (
+        <Animated.Text style={[styles.hint, { opacity: labelOpacity }]}>
+          {hint}
+        </Animated.Text>
+      ) : null}
     </View>
   );
 };
@@ -133,6 +164,9 @@ const styles = StyleSheet.create({
     width: 160,
     height: 160,
   },
+  lottieMuted: {
+    opacity: 0.5,
+  },
   label: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 15,
@@ -141,9 +175,20 @@ const styles = StyleSheet.create({
     marginTop: 12,
     textTransform: 'uppercase',
   },
-  labelCompleted: {
+  labelUnlock: {
+    color: Colors.textSecondary,
+    opacity: 0.8,
+  },
+  labelMuted: {
     color: Colors.textMuted,
     opacity: 0.6,
+  },
+  hint: {
+    fontFamily: FontFamily.body,
+    fontSize: 13,
+    color: Colors.textMuted,
+    marginTop: 6,
+    letterSpacing: 0.3,
   },
 });
 

@@ -3,11 +3,13 @@
  *
  * Phase transitions enforced: IDLE -> ANIMATING -> ACTIVE -> COMPLETING -> IDLE
  * Invalid transitions are no-ops.
+ *
+ * Date-keyed completion: uses lastLockInCompletedDate / lastUnlockCompletedDate
+ * instead of boolean completedToday -- prevents midnight bugs.
  */
 
 import React, {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useReducer,
@@ -19,7 +21,7 @@ import type {
   SessionAction,
   PersistedSessionState,
 } from './types';
-import { getTodayKey, getYesterdayKey, computeNewStreak, computeCurrentDay } from '../engine/SessionEngine';
+import { getTodayKey, computeNewStreak } from '../engine/SessionEngine';
 
 // ─── Constants ───────────────────────────────────────────────────
 
@@ -37,7 +39,8 @@ const initialState: SessionState = {
   longestStreak: 0,
   totalMinutes: 0,
   activeSession: null,
-  completedToday: false,
+  lastLockInCompletedDate: null,
+  lastUnlockCompletedDate: null,
   sessionDurationMinutes: DEFAULT_DURATION,
 };
 
@@ -47,7 +50,6 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
   switch (action.type) {
     case 'HYDRATE': {
       const p = action.payload;
-      const todayKey = getTodayKey();
       return {
         ...state,
         startDayKey: p.startDayKey,
@@ -58,14 +60,16 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         totalMinutes: p.totalMinutes,
         activeSession: p.activeSession,
         sessionDurationMinutes: p.sessionDurationMinutes || DEFAULT_DURATION,
-        completedToday: p.completedDayKeys.includes(todayKey),
+        lastLockInCompletedDate: p.lastLockInCompletedDate ?? null,
+        lastUnlockCompletedDate: p.lastUnlockCompletedDate ?? null,
         phase: p.activeSession ? 'ACTIVE' : 'IDLE',
       };
     }
 
     case 'SET_ANIMATING': {
-      // Guard: only from IDLE, and not completed today
-      if (state.phase !== 'IDLE' || state.completedToday) return state;
+      // Guard: only from IDLE, and Lock In not completed today
+      const todayKey = getTodayKey();
+      if (state.phase !== 'IDLE' || state.lastLockInCompletedDate === todayKey) return state;
       return { ...state, phase: 'ANIMATING' };
     }
 
@@ -91,7 +95,7 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       if (state.phase !== 'ACTIVE' && state.phase !== 'COMPLETING') return state;
 
       const todayKey = getTodayKey();
-      const alreadyCompletedToday = state.completedDayKeys.includes(todayKey);
+      const alreadyCompletedToday = state.lastLockInCompletedDate === todayKey;
 
       // Session day key: use the day the session started (for midnight rollover)
       const sessionDayKey = state.activeSession
@@ -122,7 +126,20 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         consecutiveStreak: newStreak,
         longestStreak: newLongest,
         totalMinutes: state.totalMinutes + (action.payload.durationMinutes || 0),
-        completedToday: newCompletedDayKeys.includes(todayKey),
+        lastLockInCompletedDate: todayKey,
+      };
+    }
+
+    case 'COMPLETE_UNLOCK': {
+      // Unlock completion: adds to totalMinutes, marks unlock as done today
+      // Does NOT affect streak or completedDayKeys (Lock In only)
+      const todayKey = getTodayKey();
+      return {
+        ...state,
+        phase: 'IDLE',
+        activeSession: null,
+        totalMinutes: state.totalMinutes + (action.payload.durationMinutes || 0),
+        lastUnlockCompletedDate: todayKey,
       };
     }
 
@@ -195,6 +212,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       totalMinutes: state.totalMinutes,
       activeSession: state.activeSession,
       sessionDurationMinutes: state.sessionDurationMinutes,
+      lastLockInCompletedDate: state.lastLockInCompletedDate,
+      lastUnlockCompletedDate: state.lastUnlockCompletedDate,
     };
 
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(persisted)).catch((e) => {
@@ -210,6 +229,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     state.totalMinutes,
     state.activeSession,
     state.sessionDurationMinutes,
+    state.lastLockInCompletedDate,
+    state.lastUnlockCompletedDate,
   ]);
 
   return (

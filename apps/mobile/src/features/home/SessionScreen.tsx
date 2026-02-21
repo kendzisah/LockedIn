@@ -1,32 +1,45 @@
 /**
- * SessionScreen — Active Lock In session.
+ * SessionScreen — Unified Lock In + Unlock/Reflect session.
  *
- * Entry: Starts at solid black, fades in micro text, then countdown.
- * Timer: Real-time calculation from timestamps (no interval drift).
- * Exit: Hold-to-unlock (2s long press) or timer completion.
- * Resilience: BackHandler blocks back, AppState recalculates on foreground.
+ * Accepts { phase, duration, resuming } params.
+ * - phase === 'lock_in': discipline mode, streak counts, crash-resume
+ * - phase === 'unlock':  reflection mode, no streak, no crash-resume
  *
- * TODO: Brightness dimming — needs native module. Placeholder for Phase 2+.
+ * Audio integration:
+ *   1. Fetches session from SessionRepository (primary + fallback)
+ *   2. Loads audio via AudioService (8s timeout)
+ *   3. Falls back to timer-only on failure (with single retry)
+ *   4. Pauses on background, resumes on foreground
+ *   5. Unloads on unmount
+ *
+ * Timer integrity: remaining is always computed from expectedEndTimestamp - Date.now().
+ * The setInterval(250ms) is purely a render trigger — never accumulates time.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   AppState,
-  AppStateStatus,
+  type AppStateStatus,
   BackHandler,
   Easing,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
 import { useSession } from './state/SessionProvider';
-import { getRemaining, getPhaseText } from './engine/SessionEngine';
+import { getRemaining, getPhaseText, getUnlockPhaseText, createSession } from './engine/SessionEngine';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
+import { AudioService } from '../../services/AudioService';
+import { SessionRepository, type TodaySession } from '../../services/SessionRepository';
+import { ClockService } from '../../services/ClockService';
+import { TelemetryService } from '../../services/TelemetryService';
+import type { ContentPhase, SessionDuration } from '@lockedin/shared-types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'Session'>;
 
@@ -36,20 +49,60 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-const HOLD_DURATION = 2000; // 2 seconds to unlock
+const HOLD_DURATION = 2000;
+
+// ── Phase-dependent copy ──
+
+function getMicroText(phase: ContentPhase, duration: number): string {
+  if (phase === 'unlock') return `${duration} minutes. Reflect.`;
+  return `${duration} minutes. Commit to the full timer.`;
+}
+
+function getCompletionText(phase: ContentPhase): string {
+  return phase === 'unlock' ? 'Reflection Complete.' : 'Session Complete.';
+}
+
+function getPhaseTextForPhase(
+  phase: ContentPhase,
+  elapsed: number,
+  total: number,
+): string {
+  return phase === 'unlock'
+    ? getUnlockPhaseText(elapsed, total)
+    : getPhaseText(elapsed, total);
+}
+
+// ── Audio loading states ──
+type AudioLoadState =
+  | 'idle'
+  | 'loading'
+  | 'loaded'
+  | 'failed'
+  | 'retrying'
+  | 'timer_only';
 
 const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { duration, resuming } = route.params;
+  const { phase, duration, resuming } = route.params;
   const { state, dispatch } = useSession();
 
   // ── Timer state ──
   const [remaining, setRemaining] = useState(() => {
-    if (state.activeSession) {
+    if (phase === 'lock_in' && state.activeSession) {
       return getRemaining(state.activeSession.expectedEndTimestamp);
     }
     return duration * 60;
   });
   const [isComplete, setIsComplete] = useState(false);
+
+  // ── For unlock: create a local session timestamp (no crash-resume needed) ──
+  const unlockEndTimestamp = useRef(
+    phase === 'unlock' ? Date.now() + duration * 60 * 1000 : 0,
+  ).current;
+
+  // ── Audio state ──
+  const [audioState, setAudioState] = useState<AudioLoadState>('idle');
+  const [sessionData, setSessionData] = useState<TodaySession | null>(null);
+  const hasRetried = useRef(false);
 
   // ── Entry animation ──
   const microTextOpacity = useRef(new Animated.Value(0)).current;
@@ -67,11 +120,116 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
   const totalSeconds = duration * 60;
 
+  // ── Fetch + load audio on mount ──
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAudio() {
+      setAudioState('loading');
+
+      const todayKey = ClockService.getLocalDateKey();
+      const session = await SessionRepository.getSessionFor(
+        todayKey,
+        phase,
+        duration as SessionDuration,
+      );
+
+      if (cancelled) return;
+
+      if (!session) {
+        // No content at all — timer-only mode (no retry, nothing to retry against)
+        setAudioState('timer_only');
+        TelemetryService.logEvent('audio_load_failed', {
+          phase,
+          duration,
+          error: 'no_content',
+        });
+        return;
+      }
+
+      setSessionData(session);
+
+      if (session.isFallback) {
+        TelemetryService.logEvent('fallback_used', {
+          phase,
+          duration,
+          fallbackDate: session.scheduledDate,
+        });
+      }
+
+      const loaded = await AudioService.load(session.signedAudioUrl);
+
+      if (cancelled) return;
+
+      if (loaded) {
+        setAudioState('loaded');
+        AudioService.play();
+      } else {
+        setAudioState('failed');
+        TelemetryService.logEvent('audio_load_failed', {
+          phase,
+          duration,
+          error: 'load_timeout',
+        });
+      }
+    }
+
+    loadAudio();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Retry audio load (single attempt) ──
+  const handleRetryAudio = useCallback(async () => {
+    if (hasRetried.current || !sessionData) return;
+    hasRetried.current = true;
+    setAudioState('retrying');
+
+    const loaded = await AudioService.load(sessionData.signedAudioUrl);
+
+    if (loaded) {
+      setAudioState('loaded');
+      await AudioService.play();
+    } else {
+      setAudioState('timer_only');
+    }
+  }, [sessionData]);
+
+  // ── Cleanup audio on unmount ──
+  useEffect(() => {
+    return () => {
+      AudioService.unload();
+    };
+  }, []);
+
+  // ── For unlock phase: create active session timestamps ──
+  useEffect(() => {
+    if (phase === 'unlock' && !resuming) {
+      // Dispatch START_SESSION so the timer tick works
+      const session = createSession(duration);
+      dispatch({
+        type: 'SET_ANIMATING',
+      });
+      // Need to go through ANIMATING first
+      setTimeout(() => {
+        dispatch({
+          type: 'START_SESSION',
+          payload: {
+            startTimestamp: session.startTimestamp,
+            expectedEndTimestamp: session.expectedEndTimestamp,
+            durationMinutes: duration,
+          },
+        });
+      }, 0);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Entry animation sequence ──
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
 
-    // 300ms: micro text fades in
     timers.push(
       setTimeout(() => {
         Animated.timing(microTextOpacity, {
@@ -82,7 +240,6 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       }, 300),
     );
 
-    // 1200ms: micro text fades out, timer fades in
     timers.push(
       setTimeout(() => {
         Animated.timing(microTextOpacity, {
@@ -104,10 +261,16 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
   // ── Real-time timer tick ──
   useEffect(() => {
     if (isComplete) return;
-    if (!state.activeSession) return;
+
+    const endTimestamp =
+      phase === 'lock_in'
+        ? state.activeSession?.expectedEndTimestamp
+        : unlockEndTimestamp;
+
+    if (!endTimestamp) return;
 
     tickRef.current = setInterval(() => {
-      const r = getRemaining(state.activeSession!.expectedEndTimestamp);
+      const r = getRemaining(endTimestamp);
       setRemaining(r);
 
       if (r <= 0) {
@@ -115,12 +278,12 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
         tickRef.current = null;
         handleTimerComplete();
       }
-    }, 250); // Check 4x/sec for responsive display
+    }, 250);
 
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
     };
-  }, [state.activeSession, isComplete]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.activeSession, isComplete, phase, unlockEndTimestamp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Timer completion ──
   const handleTimerComplete = useCallback(() => {
@@ -129,19 +292,34 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    dispatch({
-      type: 'COMPLETE_SESSION',
-      payload: { durationMinutes: duration },
+    // Stop audio
+    AudioService.stop();
+
+    // Dispatch appropriate completion action
+    if (phase === 'lock_in') {
+      dispatch({
+        type: 'COMPLETE_SESSION',
+        payload: { durationMinutes: duration },
+      });
+    } else {
+      dispatch({
+        type: 'COMPLETE_UNLOCK',
+        payload: { durationMinutes: duration },
+      });
+    }
+
+    TelemetryService.logEvent('session_completed', {
+      phase,
+      duration,
+      hasAudio: audioState === 'loaded',
     });
 
-    // Show "Session Complete" text
     Animated.timing(completeTextOpacity, {
       toValue: 1,
       duration: 500,
       useNativeDriver: true,
     }).start();
 
-    // After 1.5s, fade everything and navigate to fresh Home
     setTimeout(() => {
       Animated.timing(timerOpacity, {
         toValue: 0,
@@ -151,7 +329,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
         navigation.replace('Home');
       });
     }, 1500);
-  }, [isComplete, dispatch, duration, completeTextOpacity, timerOpacity, navigation]);
+  }, [isComplete, dispatch, phase, duration, completeTextOpacity, timerOpacity, navigation, audioState]);
 
   // ── Hold-to-unlock handlers ──
   const handleHoldStart = useCallback(() => {
@@ -170,13 +348,11 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       const progress = Math.min(1, elapsed / HOLD_DURATION);
       setHoldProgress(progress);
 
-      // Haptic pulse every 500ms
       if (elapsed % 500 < 50) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
 
       if (progress >= 1) {
-        // Unlock!
         if (holdIntervalRef.current) clearInterval(holdIntervalRef.current);
         holdStartRef.current = null;
         handleHoldComplete();
@@ -205,12 +381,28 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    dispatch({
-      type: 'COMPLETE_SESSION',
-      payload: { durationMinutes: duration },
+    // Stop audio
+    AudioService.stop();
+
+    // Dispatch appropriate completion
+    if (phase === 'lock_in') {
+      dispatch({
+        type: 'COMPLETE_SESSION',
+        payload: { durationMinutes: duration },
+      });
+    } else {
+      dispatch({
+        type: 'COMPLETE_UNLOCK',
+        payload: { durationMinutes: duration },
+      });
+    }
+
+    TelemetryService.logEvent('session_exited_early', {
+      phase,
+      duration,
+      elapsedSeconds: totalSeconds - remaining,
     });
 
-    // Fade out and navigate to fresh Home
     Animated.timing(timerOpacity, {
       toValue: 0,
       duration: 500,
@@ -218,7 +410,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     }).start(() => {
       navigation.replace('Home');
     });
-  }, [dispatch, duration, timerOpacity, navigation]);
+  }, [dispatch, phase, duration, timerOpacity, navigation, totalSeconds, remaining]);
 
   // ── BackHandler: block Android back ──
   useEffect(() => {
@@ -226,22 +418,37 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     return () => handler.remove();
   }, []);
 
-  // ── AppState: recalculate on foreground ──
+  // ── AppState: pause/resume audio + recalculate timer ──
   useEffect(() => {
     const subscription = AppState.addEventListener(
       'change',
       (nextState: AppStateStatus) => {
-        if (nextState === 'active' && state.activeSession) {
-          const r = getRemaining(state.activeSession.expectedEndTimestamp);
-          setRemaining(r);
-          if (r <= 0) {
-            handleTimerComplete();
+        if (nextState === 'background') {
+          AudioService.pause();
+        } else if (nextState === 'active') {
+          // Resume audio
+          if (audioState === 'loaded') {
+            AudioService.play();
+          }
+
+          // Recalculate timer from timestamps
+          const endTimestamp =
+            phase === 'lock_in'
+              ? state.activeSession?.expectedEndTimestamp
+              : unlockEndTimestamp;
+
+          if (endTimestamp) {
+            const r = getRemaining(endTimestamp);
+            setRemaining(r);
+            if (r <= 0) {
+              handleTimerComplete();
+            }
           }
         }
       },
     );
     return () => subscription.remove();
-  }, [state.activeSession, handleTimerComplete]);
+  }, [state.activeSession, handleTimerComplete, audioState, phase, unlockEndTimestamp]);
 
   // Cleanup hold interval on unmount
   useEffect(() => {
@@ -251,14 +458,29 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
   }, []);
 
   const elapsed = totalSeconds - remaining;
-  const phaseText = getPhaseText(elapsed, totalSeconds);
+  const phaseText = getPhaseTextForPhase(phase, elapsed, totalSeconds);
+
+  // ── Audio status indicator ──
+  const audioIndicator = (() => {
+    switch (audioState) {
+      case 'loading':
+      case 'retrying':
+        return 'Loading audio...';
+      case 'failed':
+        return null; // rendered separately with retry button
+      case 'timer_only':
+        return 'Audio unavailable — run the protocol anyway.';
+      default:
+        return null;
+    }
+  })();
 
   return (
     <View style={styles.container}>
-      {/* Micro text: "X minutes. No exits." */}
+      {/* Micro text */}
       <Animated.View style={[styles.centerContent, { opacity: microTextOpacity }]}>
         <Text style={styles.microText}>
-          {duration} minutes. No exits.
+          {getMicroText(phase, duration)}
         </Text>
       </Animated.View>
 
@@ -268,10 +490,32 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
           <>
             <Text style={styles.timer}>{formatTime(remaining)}</Text>
             <Text style={styles.phaseText}>{phaseText}</Text>
+
+            {/* Audio status indicators */}
+            {audioIndicator && (
+              <Text style={styles.audioIndicator}>{audioIndicator}</Text>
+            )}
+
+            {/* Failed state with retry button */}
+            {audioState === 'failed' && (
+              <View style={styles.audioFailedContainer}>
+                <Text style={styles.audioIndicator}>
+                  Audio unavailable — run the protocol anyway.
+                </Text>
+                <TouchableOpacity onPress={handleRetryAudio} style={styles.retryButton}>
+                  <Text style={styles.retryText}>Try again</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Fallback indicator */}
+            {sessionData?.isFallback && audioState === 'loaded' && (
+              <Text style={styles.fallbackIndicator}>Using last published session</Text>
+            )}
           </>
         ) : (
           <Animated.Text style={[styles.completeText, { opacity: completeTextOpacity }]}>
-            Session Complete.
+            {getCompletionText(phase)}
           </Animated.Text>
         )}
       </Animated.View>
@@ -285,7 +529,6 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
             onTouchEnd={handleHoldRelease}
             onTouchCancel={handleHoldRelease}
           >
-            {/* Progress ring */}
             <Animated.View
               style={[
                 styles.holdRing,
@@ -295,7 +538,6 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
                 },
               ]}
             />
-            {/* Lock icon (simple view-based) */}
             <View style={styles.holdLockBody}>
               <View style={styles.holdLockShackle} />
             </View>
@@ -345,6 +587,37 @@ const styles = StyleSheet.create({
     fontSize: 32,
     color: Colors.textPrimary,
     letterSpacing: -0.6,
+  },
+  audioIndicator: {
+    fontFamily: FontFamily.body,
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: 16,
+    opacity: 0.7,
+  },
+  audioFailedContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  retryButton: {
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+  },
+  retryText: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 13,
+    color: Colors.accent,
+    letterSpacing: 0.3,
+  },
+  fallbackIndicator: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: 12,
+    opacity: 0.5,
   },
   // ── Hold-to-unlock ──
   holdSection: {

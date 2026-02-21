@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
@@ -14,8 +14,10 @@ import { OnboardingProvider } from '../features/onboarding/state/OnboardingProvi
 import { SessionProvider } from '../features/home/state/SessionProvider';
 import RootNavigator from '../navigation/RootNavigator';
 import { Colors } from '../design/colors';
+import { SupabaseService } from '../services/SupabaseService';
+import { AudioService } from '../services/AudioService';
 
-// Keep splash screen visible while fonts load
+// Keep splash screen visible while fonts + auth load
 SplashScreen.preventAutoHideAsync();
 
 const App: React.FC = () => {
@@ -27,13 +29,40 @@ const App: React.FC = () => {
     InterTight_800ExtraBold,
   });
 
+  const [authReady, setAuthReady] = useState(false);
+
+  // Initialize Supabase + Audio on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    async function boot() {
+      // Initialize audio mode (playsInSilentModeIOS, background policy, etc.)
+      await AudioService.configure();
+
+      // Initialize Supabase client + anonymous auth
+      // If it fails (e.g., no network), app still works in timer-only mode
+      await SupabaseService.initialize();
+
+      if (!cancelled) {
+        setAuthReady(true);
+      }
+    }
+
+    boot();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const onLayoutRootView = useCallback(async () => {
-    if (fontsLoaded) {
+    if (fontsLoaded && authReady) {
       await SplashScreen.hideAsync();
     }
-  }, [fontsLoaded]);
+  }, [fontsLoaded, authReady]);
 
-  if (!fontsLoaded) {
+  // Wait for both fonts and auth before rendering
+  if (!fontsLoaded || !authReady) {
     return null;
   }
 
