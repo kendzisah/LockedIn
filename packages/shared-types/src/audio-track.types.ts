@@ -1,4 +1,4 @@
-export type AudioCategory = 'lock_in' | 'unlock' | 'ambient' | 'guided';
+export type AudioCategory = 'lock_in' | 'unlock' | 'ambient' | 'guided' | 'onboarding';
 
 export interface AudioTrack {
   id: string;

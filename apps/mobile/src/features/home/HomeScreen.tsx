@@ -7,6 +7,7 @@
  *   unlock               → closed lock, "Tap to Reflect"
  *   all_done             → closed lock, "Complete Today"
  *
+ * All sessions are 5 min. No duration selector.
  * Prefetches session audio on mount. Re-evaluates CTA on AppState resume.
  */
 
@@ -36,7 +37,9 @@ import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
 import { ClockService, type CTAState } from '../../services/ClockService';
 import { SessionRepository } from '../../services/SessionRepository';
-import type { SessionDuration, ContentPhase } from '@lockedin/shared-types';
+import type { ContentPhase } from '@lockedin/shared-types';
+
+const SESSION_DURATION = 5; // minutes — all sessions are ~5 min
 
 type Props = NativeStackScreenProps<MainStackParamList, 'Home'>;
 
@@ -78,11 +81,10 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
     const phase: ContentPhase =
       ctaState.mode === 'unlock' ? 'unlock' : 'lock_in';
-    const duration = state.sessionDurationMinutes as SessionDuration;
 
     // Fire and forget — failure is silent
-    SessionRepository.prefetchToday(phase, duration);
-  }, [isHydrated, ctaState.mode, state.sessionDurationMinutes]);
+    SessionRepository.prefetchToday(phase);
+  }, [isHydrated, ctaState.mode]);
 
   // ── Crash-resume check on hydration ──
   useEffect(() => {
@@ -122,11 +124,10 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
     }).start(() => {
       navigation.replace('Session', {
         phase: 'lock_in', // crash-resume is always for Lock In
-        duration: state.activeSession?.durationMinutes || state.sessionDurationMinutes,
         resuming: true,
       });
     });
-  }, [navigation, screenOpacity, state.activeSession, state.sessionDurationMinutes]);
+  }, [navigation, screenOpacity]);
 
   const handleEndSession = useCallback(() => {
     if (autoResumeTimer.current) clearTimeout(autoResumeTimer.current);
@@ -147,14 +148,14 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
     if (phase === 'lock_in') {
       // Lock In: create active session, animate, navigate
-      const session = createSession(state.sessionDurationMinutes);
+      const session = createSession(SESSION_DURATION);
 
       dispatch({
         type: 'START_SESSION',
         payload: {
           startTimestamp: session.startTimestamp,
           expectedEndTimestamp: session.expectedEndTimestamp,
-          durationMinutes: state.sessionDurationMinutes,
+          durationMinutes: SESSION_DURATION,
         },
       });
 
@@ -165,7 +166,6 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       }).start(() => {
         navigation.replace('Session', {
           phase: 'lock_in',
-          duration: state.sessionDurationMinutes,
           resuming: false,
         });
       });
@@ -178,12 +178,11 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       }).start(() => {
         navigation.replace('Session', {
           phase: 'unlock',
-          duration: state.sessionDurationMinutes,
           resuming: false,
         });
       });
     }
-  }, [ctaState.mode, dispatch, navigation, screenOpacity, state.sessionDurationMinutes]);
+  }, [ctaState.mode, dispatch, navigation, screenOpacity]);
 
   // ── Reset opacity when screen mounts or comes back into focus ──
   useEffect(() => {

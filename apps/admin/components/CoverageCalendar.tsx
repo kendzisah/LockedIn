@@ -2,19 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { getBrowserSupabase } from '../lib/supabase-browser';
-import { DayCell } from './DayCell';
-import type { ContentPhase, SessionDuration } from '@lockedin/shared-types';
+import { DayCell, type SessionSlot } from './DayCell';
+import type { ContentPhase } from '@lockedin/shared-types';
 
 interface SessionRow {
   scheduled_date: string;
   phase: ContentPhase;
-  duration_minutes: SessionDuration;
   status: string;
 }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const PHASES: ContentPhase[] = ['lock_in', 'unlock'];
-const DURATIONS: SessionDuration[] = [5, 10, 15, 20];
 
 function getMonthDays(year: number, month: number) {
   const firstDay = new Date(year, month, 1);
@@ -56,7 +54,7 @@ export function CoverageCalendar() {
       const supabase = getBrowserSupabase();
       const { data } = await supabase
         .from('scheduled_sessions')
-        .select('scheduled_date, phase, duration_minutes, status')
+        .select('scheduled_date, phase, status')
         .gte('scheduled_date', monthStart)
         .lte('scheduled_date', monthEnd);
 
@@ -73,26 +71,20 @@ export function CoverageCalendar() {
     setCurrentDate(new Date(year, month + 1, 1));
   }
 
-  function getSlotsForDate(dateStr: string) {
-    const result: { phase: ContentPhase; duration: SessionDuration; status: 'published' | 'draft' | 'missing' }[] = [];
-    for (const phase of PHASES) {
-      for (const dur of DURATIONS) {
-        const match = sessions.find(
-          (s) => s.scheduled_date === dateStr && s.phase === phase && s.duration_minutes === dur,
-        );
-        result.push({
-          phase,
-          duration: dur,
-          status: match ? (match.status as 'published' | 'draft') : 'missing',
-        });
-      }
-    }
-    return result;
+  function getSlotsForDate(dateStr: string): SessionSlot[] {
+    return PHASES.map((phase) => {
+      const match = sessions.find(
+        (s) => s.scheduled_date === dateStr && s.phase === phase,
+      );
+      return {
+        phase,
+        status: match ? (match.status as 'published' | 'draft') : 'missing',
+      };
+    });
   }
 
-  function handleSlotClick(date: string, phase: ContentPhase, duration: SessionDuration) {
-    // Navigate to schedule page with slot context
-    window.location.href = `/schedule?date=${date}&phase=${phase}&duration=${duration}`;
+  function handleSlotClick(date: string, phase: ContentPhase) {
+    window.location.href = `/schedule?date=${date}&phase=${phase}`;
   }
 
   const monthLabel = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
@@ -126,7 +118,7 @@ export function CoverageCalendar() {
               onSlotClick={handleSlotClick}
             />
           ) : (
-            <div key={`empty-${i}`} className="min-h-[80px]" />
+            <div key={`empty-${i}`} className="min-h-[72px]" />
           ),
         )}
       </div>

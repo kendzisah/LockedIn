@@ -1,20 +1,26 @@
 /**
  * SessionRepository — Fetches scheduled sessions with fallback logic
- * and generates duration-aware signed URLs for audio playback.
+ * and generates signed URLs for audio playback.
+ *
+ * All sessions are ~5 min. No duration parameter needed.
  *
  * Query strategy:
- *  1. Primary: exact match on date + phase + duration (today's content)
- *  2. Fallback: nearest previous published session for same phase + duration
+ *  1. Primary: exact match on date + phase (today's content)
+ *  2. Fallback: nearest previous published session for same phase
  *  3. Returns null if nothing found (empty DB / offline)
  *
  * Prefetch: called on Home mount, caches result for instant Session screen load.
  * Cache invalidated after 10 min or on new day (via ClockService.getLocalDateKey).
  */
 
-import type { ContentPhase, SessionDuration } from '@lockedin/shared-types';
+import type { ContentPhase } from '@lockedin/shared-types';
 import { getSignedAudioUrl } from '@lockedin/supabase-client';
 import { SupabaseService } from './SupabaseService';
 import { ClockService } from './ClockService';
+
+// ── Constants ──
+
+const SESSION_DURATION_MINUTES = 5;
 
 // ── Types ──
 
@@ -30,10 +36,17 @@ export interface TodaySession {
   isFallback: boolean;
 }
 
+export interface OnboardingTrack {
+  title: string;
+  durationSeconds: number;
+  signedAudioUrl: string;
+  audioTrackId: string;
+}
+
 // ── Prefetch cache ──
 
 interface CacheEntry {
-  key: string; // `${date}|${phase}|${duration}`
+  key: string; // `${date}|${phase}`
   dateKey: string; // DayKey at cache time
   timestamp: number;
   session: TodaySession | null;
@@ -42,14 +55,14 @@ interface CacheEntry {
 const CACHE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
 let cache: CacheEntry | null = null;
 
-function cacheKey(date: string, phase: ContentPhase, duration: SessionDuration): string {
-  return `${date}|${phase}|${duration}`;
+function cacheKey(date: string, phase: ContentPhase): string {
+  return `${date}|${phase}`;
 }
 
-function isCacheValid(entry: CacheEntry, date: string, phase: ContentPhase, duration: SessionDuration): boolean {
+function isCacheValid(entry: CacheEntry, date: string, phase: ContentPhase): boolean {
   const currentDayKey = ClockService.getLocalDateKey();
   if (entry.dateKey !== currentDayKey) return false; // new day
-  if (entry.key !== cacheKey(date, phase, duration)) return false; // different params
+  if (entry.key !== cacheKey(date, phase)) return false; // different params
   if (Date.now() - entry.timestamp > CACHE_MAX_AGE_MS) return false; // stale
   return true;
 }
@@ -57,17 +70,16 @@ function isCacheValid(entry: CacheEntry, date: string, phase: ContentPhase, dura
 // ── Core query ──
 
 /**
- * Fetch the session for a given date/phase/duration.
+ * Fetch the session for a given date/phase.
  * Tries primary match first, then falls back to nearest previous.
  * Returns null if nothing found or Supabase is unreachable.
  */
 async function getSessionFor(
   date: string,
   phase: ContentPhase,
-  durationMinutes: SessionDuration,
 ): Promise<TodaySession | null> {
   // Check prefetch cache
-  if (cache && isCacheValid(cache, date, phase, durationMinutes)) {
+  if (cache && isCacheValid(cache, date, phase)) {
     return cache.session;
   }
 
@@ -94,7 +106,6 @@ async function getSessionFor(
       `)
       .eq('scheduled_date', date)
       .eq('phase', phase)
-      .eq('duration_minutes', durationMinutes)
       .limit(1)
       .maybeSingle();
 
@@ -104,11 +115,11 @@ async function getSessionFor(
 
     if (primary) {
       const session = await buildTodaySession(client, primary, false);
-      setCache(date, phase, durationMinutes, session);
+      setCache(date, phase, session);
       return session;
     }
 
-    // Fallback: nearest previous published session for same phase + duration
+    // Fallback: nearest previous published session for same phase
     const { data: fallback, error: fallbackErr } = await client
       .from('scheduled_sessions')
       .select(`
@@ -127,7 +138,6 @@ async function getSessionFor(
       `)
       .lte('scheduled_date', date)
       .eq('phase', phase)
-      .eq('duration_minutes', durationMinutes)
       .order('scheduled_date', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -138,15 +148,62 @@ async function getSessionFor(
 
     if (fallback) {
       const session = await buildTodaySession(client, fallback, true);
-      setCache(date, phase, durationMinutes, session);
+      setCache(date, phase, session);
       return session;
     }
 
     // Nothing found
-    setCache(date, phase, durationMinutes, null);
+    setCache(date, phase, null);
     return null;
   } catch (error) {
     console.warn('[SessionRepository] Unexpected error:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch the active onboarding track.
+ * Returns null if no onboarding track is configured.
+ */
+async function getOnboardingTrack(): Promise<OnboardingTrack | null> {
+  const client = SupabaseService.getClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from('audio_tracks')
+      .select('id, title, storage_bucket, storage_path, duration_seconds')
+      .eq('category', 'onboarding')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[SessionRepository] Onboarding track query error:', error.message);
+      return null;
+    }
+
+    if (!data) return null;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = data as any;
+
+    const signedAudioUrl = await getSignedAudioUrl(
+      client,
+      row.storage_bucket,
+      row.storage_path,
+      1800, // 30 min TTL
+    );
+
+    return {
+      title: row.title,
+      durationSeconds: row.duration_seconds,
+      signedAudioUrl,
+      audioTrackId: row.id,
+    };
+  } catch (error) {
+    console.warn('[SessionRepository] Onboarding track error:', error);
     return null;
   }
 }
@@ -161,7 +218,7 @@ async function buildTodaySession(
   isFallback: boolean,
 ): Promise<TodaySession> {
   const track = Array.isArray(row.audio_tracks) ? row.audio_tracks[0] : row.audio_tracks;
-  const durationMinutes: number = row.duration_minutes;
+  const durationMinutes: number = row.duration_minutes ?? SESSION_DURATION_MINUTES;
 
   // Duration-aware TTL: max(30 min, duration * 2.5)
   const ttlSeconds = Math.max(1800, durationMinutes * 60 * 2.5);
@@ -188,11 +245,10 @@ async function buildTodaySession(
 function setCache(
   date: string,
   phase: ContentPhase,
-  duration: SessionDuration,
   session: TodaySession | null,
 ): void {
   cache = {
-    key: cacheKey(date, phase, duration),
+    key: cacheKey(date, phase),
     dateKey: ClockService.getLocalDateKey(),
     timestamp: Date.now(),
     session,
@@ -200,16 +256,13 @@ function setCache(
 }
 
 /**
- * Prefetch session for the current phase/duration.
+ * Prefetch session for the current phase.
  * Called on Home mount so the Session screen gets instant data.
  * Silent on failure.
  */
-async function prefetchToday(
-  phase: ContentPhase,
-  durationMinutes: SessionDuration,
-): Promise<void> {
+async function prefetchToday(phase: ContentPhase): Promise<void> {
   const date = ClockService.getLocalDateKey();
-  await getSessionFor(date, phase, durationMinutes);
+  await getSessionFor(date, phase);
 }
 
 /**
@@ -221,6 +274,7 @@ function clearCache(): void {
 
 export const SessionRepository = {
   getSessionFor,
+  getOnboardingTrack,
   prefetchToday,
   clearCache,
 };

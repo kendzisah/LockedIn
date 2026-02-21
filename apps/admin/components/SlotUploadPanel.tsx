@@ -4,13 +4,14 @@ import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getBrowserSupabase } from '../lib/supabase-browser';
 import { PublishConfirmModal } from './PublishConfirmModal';
-import type { ContentPhase, SessionDuration } from '@lockedin/shared-types';
+import type { ContentPhase } from '@lockedin/shared-types';
+
+const SESSION_DURATION = 5; // all sessions are ~5 min
 
 const PHASES: { value: ContentPhase; label: string }[] = [
   { value: 'lock_in', label: 'Lock In' },
   { value: 'unlock', label: 'Unlock' },
 ];
-const DURATIONS: SessionDuration[] = [5, 10, 15, 20];
 
 export function SlotUploadPanel() {
   const searchParams = useSearchParams();
@@ -20,13 +21,10 @@ export function SlotUploadPanel() {
   const [phase, setPhase] = useState<ContentPhase>(
     (searchParams.get('phase') as ContentPhase) ?? 'lock_in',
   );
-  const [duration, setDuration] = useState<SessionDuration>(
-    (Number(searchParams.get('duration')) as SessionDuration) || 10,
-  );
   const [title, setTitle] = useState('');
   const [scriptVersion, setScriptVersion] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [durationWarning, setDurationWarning] = useState<string | null>(null);
+  const [audioInfo, setAudioInfo] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -35,14 +33,13 @@ export function SlotUploadPanel() {
   useEffect(() => {
     if (searchParams.get('date')) setDate(searchParams.get('date')!);
     if (searchParams.get('phase')) setPhase(searchParams.get('phase') as ContentPhase);
-    if (searchParams.get('duration')) setDuration(Number(searchParams.get('duration')) as SessionDuration);
   }, [searchParams]);
 
-  // Client-side duration info (advisory only — duration is the general session length, not exact audio length)
+  // Client-side audio info (advisory only)
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0] ?? null;
     setFile(selected);
-    setDurationWarning(null);
+    setAudioInfo(null);
 
     if (selected) {
       const audio = new Audio(URL.createObjectURL(selected));
@@ -50,9 +47,7 @@ export function SlotUploadPanel() {
         const actualSeconds = Math.round(audio.duration);
         const mins = Math.floor(actualSeconds / 60);
         const secs = actualSeconds % 60;
-        setDurationWarning(
-          `Audio length: ${mins}m ${secs}s — session slot is ${duration}m.`,
-        );
+        setAudioInfo(`Audio length: ${mins}m ${secs}s`);
       });
     }
   }
@@ -80,7 +75,7 @@ export function SlotUploadPanel() {
     setStatus(null);
 
     try {
-      const storagePath = `tracks/${date}/${phase}_${duration}.${file.name.split('.').pop()}`;
+      const storagePath = `tracks/${date}/${phase}.${file.name.split('.').pop()}`;
 
       // 1. Get signed upload URL from server
       const urlRes = await fetch('/api/signed-upload-url', {
@@ -130,7 +125,6 @@ export function SlotUploadPanel() {
         .select('id')
         .eq('scheduled_date', date)
         .eq('phase', phase)
-        .eq('duration_minutes', duration)
         .maybeSingle();
 
       const existing = existingData as unknown as { id: string } | null;
@@ -156,7 +150,7 @@ export function SlotUploadPanel() {
           .insert({
             scheduled_date: date,
             phase,
-            duration_minutes: duration,
+            duration_minutes: SESSION_DURATION,
             audio_track_id: track.id,
             title,
             status: targetStatus,
@@ -200,33 +194,18 @@ export function SlotUploadPanel() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">Phase</label>
-              <select
-                value={phase}
-                onChange={(e) => setPhase(e.target.value as ContentPhase)}
-                className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm
-                           focus:outline-none focus:ring-2 focus:ring-accent"
-              >
-                {PHASES.map((p) => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-text-secondary mb-1">Duration</label>
-              <select
-                value={duration}
-                onChange={(e) => setDuration(Number(e.target.value) as SessionDuration)}
-                className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm
-                           focus:outline-none focus:ring-2 focus:ring-accent"
-              >
-                {DURATIONS.map((d) => (
-                  <option key={d} value={d}>{d} min</option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="block text-xs text-text-secondary mb-1">Phase</label>
+            <select
+              value={phase}
+              onChange={(e) => setPhase(e.target.value as ContentPhase)}
+              className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm
+                         focus:outline-none focus:ring-2 focus:ring-accent"
+            >
+              {PHASES.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -265,8 +244,8 @@ export function SlotUploadPanel() {
                          file:text-text-primary file:text-sm file:cursor-pointer
                          hover:file:bg-border transition-colors"
             />
-            {durationWarning && (
-              <p className="text-text-secondary text-xs mt-1">{durationWarning}</p>
+            {audioInfo && (
+              <p className="text-text-secondary text-xs mt-1">{audioInfo}</p>
             )}
           </div>
         </div>
@@ -301,7 +280,6 @@ export function SlotUploadPanel() {
         <PublishConfirmModal
           date={date}
           phase={phase}
-          duration={duration}
           title={title}
           onConfirm={confirmPublish}
           onCancel={() => setShowConfirm(false)}

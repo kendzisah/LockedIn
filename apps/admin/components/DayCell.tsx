@@ -1,10 +1,9 @@
 'use client';
 
-import type { ContentPhase, SessionDuration } from '@lockedin/shared-types';
+import type { ContentPhase } from '@lockedin/shared-types';
 
-interface SessionSlot {
+export interface SessionSlot {
   phase: ContentPhase;
-  duration: SessionDuration;
   status: 'published' | 'draft' | 'missing';
 }
 
@@ -13,10 +12,8 @@ interface DayCellProps {
   dayNumber: number;
   isToday: boolean;
   slots: SessionSlot[];
-  onSlotClick?: (date: string, phase: ContentPhase, duration: SessionDuration) => void;
+  onSlotClick?: (date: string, phase: ContentPhase) => void;
 }
-
-const DURATIONS: SessionDuration[] = [5, 10, 15, 20];
 
 function statusColor(status: string): string {
   switch (status) {
@@ -29,44 +26,47 @@ function statusColor(status: string): string {
   }
 }
 
-export function DayCell({ date, dayNumber, isToday, slots, onSlotClick }: DayCellProps) {
-  const lockInSlots = slots.filter((s) => s.phase === 'lock_in');
-  const unlockSlots = slots.filter((s) => s.phase === 'unlock');
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'published':
+      return 'Published';
+    case 'draft':
+      return 'Draft';
+    default:
+      return 'Missing';
+  }
+}
 
-  function renderChip(phase: ContentPhase, phaseSlots: SessionSlot[], label: string) {
+export function DayCell({ date, dayNumber, isToday, slots, onSlotClick }: DayCellProps) {
+  const lockIn = slots.find((s) => s.phase === 'lock_in');
+  const unlock = slots.find((s) => s.phase === 'unlock');
+
+  function renderSlot(phase: ContentPhase, slot: SessionSlot | undefined, label: string) {
+    const st = slot?.status ?? 'missing';
     return (
-      <div className="space-y-0.5">
-        <span className="text-[9px] text-text-secondary uppercase">{label}</span>
-        <div className="flex gap-0.5">
-          {DURATIONS.map((dur) => {
-            const slot = phaseSlots.find((s) => s.duration === dur);
-            const status = slot?.status ?? 'missing';
-            return (
-              <button
-                key={`${phase}-${dur}`}
-                title={`${label} ${dur}m — ${status}`}
-                onClick={() => onSlotClick?.(date, phase, dur)}
-                className={`w-2.5 h-2.5 rounded-sm ${statusColor(status)} hover:ring-1 hover:ring-accent transition-all cursor-pointer`}
-              />
-            );
-          })}
-        </div>
-      </div>
+      <button
+        title={`${label} — ${statusLabel(st)}`}
+        onClick={() => onSlotClick?.(date, phase)}
+        className="flex items-center gap-1.5 group cursor-pointer"
+      >
+        <span className={`w-2.5 h-2.5 rounded-sm ${statusColor(st)} group-hover:ring-1 group-hover:ring-accent transition-all`} />
+        <span className="text-[10px] text-text-secondary group-hover:text-text-primary transition-colors">{label}</span>
+      </button>
     );
   }
 
   return (
     <div
-      className={`border rounded-md p-2 min-h-[80px] ${
+      className={`border rounded-md p-2 min-h-[72px] ${
         isToday ? 'border-accent bg-accent/5' : 'border-border'
       }`}
     >
-      <div className={`text-xs font-medium mb-1 ${isToday ? 'text-accent' : 'text-text-secondary'}`}>
+      <div className={`text-xs font-medium mb-1.5 ${isToday ? 'text-accent' : 'text-text-secondary'}`}>
         {dayNumber}
       </div>
       <div className="space-y-1">
-        {renderChip('lock_in', lockInSlots, 'LI')}
-        {renderChip('unlock', unlockSlots, 'UL')}
+        {renderSlot('lock_in', lockIn, 'LI')}
+        {renderSlot('unlock', unlock, 'UL')}
       </div>
     </div>
   );

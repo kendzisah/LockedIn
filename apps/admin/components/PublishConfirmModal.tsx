@@ -1,11 +1,10 @@
 'use client';
 
-import type { ContentPhase, SessionDuration } from '@lockedin/shared-types';
+import type { ContentPhase } from '@lockedin/shared-types';
 
 interface PublishConfirmModalProps {
   date: string;
   phase: ContentPhase;
-  duration: SessionDuration;
   title: string;
   onConfirm: () => void;
   onCancel: () => void;
@@ -14,7 +13,6 @@ interface PublishConfirmModalProps {
 export function PublishConfirmModal({
   date,
   phase,
-  duration,
   title,
   onConfirm,
   onCancel,
@@ -31,11 +29,10 @@ export function PublishConfirmModal({
           <div className="bg-background rounded-md p-3 space-y-1">
             <p><span className="text-text-secondary">Date:</span> {date}</p>
             <p><span className="text-text-secondary">Phase:</span> {phaseLabel}</p>
-            <p><span className="text-text-secondary">Duration:</span> {duration} min</p>
             <p><span className="text-text-secondary">Title:</span> {title}</p>
           </div>
           <p className="text-text-secondary text-xs">
-            If a session already exists for this slot, it will be archived and replaced.
+            If a session already exists for this slot, it will be replaced.
           </p>
         </div>
 

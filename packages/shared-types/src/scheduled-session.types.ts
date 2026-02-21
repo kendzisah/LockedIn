@@ -1,5 +1,5 @@
 export type ContentPhase = 'lock_in' | 'unlock';
-export type SessionDuration = 5 | 10 | 15 | 20;
+export type SessionDuration = 5;
 export type ContentStatus = 'draft' | 'published' | 'archived';
 
 export interface ScheduledSession {

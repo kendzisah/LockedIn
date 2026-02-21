@@ -1,9 +1,8 @@
-import type { ContentPhase, SessionDuration } from './scheduled-session.types';
+import type { ContentPhase } from './scheduled-session.types';
 
-/** GET /session/today?phase=lock_in&duration=10 */
+/** GET /session/today?phase=lock_in */
 export interface TodaySessionRequest {
   phase: ContentPhase;
-  duration: SessionDuration;
 }
 
 export interface TodaySessionResponse {

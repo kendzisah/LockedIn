@@ -1,7 +1,7 @@
 /**
  * SessionScreen — Unified Lock In + Unlock/Reflect session.
  *
- * Accepts { phase, duration, resuming } params.
+ * Accepts { phase, resuming } params. Duration is always 5 min.
  * - phase === 'lock_in': discipline mode, streak counts, crash-resume
  * - phase === 'unlock':  reflection mode, no streak, no crash-resume
  *
@@ -39,7 +39,9 @@ import { AudioService } from '../../services/AudioService';
 import { SessionRepository, type TodaySession } from '../../services/SessionRepository';
 import { ClockService } from '../../services/ClockService';
 import { TelemetryService } from '../../services/TelemetryService';
-import type { ContentPhase, SessionDuration } from '@lockedin/shared-types';
+import type { ContentPhase } from '@lockedin/shared-types';
+
+const SESSION_DURATION = 5; // minutes — all sessions are ~5 min
 
 type Props = NativeStackScreenProps<MainStackParamList, 'Session'>;
 
@@ -53,9 +55,9 @@ const HOLD_DURATION = 2000;
 
 // ── Phase-dependent copy ──
 
-function getMicroText(phase: ContentPhase, duration: number): string {
-  if (phase === 'unlock') return `${duration} minutes. Reflect.`;
-  return `${duration} minutes. Commit to the full timer.`;
+function getMicroText(phase: ContentPhase): string {
+  if (phase === 'unlock') return 'Reflect. Process. Release.';
+  return 'Commit to the full timer.';
 }
 
 function getCompletionText(phase: ContentPhase): string {
@@ -82,7 +84,7 @@ type AudioLoadState =
   | 'timer_only';
 
 const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { phase, duration, resuming } = route.params;
+  const { phase, resuming } = route.params;
   const { state, dispatch } = useSession();
 
   // ── Timer state ──
@@ -90,13 +92,13 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     if (phase === 'lock_in' && state.activeSession) {
       return getRemaining(state.activeSession.expectedEndTimestamp);
     }
-    return duration * 60;
+    return SESSION_DURATION * 60;
   });
   const [isComplete, setIsComplete] = useState(false);
 
   // ── For unlock: create a local session timestamp (no crash-resume needed) ──
   const unlockEndTimestamp = useRef(
-    phase === 'unlock' ? Date.now() + duration * 60 * 1000 : 0,
+    phase === 'unlock' ? Date.now() + SESSION_DURATION * 60 * 1000 : 0,
   ).current;
 
   // ── Audio state ──
@@ -118,7 +120,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
   // ── Tick interval ──
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const totalSeconds = duration * 60;
+  const totalSeconds = SESSION_DURATION * 60;
 
   // ── Fetch + load audio on mount ──
   useEffect(() => {
@@ -128,11 +130,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       setAudioState('loading');
 
       const todayKey = ClockService.getLocalDateKey();
-      const session = await SessionRepository.getSessionFor(
-        todayKey,
-        phase,
-        duration as SessionDuration,
-      );
+      const session = await SessionRepository.getSessionFor(todayKey, phase);
 
       if (cancelled) return;
 
@@ -141,7 +139,6 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
         setAudioState('timer_only');
         TelemetryService.logEvent('audio_load_failed', {
           phase,
-          duration,
           error: 'no_content',
         });
         return;
@@ -152,7 +149,6 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       if (session.isFallback) {
         TelemetryService.logEvent('fallback_used', {
           phase,
-          duration,
           fallbackDate: session.scheduledDate,
         });
       }
@@ -168,7 +164,6 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
         setAudioState('failed');
         TelemetryService.logEvent('audio_load_failed', {
           phase,
-          duration,
           error: 'load_timeout',
         });
       }
@@ -191,7 +186,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
     if (loaded) {
       setAudioState('loaded');
-      await AudioService.play();
+      AudioService.play();
     } else {
       setAudioState('timer_only');
     }
@@ -208,7 +203,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
   useEffect(() => {
     if (phase === 'unlock' && !resuming) {
       // Dispatch START_SESSION so the timer tick works
-      const session = createSession(duration);
+      const session = createSession(SESSION_DURATION);
       dispatch({
         type: 'SET_ANIMATING',
       });
@@ -219,7 +214,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
           payload: {
             startTimestamp: session.startTimestamp,
             expectedEndTimestamp: session.expectedEndTimestamp,
-            durationMinutes: duration,
+            durationMinutes: SESSION_DURATION,
           },
         });
       }, 0);
@@ -299,18 +294,17 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     if (phase === 'lock_in') {
       dispatch({
         type: 'COMPLETE_SESSION',
-        payload: { durationMinutes: duration },
+        payload: { durationMinutes: SESSION_DURATION },
       });
     } else {
       dispatch({
         type: 'COMPLETE_UNLOCK',
-        payload: { durationMinutes: duration },
+        payload: { durationMinutes: SESSION_DURATION },
       });
     }
 
     TelemetryService.logEvent('session_completed', {
       phase,
-      duration,
       hasAudio: audioState === 'loaded',
     });
 
@@ -329,7 +323,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
         navigation.replace('Home');
       });
     }, 1500);
-  }, [isComplete, dispatch, phase, duration, completeTextOpacity, timerOpacity, navigation, audioState]);
+  }, [isComplete, dispatch, phase, completeTextOpacity, timerOpacity, navigation, audioState]);
 
   // ── Hold-to-unlock handlers ──
   const handleHoldStart = useCallback(() => {
@@ -388,18 +382,17 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     if (phase === 'lock_in') {
       dispatch({
         type: 'COMPLETE_SESSION',
-        payload: { durationMinutes: duration },
+        payload: { durationMinutes: SESSION_DURATION },
       });
     } else {
       dispatch({
         type: 'COMPLETE_UNLOCK',
-        payload: { durationMinutes: duration },
+        payload: { durationMinutes: SESSION_DURATION },
       });
     }
 
     TelemetryService.logEvent('session_exited_early', {
       phase,
-      duration,
       elapsedSeconds: totalSeconds - remaining,
     });
 
@@ -410,7 +403,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     }).start(() => {
       navigation.replace('Home');
     });
-  }, [dispatch, phase, duration, timerOpacity, navigation, totalSeconds, remaining]);
+  }, [dispatch, phase, timerOpacity, navigation, totalSeconds, remaining]);
 
   // ── BackHandler: block Android back ──
   useEffect(() => {
@@ -480,7 +473,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       {/* Micro text */}
       <Animated.View style={[styles.centerContent, { opacity: microTextOpacity }]}>
         <Text style={styles.microText}>
-          {getMicroText(phase, duration)}
+          {getMicroText(phase)}
         </Text>
       </Animated.View>
 

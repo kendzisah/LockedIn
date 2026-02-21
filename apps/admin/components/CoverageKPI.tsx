@@ -2,24 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { getBrowserSupabase } from '../lib/supabase-browser';
-import type { ContentPhase, SessionDuration } from '@lockedin/shared-types';
+import type { ContentPhase } from '@lockedin/shared-types';
 
 interface SlotStatus {
   date: string;
   phase: ContentPhase;
-  duration: SessionDuration;
   status: 'published' | 'draft' | 'missing';
 }
 
 interface SessionRow {
   scheduled_date: string;
   phase: string;
-  duration_minutes: number;
   status: string;
 }
 
 const PHASES: ContentPhase[] = ['lock_in', 'unlock'];
-const DURATIONS: SessionDuration[] = [5, 10, 15, 20];
 
 function getNext14Days(): string[] {
   const days: string[] = [];
@@ -45,31 +42,26 @@ export function CoverageKPI() {
 
       const { data } = await supabase
         .from('scheduled_sessions')
-        .select('scheduled_date, phase, duration_minutes, status')
+        .select('scheduled_date, phase, status')
         .gte('scheduled_date', startDate)
         .lte('scheduled_date', endDate);
 
       const sessions = (data ?? []) as unknown as SessionRow[];
 
+      // 2 slots per day (lock_in + unlock)
       const allSlots: SlotStatus[] = [];
       for (const date of days) {
         for (const phase of PHASES) {
-          for (const duration of DURATIONS) {
-            const match = sessions.find(
-              (s) =>
-                s.scheduled_date === date &&
-                s.phase === phase &&
-                s.duration_minutes === duration,
-            );
-            allSlots.push({
-              date,
-              phase,
-              duration,
-              status: match
-                ? (match.status as 'published' | 'draft')
-                : 'missing',
-            });
-          }
+          const match = sessions.find(
+            (s) => s.scheduled_date === date && s.phase === phase,
+          );
+          allSlots.push({
+            date,
+            phase,
+            status: match
+              ? (match.status as 'published' | 'draft')
+              : 'missing',
+          });
         }
       }
       setSlots(allSlots);
@@ -106,8 +98,8 @@ export function CoverageKPI() {
         <div className="text-sm text-status-red">
           Missing:{' '}
           {missing.slice(0, 5).map((m) => (
-            <span key={`${m.date}-${m.phase}-${m.duration}`} className="inline-block mr-2">
-              {m.phase === 'lock_in' ? 'Lock In' : 'Unlock'} {m.duration}m {m.date.slice(5)}
+            <span key={`${m.date}-${m.phase}`} className="inline-block mr-2">
+              {m.phase === 'lock_in' ? 'Lock In' : 'Unlock'} {m.date.slice(5)}
             </span>
           ))}
           {missing.length > 5 && (

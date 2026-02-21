@@ -41,8 +41,6 @@ export interface SessionState {
   lastLockInCompletedDate: DayKey | null;   // e.g. "2026-02-20"
   lastUnlockCompletedDate: DayKey | null;   // e.g. "2026-02-20"
 
-  // ── Duration from onboarding ──
-  sessionDurationMinutes: number;
 }
 
 /** Subset of state that gets persisted to AsyncStorage */
@@ -54,7 +52,6 @@ export interface PersistedSessionState {
   longestStreak: number;
   totalMinutes: number;
   activeSession: SessionState['activeSession'];
-  sessionDurationMinutes: number;
   lastLockInCompletedDate: DayKey | null;
   lastUnlockCompletedDate: DayKey | null;
 }
@@ -66,5 +63,4 @@ export type SessionAction =
   | { type: 'START_SESSION'; payload: { startTimestamp: number; expectedEndTimestamp: number; durationMinutes: number } }
   | { type: 'COMPLETE_SESSION'; payload: { durationMinutes: number } }
   | { type: 'COMPLETE_UNLOCK'; payload: { durationMinutes: number } }
-  | { type: 'RESET_PHASE' }
-  | { type: 'SET_DURATION'; payload: number };
+  | { type: 'RESET_PHASE' };

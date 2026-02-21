@@ -6,6 +6,8 @@
  *
  * Date-keyed completion: uses lastLockInCompletedDate / lastUnlockCompletedDate
  * instead of boolean completedToday -- prevents midnight bugs.
+ *
+ * All sessions are 5 min. Duration is a constant, not stored in state.
  */
 
 import React, {
@@ -26,7 +28,6 @@ import { getTodayKey, computeNewStreak } from '../engine/SessionEngine';
 // ─── Constants ───────────────────────────────────────────────────
 
 const STORAGE_KEY = '@lockedin/session_state';
-const DEFAULT_DURATION = 5; // minutes — fallback
 
 // ─── Initial State ───────────────────────────────────────────────
 
@@ -41,7 +42,6 @@ const initialState: SessionState = {
   activeSession: null,
   lastLockInCompletedDate: null,
   lastUnlockCompletedDate: null,
-  sessionDurationMinutes: DEFAULT_DURATION,
 };
 
 // ─── Reducer ─────────────────────────────────────────────────────
@@ -59,7 +59,6 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         longestStreak: p.longestStreak,
         totalMinutes: p.totalMinutes,
         activeSession: p.activeSession,
-        sessionDurationMinutes: p.sessionDurationMinutes || DEFAULT_DURATION,
         lastLockInCompletedDate: p.lastLockInCompletedDate ?? null,
         lastUnlockCompletedDate: p.lastUnlockCompletedDate ?? null,
         phase: p.activeSession ? 'ACTIVE' : 'IDLE',
@@ -147,10 +146,6 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return { ...state, phase: 'IDLE' };
     }
 
-    case 'SET_DURATION': {
-      return { ...state, sessionDurationMinutes: action.payload };
-    }
-
     default:
       return state;
   }
@@ -211,7 +206,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       longestStreak: state.longestStreak,
       totalMinutes: state.totalMinutes,
       activeSession: state.activeSession,
-      sessionDurationMinutes: state.sessionDurationMinutes,
       lastLockInCompletedDate: state.lastLockInCompletedDate,
       lastUnlockCompletedDate: state.lastUnlockCompletedDate,
     };
@@ -228,7 +222,6 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     state.longestStreak,
     state.totalMinutes,
     state.activeSession,
-    state.sessionDurationMinutes,
     state.lastLockInCompletedDate,
     state.lastUnlockCompletedDate,
   ]);
