@@ -12,7 +12,7 @@
  *   lock_in              → progress ≈ 0.381 (open)  | "Tap to Lock In"
  *   lock_in_done_waiting → progress = 0 (closed)    | "Locked In Today" + hint
  *   unlock               → progress = 0 (closed)    | "Tap to Reflect"
- *   all_done             → progress = 0 (closed)    | "Complete Today"
+ *   all_done             → progress ≈ 0.381 (open)  | "Complete Today"
  *
  * On tap: animate lock closed → fire onAnimationComplete.
  */
@@ -53,7 +53,7 @@ function getLabelForMode(mode: CTAMode): string {
     case 'lock_in': return 'Tap to Lock In';
     case 'unlock': return 'Tap to Reflect';
     case 'lock_in_done_waiting': return 'Locked In Today';
-    case 'all_done': return 'Complete Today';
+    case 'all_done': return 'Complete';
   }
 }
 
@@ -72,11 +72,12 @@ const LockButton: React.FC<LockButtonProps> = ({ ctaMode, hint, onAnimationCompl
 
   // ── Sync visual state with CTA mode ──
   useEffect(() => {
-    if (ctaMode === 'lock_in') {
+    if (ctaMode === 'lock_in' || ctaMode === 'all_done') {
+      // Open lock: ready to lock in, or day complete (unlocked after reflect)
       lottieProgress.setValue(OPEN_PROGRESS);
       labelOpacity.setValue(1);
     } else {
-      // All non-lock_in modes show closed lock
+      // Closed lock: locked in today (waiting) or tap to reflect
       lottieProgress.setValue(CLOSED_PROGRESS);
       labelOpacity.setValue(1);
     }
@@ -117,7 +118,8 @@ const LockButton: React.FC<LockButtonProps> = ({ ctaMode, hint, onAnimationCompl
   const labelStyle = [
     styles.label,
     ctaMode === 'unlock' && styles.labelUnlock,
-    (ctaMode === 'lock_in_done_waiting' || ctaMode === 'all_done') && styles.labelMuted,
+    ctaMode === 'lock_in_done_waiting' && styles.labelMuted,
+    ctaMode === 'all_done' && styles.labelComplete,
     { opacity: labelOpacity },
   ];
 
@@ -130,7 +132,7 @@ const LockButton: React.FC<LockButtonProps> = ({ ctaMode, hint, onAnimationCompl
             progress={lottieProgress}
             style={[
               styles.lottie,
-              (ctaMode === 'lock_in_done_waiting' || ctaMode === 'all_done') && styles.lottieMuted,
+              ctaMode === 'lock_in_done_waiting' && styles.lottieMuted,
             ]}
           />
         </View>
@@ -182,6 +184,10 @@ const styles = StyleSheet.create({
   labelMuted: {
     color: Colors.textMuted,
     opacity: 0.6,
+  },
+  labelComplete: {
+    color: Colors.accent,
+    opacity: 0.9,
   },
   hint: {
     fontFamily: FontFamily.body,

@@ -1,18 +1,22 @@
 /**
  * SessionScreen — Unified Lock In + Unlock/Reflect session.
  *
- * Accepts { phase, resuming } params. Duration is always 5 min.
+ * Accepts { phase, resuming } params.
  * - phase === 'lock_in': discipline mode, streak counts, crash-resume
  * - phase === 'unlock':  reflection mode, no streak, no crash-resume
+ *
+ * Timer duration:
+ *   - When audio loads: timer = audio duration
+ *   - When audio is unavailable: timer = 2:30 fallback
  *
  * Audio integration:
  *   1. Fetches session from SessionRepository (primary + fallback)
  *   2. Loads audio via AudioService (8s timeout)
- *   3. Falls back to timer-only on failure (with single retry)
+ *   3. Falls back to 2:30 timer-only on failure (with single retry)
  *   4. Pauses on background, resumes on foreground
  *   5. Unloads on unmount
  *
- * Timer integrity: remaining is always computed from expectedEndTimestamp - Date.now().
+ * Timer integrity: remaining is computed from endTimestampRef - Date.now().
  * The setInterval(250ms) is purely a render trigger — never accumulates time.
  */
 
@@ -41,7 +45,8 @@ import { ClockService } from '../../services/ClockService';
 import { TelemetryService } from '../../services/TelemetryService';
 import type { ContentPhase } from '@lockedin/shared-types';
 
-const SESSION_DURATION = 5; // minutes — all sessions are ~5 min
+const SESSION_DURATION = 5; // minutes — session duration in DB
+const FALLBACK_SECONDS = 150; // 2:30 when audio is unavailable
 
 type Props = NativeStackScreenProps<MainStackParamList, 'Session'>;
 
@@ -88,18 +93,33 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
   const { state, dispatch } = useSession();
 
   // ── Timer state ──
+  // totalSeconds adjusts when audio loads or fails:
+  //   - Audio loaded → audio duration
+  //   - Audio unavailable → FALLBACK_SECONDS (2:30)
+  const [totalSeconds, setTotalSeconds] = useState(() => {
+    // Crash-resume: use the stored session's remaining time
+    if (phase === 'lock_in' && state.activeSession) {
+      return Math.ceil(
+        (state.activeSession.expectedEndTimestamp - state.activeSession.startTimestamp) / 1000,
+      );
+    }
+    return FALLBACK_SECONDS;
+  });
+
   const [remaining, setRemaining] = useState(() => {
     if (phase === 'lock_in' && state.activeSession) {
       return getRemaining(state.activeSession.expectedEndTimestamp);
     }
-    return SESSION_DURATION * 60;
+    return FALLBACK_SECONDS;
   });
   const [isComplete, setIsComplete] = useState(false);
 
-  // ── For unlock: create a local session timestamp (no crash-resume needed) ──
-  const unlockEndTimestamp = useRef(
-    phase === 'unlock' ? Date.now() + SESSION_DURATION * 60 * 1000 : 0,
-  ).current;
+  // ── Mutable end timestamp: adjusted when audio state resolves ──
+  const endTimestampRef = useRef(
+    phase === 'lock_in' && state.activeSession
+      ? state.activeSession.expectedEndTimestamp
+      : Date.now() + FALLBACK_SECONDS * 1000,
+  );
 
   // ── Audio state ──
   const [audioState, setAudioState] = useState<AudioLoadState>('idle');
@@ -120,7 +140,16 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
   // ── Tick interval ──
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const totalSeconds = SESSION_DURATION * 60;
+  /**
+   * Adjust the timer when we know the final duration.
+   * Called after audio loads (use audio duration) or fails (keep fallback).
+   */
+  const adjustTimer = useCallback((durationSeconds: number) => {
+    setTotalSeconds(durationSeconds);
+    const newEnd = Date.now() + durationSeconds * 1000;
+    endTimestampRef.current = newEnd;
+    setRemaining(durationSeconds);
+  }, []);
 
   // ── Fetch + load audio on mount ──
   useEffect(() => {
@@ -135,7 +164,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       if (cancelled) return;
 
       if (!session) {
-        // No content at all — timer-only mode (no retry, nothing to retry against)
+        // No content — timer-only mode at fallback duration
         setAudioState('timer_only');
         TelemetryService.logEvent('audio_load_failed', {
           phase,
@@ -159,6 +188,10 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
       if (loaded) {
         setAudioState('loaded');
+        // Adjust timer to match audio duration (only if not crash-resuming)
+        if (!resuming) {
+          adjustTimer(session.durationSeconds);
+        }
         AudioService.play();
       } else {
         setAudioState('failed');
@@ -186,11 +219,12 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
     if (loaded) {
       setAudioState('loaded');
+      adjustTimer(sessionData.durationSeconds);
       AudioService.play();
     } else {
       setAudioState('timer_only');
     }
-  }, [sessionData]);
+  }, [sessionData, adjustTimer]);
 
   // ── Cleanup audio on unmount ──
   useEffect(() => {
@@ -202,12 +236,8 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
   // ── For unlock phase: create active session timestamps ──
   useEffect(() => {
     if (phase === 'unlock' && !resuming) {
-      // Dispatch START_SESSION so the timer tick works
       const session = createSession(SESSION_DURATION);
-      dispatch({
-        type: 'SET_ANIMATING',
-      });
-      // Need to go through ANIMATING first
+      dispatch({ type: 'SET_ANIMATING' });
       setTimeout(() => {
         dispatch({
           type: 'START_SESSION',
@@ -257,15 +287,8 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
   useEffect(() => {
     if (isComplete) return;
 
-    const endTimestamp =
-      phase === 'lock_in'
-        ? state.activeSession?.expectedEndTimestamp
-        : unlockEndTimestamp;
-
-    if (!endTimestamp) return;
-
     tickRef.current = setInterval(() => {
-      const r = getRemaining(endTimestamp);
+      const r = getRemaining(endTimestampRef.current);
       setRemaining(r);
 
       if (r <= 0) {
@@ -278,7 +301,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
     };
-  }, [state.activeSession, isComplete, phase, unlockEndTimestamp]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isComplete]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Timer completion ──
   const handleTimerComplete = useCallback(() => {
@@ -291,15 +314,16 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     AudioService.stop();
 
     // Dispatch appropriate completion action
+    const durationMinutes = Math.ceil(totalSeconds / 60);
     if (phase === 'lock_in') {
       dispatch({
         type: 'COMPLETE_SESSION',
-        payload: { durationMinutes: SESSION_DURATION },
+        payload: { durationMinutes },
       });
     } else {
       dispatch({
         type: 'COMPLETE_UNLOCK',
-        payload: { durationMinutes: SESSION_DURATION },
+        payload: { durationMinutes },
       });
     }
 
@@ -323,7 +347,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
         navigation.replace('Home');
       });
     }, 1500);
-  }, [isComplete, dispatch, phase, completeTextOpacity, timerOpacity, navigation, audioState]);
+  }, [isComplete, dispatch, phase, completeTextOpacity, timerOpacity, navigation, audioState, totalSeconds]);
 
   // ── Hold-to-unlock handlers ──
   const handleHoldStart = useCallback(() => {
@@ -379,15 +403,16 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     AudioService.stop();
 
     // Dispatch appropriate completion
+    const durationMinutes = Math.ceil(totalSeconds / 60);
     if (phase === 'lock_in') {
       dispatch({
         type: 'COMPLETE_SESSION',
-        payload: { durationMinutes: SESSION_DURATION },
+        payload: { durationMinutes },
       });
     } else {
       dispatch({
         type: 'COMPLETE_UNLOCK',
-        payload: { durationMinutes: SESSION_DURATION },
+        payload: { durationMinutes },
       });
     }
 
@@ -424,24 +449,17 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
             AudioService.play();
           }
 
-          // Recalculate timer from timestamps
-          const endTimestamp =
-            phase === 'lock_in'
-              ? state.activeSession?.expectedEndTimestamp
-              : unlockEndTimestamp;
-
-          if (endTimestamp) {
-            const r = getRemaining(endTimestamp);
-            setRemaining(r);
-            if (r <= 0) {
-              handleTimerComplete();
-            }
+          // Recalculate timer from end timestamp
+          const r = getRemaining(endTimestampRef.current);
+          setRemaining(r);
+          if (r <= 0) {
+            handleTimerComplete();
           }
         }
       },
     );
     return () => subscription.remove();
-  }, [state.activeSession, handleTimerComplete, audioState, phase, unlockEndTimestamp]);
+  }, [handleTimerComplete, audioState]);
 
   // Cleanup hold interval on unmount
   useEffect(() => {

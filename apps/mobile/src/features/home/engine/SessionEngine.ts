@@ -137,10 +137,11 @@ export function computeMissedDays(currentDay: number, completedDayKeys: DayKey[]
   return Math.max(0, currentDay - 1 - completedDayKeys.length);
 }
 
-/** Compute commitment percentage */
+/** Compute commitment percentage (capped at 100%) */
 export function computeCommitmentPercent(currentDay: number, completedDayKeys: DayKey[]): number {
   if (currentDay <= 0) return 0;
-  return Math.round((completedDayKeys.length / currentDay) * 100);
+  const uniqueDays = new Set(completedDayKeys).size;
+  return Math.min(100, Math.round((uniqueDays / currentDay) * 100));
 }
 
 // ─── Identity Card Messages ──────────────────────────────────────

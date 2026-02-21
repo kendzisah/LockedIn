@@ -31,7 +31,7 @@ import { Typography, FontFamily } from '../../../design/typography';
 import { AudioService } from '../../../services/AudioService';
 import { SessionRepository, type OnboardingTrack } from '../../../services/SessionRepository';
 
-const FALLBACK_SECONDS = 120; // 2 minutes if no onboarding track
+const FALLBACK_SECONDS = 150; // 2:30 if no onboarding track
 
 function getPhaseText(elapsed: number, total: number): string {
   const pct = total > 0 ? elapsed / total : 0;
