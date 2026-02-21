@@ -4,6 +4,7 @@
 
 import React, { useEffect, useRef, useMemo } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
+import LottieView from 'lottie-react-native';
 import { useSession } from '../state/SessionProvider';
 import {
   computeCurrentDay,
@@ -12,8 +13,13 @@ import {
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
+const FIRE_LOTTIE = require('../../../../assets/lottie/fire.json');
+
 const ProgressBlock: React.FC = () => {
   const { state } = useSession();
+  const lottieRef = useRef<LottieView>(null);
+
+  const hasStreak = state.consecutiveStreak > 0;
 
   const currentDay = useMemo(
     () => computeCurrentDay(state.startDayKey),
@@ -43,6 +49,15 @@ const ProgressBlock: React.FC = () => {
     outputRange: ['0%', '100%'],
   });
 
+  // Control Lottie playback based on streak
+  useEffect(() => {
+    if (hasStreak) {
+      lottieRef.current?.play();
+    } else {
+      lottieRef.current?.reset();
+    }
+  }, [hasStreak]);
+
   return (
     <View style={styles.container}>
       {/* Top row: Day X of 90 + Streak badge */}
@@ -50,13 +65,33 @@ const ProgressBlock: React.FC = () => {
         <Text style={styles.dayLabel}>
           Day {state.startDayKey ? currentDay : '—'} of 90
         </Text>
-        {state.consecutiveStreak > 0 && (
-          <View style={styles.streakBadge}>
+        <View style={styles.streakBadge}>
+          <LottieView
+            ref={lottieRef}
+            source={FIRE_LOTTIE}
+            style={styles.fireLottie}
+            autoPlay={hasStreak}
+            loop={hasStreak}
+            speed={0.8}
+            colorFilters={[
+              { keypath: 'Ebene 1/VG_Flame_Def Konturen', color: '#00C2FF' },
+              { keypath: 'Ebene 2/VG_Flame_Def Konturen', color: '#5AD8FF' },
+              { keypath: 'Ebene 3/VG_Flame_Def Konturen', color: '#00C2FF' },
+              { keypath: 'Ebene 4/VG_Flame_Def Konturen', color: '#5AD8FF' },
+              { keypath: 'Ebene 5/VG_Flame_Def Konturen', color: '#00C2FF' },
+              { keypath: 'Ebene 6/VG_Flame_Def Konturen', color: '#5AD8FF' },
+              { keypath: 'Ebene 7/VG_Flame_Def Konturen', color: '#00C2FF' },
+              { keypath: 'Ebene 8/VG_Flame_Def Konturen', color: '#5AD8FF' },
+              { keypath: 'Ebene 9/VG_Flame_Def Konturen', color: '#00C2FF' },
+              { keypath: 'Ebene 10/VG_Flame_Def Konturen', color: '#5AD8FF' },
+            ]}
+          />
+          {state.consecutiveStreak > 0 && (
             <Text style={styles.streakText}>
-              🔥 {state.consecutiveStreak}
+              {state.consecutiveStreak}
             </Text>
-          </View>
-        )}
+          )}
+        </View>
       </View>
 
       {/* Progress bar */}
@@ -94,6 +129,11 @@ const styles = StyleSheet.create({
   streakBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 2,
+  },
+  fireLottie: {
+    width: 26,
+    height: 26,
   },
   streakText: {
     fontFamily: FontFamily.bodyMedium,
