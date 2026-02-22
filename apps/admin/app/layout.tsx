@@ -21,7 +21,7 @@ export default function RootLayout({
           <h1 className="text-lg font-semibold tracking-tight">LockedIn Admin</h1>
           <div className="flex gap-4 text-sm text-text-secondary">
             <a href="/" className="hover:text-text-primary transition-colors">Dashboard</a>
-            <a href="/schedule" className="hover:text-text-primary transition-colors">Schedule</a>
+            <a href="/program" className="hover:text-text-primary transition-colors">Program</a>
           </div>
         </nav>
         <main className="max-w-7xl mx-auto px-6 py-8">
