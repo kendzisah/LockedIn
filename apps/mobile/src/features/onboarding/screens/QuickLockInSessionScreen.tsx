@@ -61,7 +61,6 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
   const [showResumeModal, setShowResumeModal] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [audioLoaded, setAudioLoaded] = useState(false);
-  const [audioStatus, setAudioStatus] = useState<string | null>(null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -74,38 +73,32 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
     let cancelled = false;
 
     async function loadOnboardingTrack() {
-      setAudioStatus('Loading audio...');
-
+      // Get track metadata (cached from IntroScreen prefetch)
       const track: OnboardingTrack | null = await SessionRepository.getOnboardingTrack();
 
       if (cancelled) return;
 
       if (!track) {
-        // No onboarding track configured — timer-only mode
-        setAudioStatus(null);
         setTotalSeconds(FALLBACK_SECONDS);
         setRemaining(FALLBACK_SECONDS);
         return;
       }
 
-      // Set timer to match audio duration
+      // Set timer to match audio duration immediately
       const trackDuration = track.durationSeconds;
       if (trackDuration > 0) {
         setTotalSeconds(trackDuration);
         setRemaining(trackDuration);
       }
 
+      // load() is a no-op if already pre-loaded from IntroScreen
       const loaded = await AudioService.load(track.signedAudioUrl);
 
       if (cancelled) return;
 
       if (loaded) {
         setAudioLoaded(true);
-        setAudioStatus(null);
         AudioService.play();
-      } else {
-        setAudioStatus(null);
-        // Audio failed — keep timer-only
       }
     }
 
@@ -239,9 +232,6 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
       <View style={styles.content}>
         <Text style={styles.timer}>{formatTime(remaining)}</Text>
         <Text style={styles.phase}>{getPhaseText(elapsed, totalSeconds)}</Text>
-        {audioStatus && (
-          <Text style={styles.audioStatus}>{audioStatus}</Text>
-        )}
       </View>
 
       <Modal
@@ -294,14 +284,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 28,
-  },
-  audioStatus: {
-    fontFamily: FontFamily.body,
-    fontSize: 13,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    marginTop: 16,
-    opacity: 0.6,
   },
   modalOverlay: {
     flex: 1,

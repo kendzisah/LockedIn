@@ -10,6 +10,7 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { LockModeService } from '../../../services/LockModeService';
+import { SessionRepository } from '../../../services/SessionRepository';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import { Colors } from '../../../design/colors';
@@ -36,6 +37,11 @@ const QuickLockInIntroScreen: React.FC<Props> = ({ navigation }) => {
 
   // ── Button glow pulse ──
   const glowOpacity = useRef(new Animated.Value(0)).current;
+
+  // ── Prefetch onboarding audio while user reads this screen ──
+  useEffect(() => {
+    SessionRepository.prefetchOnboardingTrack();
+  }, []);
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];

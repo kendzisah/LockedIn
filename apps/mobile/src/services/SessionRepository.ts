@@ -55,6 +55,9 @@ interface CacheEntry {
 const CACHE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
 let cache: CacheEntry | null = null;
 
+// ── Onboarding track cache ──
+let onboardingCache: { track: OnboardingTrack | null; timestamp: number } | null = null;
+
 function cacheKey(date: string, phase: ContentPhase): string {
   return `${date}|${phase}`;
 }
@@ -166,6 +169,11 @@ async function getSessionFor(
  * Returns null if no onboarding track is configured.
  */
 async function getOnboardingTrack(): Promise<OnboardingTrack | null> {
+  // Return cached result if fresh (< 10 min)
+  if (onboardingCache && Date.now() - onboardingCache.timestamp < CACHE_MAX_AGE_MS) {
+    return onboardingCache.track;
+  }
+
   const client = SupabaseService.getClient();
   if (!client) return null;
 
@@ -189,19 +197,26 @@ async function getOnboardingTrack(): Promise<OnboardingTrack | null> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = data as any;
 
-    const signedAudioUrl = await getSignedAudioUrl(
-      client,
-      row.storage_bucket,
-      row.storage_path,
-      1800, // 30 min TTL
-    );
+    let signedAudioUrl: string;
+    try {
+      signedAudioUrl = await getSignedAudioUrl(
+        client,
+        row.storage_bucket,
+        row.storage_path,
+        1800, // 30 min TTL
+      );
+    } catch (urlError) {
+      return null;
+    }
 
-    return {
+    const result: OnboardingTrack = {
       title: row.title,
       durationSeconds: row.duration_seconds,
       signedAudioUrl,
       audioTrackId: row.id,
     };
+    onboardingCache = { track: result, timestamp: Date.now() };
+    return result;
   } catch (error) {
     console.warn('[SessionRepository] Onboarding track error:', error);
     return null;
@@ -268,13 +283,29 @@ async function prefetchToday(phase: ContentPhase): Promise<void> {
 /**
  * Clear the prefetch cache (e.g., on day change).
  */
+/**
+ * Prefetch onboarding track metadata + pre-load audio into AudioService.
+ * Call on QuickLockInIntroScreen mount so audio is ready when session starts.
+ * Silent on failure.
+ */
+async function prefetchOnboardingTrack(): Promise<void> {
+  const track = await getOnboardingTrack();
+  if (track) {
+    // Pre-load into AudioService (will be a no-op on SessionScreen if already loaded)
+    const { AudioService } = require('./AudioService');
+    await AudioService.load(track.signedAudioUrl);
+  }
+}
+
 function clearCache(): void {
   cache = null;
+  onboardingCache = null;
 }
 
 export const SessionRepository = {
   getSessionFor,
   getOnboardingTrack,
+  prefetchOnboardingTrack,
   prefetchToday,
   clearCache,
 };

@@ -22,6 +22,7 @@ const LOAD_TIMEOUT_MS = 8_000;
 
 let player: AudioPlayer | null = null;
 let configured = false;
+let loadedUrl: string | null = null;
 
 /**
  * Configure global audio mode. Call once at app boot (App.tsx).
@@ -47,6 +48,11 @@ async function configure(): Promise<void> {
  * Returns true if loaded successfully, false on failure/timeout.
  */
 async function load(url: string): Promise<boolean> {
+  // Skip if this exact URL is already loaded
+  if (loadedUrl === url && player?.isLoaded) {
+    return true;
+  }
+
   // Clean up any previous player
   unload();
 
@@ -68,6 +74,7 @@ async function load(url: string): Promise<boolean> {
       // Check if already loaded (e.g., cached locally)
       if (player!.isLoaded) {
         settled = true;
+        loadedUrl = url;
         clearTimeout(timeout);
         resolve(true);
         return;
@@ -79,6 +86,7 @@ async function load(url: string): Promise<boolean> {
         (status) => {
           if (!settled && status.isLoaded) {
             settled = true;
+            loadedUrl = url;
             clearTimeout(timeout);
             subscription.remove();
             resolve(true);
@@ -137,6 +145,7 @@ function unload(): void {
       // Ignore errors during removal — player may already be disposed
     }
     player = null;
+    loadedUrl = null;
   }
 }
 
