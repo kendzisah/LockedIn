@@ -1,20 +1,24 @@
 /**
- * DayOfWeekRow — S M T W T F S with streak/completion indicators.
+ * DayOfWeekRow — S M T W T F S with today indicator.
  *
  * Current day: underline glow (accent color).
- * Completed (this week): filled dot below letter.
- * Missed (this week): hollow dot.
+ * Last completed day (this week): filled dot.
+ *
+ * Simplified: since we no longer track per-calendar-day completions,
+ * we show today's completion status via lastLockInCompletedDate and
+ * mark today with the accent indicator.
  */
 
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSession } from '../state/SessionProvider';
+import { getTodayKey } from '../engine/SessionEngine';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-/** Get the start of the current week (Sunday) as day keys */
+/** Get the day keys for the current week (Sunday to Saturday) */
 function getCurrentWeekDayKeys(): string[] {
   const now = new Date();
   const dayOfWeek = now.getDay(); // 0 = Sunday
@@ -37,19 +41,38 @@ const DayOfWeekRow: React.FC = () => {
   const today = new Date().getDay(); // 0 = Sunday
 
   const weekDayKeys = useMemo(() => getCurrentWeekDayKeys(), []);
-  const completedSet = useMemo(
-    () => new Set(state.completedDayKeys),
-    [state.completedDayKeys],
-  );
+  const todayKey = useMemo(() => getTodayKey(), []);
+
+  // Determine which days this week had a completed session
+  // We only know about today and the last session day
+  const completedThisWeek = useMemo(() => {
+    const completed = new Set<string>();
+
+    // Today completed?
+    if (state.lastLockInCompletedDate) {
+      const weekSet = new Set(weekDayKeys);
+      if (weekSet.has(state.lastLockInCompletedDate)) {
+        completed.add(state.lastLockInCompletedDate);
+      }
+    }
+
+    // Last session day key (if this week)
+    if (state.lastSessionDayKey) {
+      const weekSet = new Set(weekDayKeys);
+      if (weekSet.has(state.lastSessionDayKey)) {
+        completed.add(state.lastSessionDayKey);
+      }
+    }
+
+    return completed;
+  }, [state.lastLockInCompletedDate, state.lastSessionDayKey, weekDayKeys]);
 
   return (
     <View style={styles.container}>
       {DAY_LABELS.map((label, index) => {
         const isToday = index === today;
-        const isPast = index < today;
         const dayKey = weekDayKeys[index];
-        const isCompleted = completedSet.has(dayKey);
-        const isMissed = isPast && !isCompleted && state.startDayKey !== null;
+        const isCompleted = completedThisWeek.has(dayKey);
 
         return (
           <View key={index} style={styles.dayColumn}>
@@ -63,12 +86,10 @@ const DayOfWeekRow: React.FC = () => {
             </Text>
             {/* Underline glow for today */}
             {isToday && <View style={styles.todayUnderline} />}
-            {/* Dot indicators */}
+            {/* Completed dot */}
             {!isToday && isCompleted && <View style={styles.completedDot} />}
-            {!isToday && isMissed && <View style={styles.missedDot} />}
-            {!isToday && !isCompleted && !isMissed && (
-              <View style={styles.emptyDot} />
-            )}
+            {/* Empty placeholder for alignment */}
+            {!isToday && !isCompleted && <View style={styles.emptyDot} />}
           </View>
         );
       })}
@@ -110,14 +131,6 @@ const styles = StyleSheet.create({
     height: 5,
     borderRadius: 2.5,
     backgroundColor: Colors.accent,
-  },
-  missedDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    borderWidth: 1,
-    borderColor: Colors.textMuted,
-    backgroundColor: 'transparent',
   },
   emptyDot: {
     width: 5,

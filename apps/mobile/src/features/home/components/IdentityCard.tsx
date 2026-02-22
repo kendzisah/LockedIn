@@ -4,6 +4,8 @@
  * Single card with subtle accent glow border.
  * Deterministic copy states based on streak.
  * First-week cap on variant diversity.
+ *
+ * Uses completion-based computeCurrentDay(maxCompletedDay).
  */
 
 import React, { useMemo } from 'react';
@@ -20,24 +22,24 @@ const IdentityCard: React.FC = () => {
   const { state } = useSession();
 
   const currentDay = useMemo(
-    () => computeCurrentDay(state.startDayKey),
-    [state.startDayKey],
+    () => computeCurrentDay(state.maxCompletedDay),
+    [state.maxCompletedDay],
   );
 
   const message = useMemo(
     () =>
       getIdentityMessage(
         state.consecutiveStreak,
-        state.longestStreak,
+        state.lifetimeLongestStreak,
         state.lastSessionDayKey,
-        state.completedDayKeys,
+        state.maxCompletedDay,
         currentDay,
       ),
     [
       state.consecutiveStreak,
-      state.longestStreak,
+      state.lifetimeLongestStreak,
       state.lastSessionDayKey,
-      state.completedDayKeys,
+      state.maxCompletedDay,
       currentDay,
     ],
   );

@@ -1,16 +1,21 @@
 /**
- * SessionRepository — Fetches scheduled sessions with fallback logic
- * and generates signed URLs for audio playback.
+ * SessionRepository — Fetches audio tracks for the 90-day program.
  *
  * All sessions are ~5 min. No duration parameter needed.
  *
- * Query strategy:
- *  1. Primary: exact match on date + phase (today's content)
- *  2. Fallback: nearest previous published session for same phase
- *  3. Returns null if nothing found (empty DB / offline)
+ * Day-based query:
+ *   getTrackForDay(dayNumber, phase) — primary path for program playback
+ *   Queries audio_tracks WHERE day_number = X AND category = phase AND is_active = true
+ *   Unique partial index guarantees 0 or 1 row.
+ *
+ * Legacy query:
+ *   getSessionFor(date, phase) — still available for future admin-scheduled content
+ *
+ * Caching:
+ *   Keyed by audioTrackId. On cache hit, check if signed URL is still valid
+ *   (> 5 min remaining based on cached timestamp + 30-min TTL). If expired, re-sign only.
  *
  * Prefetch: called on Home mount, caches result for instant Session screen load.
- * Cache invalidated after 10 min or on new day (via ClockService.getLocalDateKey).
  */
 
 import type { ContentPhase } from '@lockedin/shared-types';
@@ -21,6 +26,8 @@ import { ClockService } from './ClockService';
 // ── Constants ──
 
 const SESSION_DURATION_MINUTES = 5;
+const SIGNED_URL_TTL_SECONDS = 1800; // 30 min
+const SIGNED_URL_REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // re-sign if < 5 min remaining
 
 // ── Types ──
 
@@ -36,6 +43,16 @@ export interface TodaySession {
   isFallback: boolean;
 }
 
+export interface DayTrack {
+  title: string;
+  durationSeconds: number;
+  signedAudioUrl: string;
+  audioTrackId: string;
+  dayNumber: number;
+  phase: ContentPhase;
+  coreTenet: string | null;
+}
+
 export interface OnboardingTrack {
   title: string;
   durationSeconds: number;
@@ -43,7 +60,22 @@ export interface OnboardingTrack {
   audioTrackId: string;
 }
 
-// ── Prefetch cache ──
+// ── Day track cache (keyed by audioTrackId) ──
+
+interface DayTrackCacheEntry {
+  track: DayTrack;
+  signedAt: number; // timestamp when URL was signed
+}
+
+const dayTrackCache = new Map<string, DayTrackCacheEntry>();
+
+function isDayTrackCacheValid(entry: DayTrackCacheEntry): boolean {
+  const elapsed = Date.now() - entry.signedAt;
+  const remaining = SIGNED_URL_TTL_SECONDS * 1000 - elapsed;
+  return remaining > SIGNED_URL_REFRESH_THRESHOLD_MS;
+}
+
+// ── Legacy prefetch cache ──
 
 interface CacheEntry {
   key: string; // `${date}|${phase}`
@@ -70,7 +102,93 @@ function isCacheValid(entry: CacheEntry, date: string, phase: ContentPhase): boo
   return true;
 }
 
-// ── Core query ──
+// ── Day-based query (primary path) ──
+
+/**
+ * Fetch the track for a specific program day and phase.
+ * Returns null if no track found or Supabase unreachable.
+ */
+async function getTrackForDay(
+  dayNumber: number,
+  phase: ContentPhase,
+): Promise<DayTrack | null> {
+  const client = SupabaseService.getClient();
+  if (!client) return null;
+
+  const category = phase; // phase maps directly to category ('lock_in' | 'unlock')
+
+  try {
+    // Query audio_tracks directly by day_number + category
+    const { data, error } = await client
+      .from('audio_tracks')
+      .select('id, title, storage_bucket, storage_path, duration_seconds, day_number, core_tenet')
+      .eq('day_number', dayNumber)
+      .eq('category', category)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[SessionRepository] Day track query error:', error.message);
+      return null;
+    }
+
+    if (!data) return null;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = data as any;
+
+    // Check cache by audioTrackId — reuse if URL still valid
+    const cachedEntry = dayTrackCache.get(row.id);
+    if (cachedEntry && isDayTrackCacheValid(cachedEntry)) {
+      return cachedEntry.track;
+    }
+
+    // Sign new URL
+    let signedAudioUrl: string;
+    try {
+      signedAudioUrl = await getSignedAudioUrl(
+        client,
+        row.storage_bucket,
+        row.storage_path,
+        SIGNED_URL_TTL_SECONDS,
+      );
+    } catch {
+      return null;
+    }
+
+    const track: DayTrack = {
+      title: row.title,
+      durationSeconds: row.duration_seconds,
+      signedAudioUrl,
+      audioTrackId: row.id,
+      dayNumber: row.day_number,
+      phase,
+      coreTenet: row.core_tenet ?? null,
+    };
+
+    // Cache it
+    dayTrackCache.set(row.id, { track, signedAt: Date.now() });
+
+    return track;
+  } catch (error) {
+    console.warn('[SessionRepository] Day track error:', error);
+    return null;
+  }
+}
+
+/**
+ * Prefetch track for a specific program day + phase.
+ * Called on Home mount for instant Session screen load.
+ */
+async function prefetchTrackForDay(
+  dayNumber: number,
+  phase: ContentPhase,
+): Promise<void> {
+  await getTrackForDay(dayNumber, phase);
+}
+
+// ── Legacy date-based query ──
 
 /**
  * Fetch the session for a given date/phase.
@@ -203,9 +321,9 @@ async function getOnboardingTrack(): Promise<OnboardingTrack | null> {
         client,
         row.storage_bucket,
         row.storage_path,
-        1800, // 30 min TTL
+        SIGNED_URL_TTL_SECONDS,
       );
-    } catch (urlError) {
+    } catch {
       return null;
     }
 
@@ -236,7 +354,7 @@ async function buildTodaySession(
   const durationMinutes: number = row.duration_minutes ?? SESSION_DURATION_MINUTES;
 
   // Duration-aware TTL: max(30 min, duration * 2.5)
-  const ttlSeconds = Math.max(1800, durationMinutes * 60 * 2.5);
+  const ttlSeconds = Math.max(SIGNED_URL_TTL_SECONDS, durationMinutes * 60 * 2.5);
 
   const signedAudioUrl = await getSignedAudioUrl(
     client!,
@@ -271,18 +389,13 @@ function setCache(
 }
 
 /**
- * Prefetch session for the current phase.
- * Called on Home mount so the Session screen gets instant data.
- * Silent on failure.
+ * Prefetch session for the current phase (legacy date-based).
  */
 async function prefetchToday(phase: ContentPhase): Promise<void> {
   const date = ClockService.getLocalDateKey();
   await getSessionFor(date, phase);
 }
 
-/**
- * Clear the prefetch cache (e.g., on day change).
- */
 /**
  * Prefetch onboarding track metadata + pre-load audio into AudioService.
  * Call on QuickLockInIntroScreen mount so audio is ready when session starts.
@@ -291,19 +404,45 @@ async function prefetchToday(phase: ContentPhase): Promise<void> {
 async function prefetchOnboardingTrack(): Promise<void> {
   const track = await getOnboardingTrack();
   if (track) {
-    // Pre-load into AudioService (will be a no-op on SessionScreen if already loaded)
     const { AudioService } = require('./AudioService');
     await AudioService.load(track.signedAudioUrl);
   }
 }
 
+/**
+ * Get cached day track info (title + core tenet) without network call.
+ * Returns null if no track cached for the given day + phase.
+ */
+function getCachedDayTrackInfo(
+  dayNumber: number,
+  phase: ContentPhase,
+): { title: string; coreTenet: string | null } | null {
+  for (const entry of dayTrackCache.values()) {
+    if (
+      entry.track.dayNumber === dayNumber &&
+      entry.track.phase === phase &&
+      isDayTrackCacheValid(entry)
+    ) {
+      return { title: entry.track.title, coreTenet: entry.track.coreTenet };
+    }
+  }
+  return null;
+}
+
+/**
+ * Clear all caches (e.g., on day change or logout).
+ */
 function clearCache(): void {
   cache = null;
   onboardingCache = null;
+  dayTrackCache.clear();
 }
 
 export const SessionRepository = {
   getSessionFor,
+  getTrackForDay,
+  prefetchTrackForDay,
+  getCachedDayTrackInfo,
   getOnboardingTrack,
   prefetchOnboardingTrack,
   prefetchToday,

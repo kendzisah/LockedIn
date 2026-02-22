@@ -2,6 +2,7 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HomeScreen from '../features/home/HomeScreen';
 import SessionScreen from '../features/home/SessionScreen';
+import ProgramCompleteScreen from '../features/home/ProgramCompleteScreen';
 import type { MainStackParamList } from '../types/navigation';
 import { Colors } from '../design/colors';
 
@@ -20,6 +21,11 @@ const MainNavigator: React.FC = () => {
       <Stack.Screen
         name="Session"
         component={SessionScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="ProgramComplete"
+        component={ProgramCompleteScreen}
         options={{ animation: 'none' }}
       />
     </Stack.Navigator>

@@ -8,7 +8,9 @@
  *   all_done             → closed lock, "Complete Today"
  *
  * All sessions are 5 min. No duration selector.
- * Prefetches session audio on mount. Re-evaluates CTA on AppState resume.
+ * Prefetches day-based audio on mount. Re-evaluates CTA on AppState resume.
+ *
+ * Program completion gate: if maxCompletedDay >= 90, navigate to ProgramComplete.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -26,7 +28,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
 import { useSession } from './state/SessionProvider';
-import { createSession, getRemaining } from './engine/SessionEngine';
+import {
+  createSession,
+  getRemaining,
+  computeCurrentDay,
+  isProgramComplete,
+} from './engine/SessionEngine';
 import AnimatedGradient from './components/AnimatedGradient';
 import DayOfWeekRow from './components/DayOfWeekRow';
 import ProgressBlock from './components/ProgressBlock';
@@ -37,9 +44,15 @@ import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
 import { ClockService, type CTAState } from '../../services/ClockService';
 import { SessionRepository } from '../../services/SessionRepository';
+import { AudioService } from '../../services/AudioService';
 import type { ContentPhase } from '@lockedin/shared-types';
 
 const SESSION_DURATION = 5; // minutes — all sessions are ~5 min
+
+interface SessionInfo {
+  title: string;
+  coreTenet: string | null;
+}
 
 type Props = NativeStackScreenProps<MainStackParamList, 'Home'>;
 
@@ -48,7 +61,19 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const [showResumeModal, setShowResumeModal] = useState(false);
   const [resumeRemaining, setResumeRemaining] = useState(0);
+  const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
   const autoResumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Program day ──
+  const programDay = useMemo(
+    () => computeCurrentDay(state.maxCompletedDay),
+    [state.maxCompletedDay],
+  );
+
+  const programComplete = useMemo(
+    () => isProgramComplete(state.maxCompletedDay),
+    [state.maxCompletedDay],
+  );
 
   // ── CTA state (re-evaluated on mount, focus, and AppState resume) ──
   const ctaState: CTAState = useMemo(
@@ -75,16 +100,29 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
     return () => sub.remove();
   }, []);
 
-  // ── Prefetch session on mount / CTA change ──
+  // ── Navigate to ProgramComplete if program is done ──
   useEffect(() => {
-    if (!isHydrated) return;
+    if (isHydrated && programComplete) {
+      navigation.replace('ProgramComplete');
+    }
+  }, [isHydrated, programComplete, navigation]);
+
+  // ── Prefetch day-based audio on mount / CTA change ──
+  useEffect(() => {
+    if (!isHydrated || programComplete) return;
 
     const phase: ContentPhase =
       ctaState.mode === 'unlock' ? 'unlock' : 'lock_in';
 
-    // Fire and forget — failure is silent
-    SessionRepository.prefetchToday(phase);
-  }, [isHydrated, ctaState.mode]);
+    // Prefetch track metadata AND pre-load audio binary so it's ready when session starts
+    SessionRepository.getTrackForDay(programDay, phase).then((track) => {
+      if (track) {
+        setSessionInfo({ title: track.title, coreTenet: track.coreTenet });
+        // Pre-load audio binary — AudioService deduplicates concurrent loads
+        AudioService.load(track.signedAudioUrl);
+      }
+    });
+  }, [isHydrated, ctaState.mode, programDay, programComplete]);
 
   // ── Crash-resume check on hydration ──
   useEffect(() => {
@@ -124,10 +162,11 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
     }).start(() => {
       navigation.replace('Session', {
         phase: 'lock_in', // crash-resume is always for Lock In
+        programDay,
         resuming: true,
       });
     });
-  }, [navigation, screenOpacity]);
+  }, [navigation, screenOpacity, programDay]);
 
   const handleEndSession = useCallback(() => {
     if (autoResumeTimer.current) clearTimeout(autoResumeTimer.current);
@@ -166,6 +205,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       }).start(() => {
         navigation.replace('Session', {
           phase: 'lock_in',
+          programDay,
           resuming: false,
         });
       });
@@ -178,11 +218,12 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       }).start(() => {
         navigation.replace('Session', {
           phase: 'unlock',
+          programDay,
           resuming: false,
         });
       });
     }
-  }, [ctaState.mode, dispatch, navigation, screenOpacity]);
+  }, [ctaState.mode, dispatch, navigation, screenOpacity, programDay]);
 
   // ── Reset opacity when screen mounts or comes back into focus ──
   useEffect(() => {
@@ -208,6 +249,15 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         <View style={styles.progressSection}>
           <ProgressBlock />
         </View>
+
+        {sessionInfo && (
+          <View style={styles.sessionInfoSection}>
+            <Text style={styles.sessionTitle}>{sessionInfo.title}</Text>
+            {sessionInfo.coreTenet && (
+              <Text style={styles.sessionCoreTenet}>{sessionInfo.coreTenet}</Text>
+            )}
+          </View>
+        )}
 
         <View style={styles.lockSection}>
           <LockButton
@@ -273,6 +323,25 @@ const styles = StyleSheet.create({
   progressSection: {
     marginTop: 8,
     marginBottom: 4,
+  },
+  sessionInfoSection: {
+    marginTop: 10,
+    marginBottom: 2,
+    paddingHorizontal: 4,
+  },
+  sessionTitle: {
+    fontFamily: FontFamily.heading,
+    fontSize: 16,
+    color: Colors.textPrimary,
+    letterSpacing: -0.2,
+  },
+  sessionCoreTenet: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 3,
+    letterSpacing: 0.1,
+    lineHeight: 16,
   },
   lockSection: {
     flex: 1,

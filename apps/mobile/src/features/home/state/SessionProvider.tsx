@@ -4,10 +4,16 @@
  * Phase transitions enforced: IDLE -> ANIMATING -> ACTIVE -> COMPLETING -> IDLE
  * Invalid transitions are no-ops.
  *
- * Date-keyed completion: uses lastLockInCompletedDate / lastUnlockCompletedDate
- * instead of boolean completedToday -- prevents midnight bugs.
+ * Program-day progression:
+ *   - maxCompletedDay tracks how many program days finished (0-90)
+ *   - Only Lock In (COMPLETE_SESSION) increments maxCompletedDay
+ *   - Unlock (COMPLETE_UNLOCK) adds listening time but does NOT advance the day
  *
- * All sessions are 5 min. Duration is a constant, not stored in state.
+ * Lifetime vs current-run:
+ *   - lifetimeTotalMinutes / lifetimeLongestStreak / lifetimeRunsCompleted survive restart
+ *   - maxCompletedDay / consecutiveStreak / programStartDate reset on RESET_PROGRAM
+ *
+ * HYDRATE handles legacy shapes (startDayKey, completedDayKeys, etc.) for migration.
  */
 
 import React, {
@@ -33,12 +39,13 @@ const STORAGE_KEY = '@lockedin/session_state';
 
 const initialState: SessionState = {
   phase: 'IDLE',
-  startDayKey: null,
-  completedDayKeys: [],
+  programStartDate: null,
+  maxCompletedDay: 0,
   lastSessionDayKey: null,
   consecutiveStreak: 0,
-  longestStreak: 0,
-  totalMinutes: 0,
+  lifetimeTotalMinutes: 0,
+  lifetimeLongestStreak: 0,
+  lifetimeRunsCompleted: 0,
   activeSession: null,
   lastLockInCompletedDate: null,
   lastUnlockCompletedDate: null,
@@ -50,14 +57,23 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
   switch (action.type) {
     case 'HYDRATE': {
       const p = action.payload;
+
+      // Migration: old state used startDayKey / completedDayKeys / totalMinutes / longestStreak
+      const migratedMaxDay = p.maxCompletedDay ?? (p.completedDayKeys ? new Set(p.completedDayKeys).size : 0);
+      const migratedStartDate = p.programStartDate ?? p.startDayKey ?? null;
+      const migratedLifetimeMinutes = p.lifetimeTotalMinutes ?? p.totalMinutes ?? 0;
+      const migratedLifetimeLongest = p.lifetimeLongestStreak ?? p.longestStreak ?? 0;
+      const migratedRunsCompleted = p.lifetimeRunsCompleted ?? 0;
+
       return {
         ...state,
-        startDayKey: p.startDayKey,
-        completedDayKeys: p.completedDayKeys,
+        programStartDate: migratedStartDate,
+        maxCompletedDay: migratedMaxDay,
         lastSessionDayKey: p.lastSessionDayKey,
         consecutiveStreak: p.consecutiveStreak,
-        longestStreak: p.longestStreak,
-        totalMinutes: p.totalMinutes,
+        lifetimeTotalMinutes: migratedLifetimeMinutes,
+        lifetimeLongestStreak: migratedLifetimeLongest,
+        lifetimeRunsCompleted: migratedRunsCompleted,
         activeSession: p.activeSession,
         lastLockInCompletedDate: p.lastLockInCompletedDate ?? null,
         lastUnlockCompletedDate: p.lastUnlockCompletedDate ?? null,
@@ -84,8 +100,8 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
           expectedEndTimestamp: action.payload.expectedEndTimestamp,
           durationMinutes: action.payload.durationMinutes,
         },
-        // Initialize startDayKey on first session ever
-        startDayKey: state.startDayKey || todayKey,
+        // Initialize programStartDate on first session ever
+        programStartDate: state.programStartDate || todayKey,
       };
     }
 
@@ -96,14 +112,10 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       const todayKey = getTodayKey();
       const alreadyCompletedToday = state.lastLockInCompletedDate === todayKey;
 
-      // Session day key: use the day the session started (for midnight rollover)
-      const sessionDayKey = state.activeSession
-        ? new Date(state.activeSession.startTimestamp).toISOString().slice(0, 10)
-        : todayKey;
-
-      const newCompletedDayKeys = state.completedDayKeys.includes(sessionDayKey)
-        ? state.completedDayKeys
-        : [...state.completedDayKeys, sessionDayKey];
+      // Advance program day (only if not already completed today)
+      const newMaxDay = alreadyCompletedToday
+        ? state.maxCompletedDay
+        : Math.min(90, state.maxCompletedDay + 1);
 
       const newStreak = alreadyCompletedToday
         ? state.consecutiveStreak
@@ -111,39 +123,62 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
             state.lastSessionDayKey,
             state.consecutiveStreak,
             todayKey,
-            state.completedDayKeys,
           );
 
-      const newLongest = Math.max(state.longestStreak, newStreak);
+      const newLifetimeLongest = Math.max(state.lifetimeLongestStreak, newStreak);
+      const newLifetimeMinutes = state.lifetimeTotalMinutes + (action.payload.durationMinutes || 0);
+
+      // Session day key: use the day the session started (for midnight rollover)
+      const sessionDayKey = state.activeSession
+        ? new Date(state.activeSession.startTimestamp).toISOString().slice(0, 10)
+        : todayKey;
 
       return {
         ...state,
         phase: 'IDLE',
         activeSession: null,
-        completedDayKeys: newCompletedDayKeys,
+        maxCompletedDay: newMaxDay,
         lastSessionDayKey: sessionDayKey,
         consecutiveStreak: newStreak,
-        longestStreak: newLongest,
-        totalMinutes: state.totalMinutes + (action.payload.durationMinutes || 0),
+        lifetimeTotalMinutes: newLifetimeMinutes,
+        lifetimeLongestStreak: newLifetimeLongest,
         lastLockInCompletedDate: todayKey,
       };
     }
 
     case 'COMPLETE_UNLOCK': {
-      // Unlock completion: adds to totalMinutes, marks unlock as done today
-      // Does NOT affect streak or completedDayKeys (Lock In only)
+      // Unlock completion: adds to lifetimeTotalMinutes, marks unlock as done today
+      // Does NOT affect streak or maxCompletedDay (Lock In only)
       const todayKey = getTodayKey();
       return {
         ...state,
         phase: 'IDLE',
         activeSession: null,
-        totalMinutes: state.totalMinutes + (action.payload.durationMinutes || 0),
+        lifetimeTotalMinutes: state.lifetimeTotalMinutes + (action.payload.durationMinutes || 0),
         lastUnlockCompletedDate: todayKey,
       };
     }
 
     case 'RESET_PHASE': {
       return { ...state, phase: 'IDLE' };
+    }
+
+    case 'RESET_PROGRAM': {
+      // Reset current run, preserve lifetime stats
+      return {
+        ...state,
+        phase: 'IDLE',
+        programStartDate: null,
+        maxCompletedDay: 0,
+        lastSessionDayKey: null,
+        consecutiveStreak: 0,
+        activeSession: null,
+        lastLockInCompletedDate: null,
+        lastUnlockCompletedDate: null,
+        // Lifetime stats survive
+        lifetimeRunsCompleted: state.lifetimeRunsCompleted + 1,
+        // lifetimeTotalMinutes and lifetimeLongestStreak stay
+      };
     }
 
     default:
@@ -199,12 +234,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!isHydrated) return;
 
     const persisted: PersistedSessionState = {
-      startDayKey: state.startDayKey,
-      completedDayKeys: state.completedDayKeys,
+      programStartDate: state.programStartDate,
+      maxCompletedDay: state.maxCompletedDay,
       lastSessionDayKey: state.lastSessionDayKey,
       consecutiveStreak: state.consecutiveStreak,
-      longestStreak: state.longestStreak,
-      totalMinutes: state.totalMinutes,
+      lifetimeTotalMinutes: state.lifetimeTotalMinutes,
+      lifetimeLongestStreak: state.lifetimeLongestStreak,
+      lifetimeRunsCompleted: state.lifetimeRunsCompleted,
       activeSession: state.activeSession,
       lastLockInCompletedDate: state.lastLockInCompletedDate,
       lastUnlockCompletedDate: state.lastUnlockCompletedDate,
@@ -215,12 +251,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, [
     isHydrated,
-    state.startDayKey,
-    state.completedDayKeys,
+    state.programStartDate,
+    state.maxCompletedDay,
     state.lastSessionDayKey,
     state.consecutiveStreak,
-    state.longestStreak,
-    state.totalMinutes,
+    state.lifetimeTotalMinutes,
+    state.lifetimeLongestStreak,
+    state.lifetimeRunsCompleted,
     state.activeSession,
     state.lastLockInCompletedDate,
     state.lastUnlockCompletedDate,

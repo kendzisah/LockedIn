@@ -5,6 +5,10 @@
  * All day comparisons use timezone-safe local day keys (YYYY-MM-DD).
  *
  * Day key computation is delegated to ClockService (single source of truth).
+ *
+ * Program-day progression is completion-based:
+ *   - computeCurrentDay(maxCompletedDay) = maxCompletedDay + 1 (capped at 90)
+ *   - Only Lock In completion advances the day
  */
 
 import type { DayKey } from '../state/types';
@@ -100,19 +104,12 @@ export function getUnlockPhaseText(elapsedSeconds: number, totalSeconds: number)
  * Rules:
  * - If lastSessionDayKey === yesterday: streak + 1 (consecutive)
  * - If lastSessionDayKey !== yesterday (gap): reset to 1 (today = day 1)
- * - If already completed today: no change
  */
 export function computeNewStreak(
   lastSessionDayKey: DayKey | null,
   currentStreak: number,
   todayKey: DayKey,
-  completedDayKeys: DayKey[],
 ): number {
-  // Already completed today — no change
-  if (completedDayKeys.includes(todayKey)) {
-    return currentStreak;
-  }
-
   const yesterdayKey = getYesterdayKey();
 
   if (lastSessionDayKey === yesterdayKey) {
@@ -125,23 +122,24 @@ export function computeNewStreak(
 
 // ─── Day & Progress Calculation ──────────────────────────────────
 
-/** Compute current day number (1-90), capped */
-export function computeCurrentDay(startDayKey: DayKey | null): number {
-  if (!startDayKey) return 1;
-  const delta = dayKeyDelta(startDayKey, getTodayKey());
-  return Math.min(90, Math.max(1, delta + 1));
+/** Compute current program day (1-90). Based on completion count, not calendar. */
+export function computeCurrentDay(maxCompletedDay: number): number {
+  return Math.min(90, maxCompletedDay + 1);
 }
 
-/** Compute missed days: days elapsed (excluding today) minus completed sessions */
-export function computeMissedDays(currentDay: number, completedDayKeys: DayKey[]): number {
-  return Math.max(0, currentDay - 1 - completedDayKeys.length);
+/** Check if the 90-day program is complete */
+export function isProgramComplete(maxCompletedDay: number): boolean {
+  return maxCompletedDay >= 90;
 }
 
-/** Compute commitment percentage (capped at 100%) */
-export function computeCommitmentPercent(currentDay: number, completedDayKeys: DayKey[]): number {
-  if (currentDay <= 0) return 0;
-  const uniqueDays = new Set(completedDayKeys).size;
-  return Math.min(100, Math.round((uniqueDays / currentDay) * 100));
+/** Compute commitment percentage: completed days / calendar days elapsed (capped at 100%) */
+export function computeCommitmentPercent(
+  maxCompletedDay: number,
+  programStartDate: DayKey | null,
+): number {
+  if (!programStartDate || maxCompletedDay <= 0) return 0;
+  const elapsed = Math.max(1, dayKeyDelta(programStartDate, getTodayKey()) + 1);
+  return Math.min(100, Math.round((maxCompletedDay / elapsed) * 100));
 }
 
 // ─── Identity Card Messages ──────────────────────────────────────
@@ -162,7 +160,7 @@ export function getIdentityMessage(
   consecutiveStreak: number,
   longestStreak: number,
   lastSessionDayKey: DayKey | null,
-  completedDayKeys: DayKey[],
+  maxCompletedDay: number,
   currentDay: number,
 ): string {
   const yesterdayKey = getYesterdayKey();
@@ -176,17 +174,17 @@ export function getIdentityMessage(
   const isFirstWeek = currentDay <= 7;
 
   // Broke a 7+ streak
-  if (longestStreak >= 7 && consecutiveStreak === 0 && completedDayKeys.length > 0) {
+  if (longestStreak >= 7 && consecutiveStreak === 0 && maxCompletedDay > 0) {
     return 'Streak broken. Rebuild starts now.';
   }
 
   // Missed yesterday specifically
-  if (missedYesterday && completedDayKeys.length > 0) {
+  if (missedYesterday && maxCompletedDay > 0) {
     return 'Missed yesterday. Today matters.';
   }
 
   if (isFirstWeek) {
-    if (completedDayKeys.length === 0) return 'Control is built daily.';
+    if (maxCompletedDay === 0) return 'Control is built daily.';
     if (consecutiveStreak <= 2) return 'The foundation is forming.';
     return 'You are separating from average.';
   }
@@ -195,7 +193,7 @@ export function getIdentityMessage(
   if (consecutiveStreak >= 7) return 'Discipline compounds.';
   if (consecutiveStreak >= 3) return 'You are separating from average.';
   if (consecutiveStreak >= 1) return 'The foundation is forming.';
-  if (completedDayKeys.length > 0) return 'Control is rebuilt daily.';
+  if (maxCompletedDay > 0) return 'Control is rebuilt daily.';
   return 'Control is built daily.';
 }
 

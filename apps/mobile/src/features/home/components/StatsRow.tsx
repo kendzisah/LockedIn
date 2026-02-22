@@ -1,32 +1,29 @@
 /**
  * StatsRow — 3-column: Current Streak | Total Minutes | % Commitment.
+ *
+ * Uses completion-based computeCommitmentPercent(maxCompletedDay, programStartDate).
  */
 
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSession } from '../state/SessionProvider';
-import { computeCurrentDay, computeCommitmentPercent } from '../engine/SessionEngine';
+import { computeCommitmentPercent } from '../engine/SessionEngine';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
 const StatsRow: React.FC = () => {
   const { state } = useSession();
 
-  const currentDay = useMemo(
-    () => computeCurrentDay(state.startDayKey),
-    [state.startDayKey],
-  );
-
   const commitment = useMemo(
-    () => computeCommitmentPercent(currentDay, state.completedDayKeys),
-    [currentDay, state.completedDayKeys],
+    () => computeCommitmentPercent(state.maxCompletedDay, state.programStartDate),
+    [state.maxCompletedDay, state.programStartDate],
   );
 
   return (
     <View style={styles.container}>
       <StatColumn label="Streak" value={`${state.consecutiveStreak}`} />
       <View style={styles.divider} />
-      <StatColumn label="Minutes" value={`${state.totalMinutes}`} />
+      <StatColumn label="Minutes" value={`${state.lifetimeTotalMinutes}`} />
       <View style={styles.divider} />
       <StatColumn label="Commitment" value={`${commitment}%`} />
     </View>

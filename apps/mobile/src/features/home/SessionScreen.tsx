@@ -1,20 +1,17 @@
 /**
  * SessionScreen — Unified Lock In + Unlock/Reflect session.
  *
- * Accepts { phase, resuming } params.
+ * Accepts { phase, programDay, resuming } params.
  * - phase === 'lock_in': discipline mode, streak counts, crash-resume
  * - phase === 'unlock':  reflection mode, no streak, no crash-resume
  *
- * Timer duration:
- *   - When audio loads: timer = audio duration
- *   - When audio is unavailable: timer = 2:30 fallback
+ * Audio: Fetches via getTrackForDay(programDay, phase) — day-based, not date-based.
+ * Audio binary is pre-loaded on HomeScreen via AudioService.load() so that by the
+ * time the user navigates here, AudioService.load() returns instantly.
  *
- * Audio integration:
- *   1. Fetches session from SessionRepository (primary + fallback)
- *   2. Loads audio via AudioService (8s timeout)
- *   3. Falls back to 2:30 timer-only on failure (with single retry)
- *   4. Pauses on background, resumes on foreground
- *   5. Unloads on unmount
+ * Buffer: New sessions show micro-text ("Commit to the full timer.") for a minimum
+ * of 1.2s while audio resolves. Timer only appears after audio state is known, so
+ * it always shows the correct duration from the first frame. Resume skips the buffer.
  *
  * Timer integrity: remaining is computed from endTimestampRef - Date.now().
  * The setInterval(250ms) is purely a render trigger — never accumulates time.
@@ -40,8 +37,7 @@ import { getRemaining, getPhaseText, getUnlockPhaseText, createSession } from '.
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
 import { AudioService } from '../../services/AudioService';
-import { SessionRepository, type TodaySession } from '../../services/SessionRepository';
-import { ClockService } from '../../services/ClockService';
+import { SessionRepository, type DayTrack } from '../../services/SessionRepository';
 import { TelemetryService } from '../../services/TelemetryService';
 import type { ContentPhase } from '@lockedin/shared-types';
 
@@ -89,15 +85,11 @@ type AudioLoadState =
   | 'timer_only';
 
 const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { phase, resuming } = route.params;
+  const { phase, programDay, resuming } = route.params;
   const { state, dispatch } = useSession();
 
   // ── Timer state ──
-  // totalSeconds adjusts when audio loads or fails:
-  //   - Audio loaded → audio duration
-  //   - Audio unavailable → FALLBACK_SECONDS (2:30)
   const [totalSeconds, setTotalSeconds] = useState(() => {
-    // Crash-resume: use the stored session's remaining time
     if (phase === 'lock_in' && state.activeSession) {
       return Math.ceil(
         (state.activeSession.expectedEndTimestamp - state.activeSession.startTimestamp) / 1000,
@@ -114,21 +106,24 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
   });
   const [isComplete, setIsComplete] = useState(false);
 
-  // ── Mutable end timestamp: adjusted when audio state resolves ──
+  // ── Mutable end timestamp: set when audio resolves (or from active session on resume) ──
   const endTimestampRef = useRef(
-    phase === 'lock_in' && state.activeSession
+    resuming && phase === 'lock_in' && state.activeSession
       ? state.activeSession.expectedEndTimestamp
-      : Date.now() + FALLBACK_SECONDS * 1000,
+      : 0, // Set in loadAndStart when audio resolves
   );
 
   // ── Audio state ──
   const [audioState, setAudioState] = useState<AudioLoadState>('idle');
-  const [sessionData, setSessionData] = useState<TodaySession | null>(null);
+  const [trackData, setTrackData] = useState<DayTrack | null>(null);
   const hasRetried = useRef(false);
+
+  // ── Session started: gates tick interval (true immediately for resume) ──
+  const [sessionStarted, setSessionStarted] = useState(!!resuming);
 
   // ── Entry animation ──
   const microTextOpacity = useRef(new Animated.Value(0)).current;
-  const timerOpacity = useRef(new Animated.Value(0)).current;
+  const timerOpacity = useRef(new Animated.Value(resuming ? 1 : 0)).current;
   const completeTextOpacity = useRef(new Animated.Value(0)).current;
 
   // ── Hold-to-unlock ──
@@ -142,7 +137,6 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
   /**
    * Adjust the timer when we know the final duration.
-   * Called after audio loads (use audio duration) or fails (keep fallback).
    */
   const adjustTimer = useCallback((durationSeconds: number) => {
     setTotalSeconds(durationSeconds);
@@ -151,80 +145,143 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     setRemaining(durationSeconds);
   }, []);
 
-  // ── Fetch + load audio on mount ──
+  // ── Resume mode: load audio in background, no buffer ──
   useEffect(() => {
+    if (!resuming) return;
+
     let cancelled = false;
 
-    async function loadAudio() {
-      setAudioState('loading');
+    async function loadResumeAudio() {
+      const track = await SessionRepository.getTrackForDay(programDay, phase);
+      if (cancelled || !track) return;
 
-      const todayKey = ClockService.getLocalDateKey();
-      const session = await SessionRepository.getSessionFor(todayKey, phase);
-
-      if (cancelled) return;
-
-      if (!session) {
-        // No content — timer-only mode at fallback duration
-        setAudioState('timer_only');
-        TelemetryService.logEvent('audio_load_failed', {
-          phase,
-          error: 'no_content',
-        });
-        return;
-      }
-
-      setSessionData(session);
-
-      if (session.isFallback) {
-        TelemetryService.logEvent('fallback_used', {
-          phase,
-          fallbackDate: session.scheduledDate,
-        });
-      }
-
-      const loaded = await AudioService.load(session.signedAudioUrl);
-
+      setTrackData(track);
+      const loaded = await AudioService.load(track.signedAudioUrl);
       if (cancelled) return;
 
       if (loaded) {
         setAudioState('loaded');
-        // Adjust timer to match audio duration (only if not crash-resuming)
-        if (!resuming) {
-          adjustTimer(session.durationSeconds);
-        }
         AudioService.play();
-      } else {
-        setAudioState('failed');
-        TelemetryService.logEvent('audio_load_failed', {
-          phase,
-          error: 'load_timeout',
-        });
       }
     }
 
-    loadAudio();
+    loadResumeAudio();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── New session: buffer phase + load audio + transition to timer ──
+  useEffect(() => {
+    if (resuming) return;
+
+    let cancelled = false;
+    const mountTime = Date.now();
+    const MIN_BUFFER_MS = 1200;
+
+    // Show micro text during buffer period
+    const microTimer = setTimeout(() => {
+      if (!cancelled) {
+        Animated.timing(microTextOpacity, {
+          toValue: 1,
+          duration: 500,
+          useNativeDriver: true,
+        }).start();
+      }
+    }, 200);
+
+    async function loadAndStart() {
+      setAudioState('loading');
+
+      // Fetch track metadata (usually cached from HomeScreen prefetch)
+      const track = await SessionRepository.getTrackForDay(programDay, phase);
+      if (cancelled) return;
+
+      let finalDuration = FALLBACK_SECONDS;
+      let loaded = false;
+
+      if (track) {
+        setTrackData(track);
+        // AudioService deduplicates — if HomeScreen already loaded this URL,
+        // this returns instantly with true
+        loaded = await AudioService.load(track.signedAudioUrl);
+        if (cancelled) return;
+
+        if (loaded) {
+          setAudioState('loaded');
+          finalDuration = track.durationSeconds;
+        } else {
+          setAudioState('failed');
+          TelemetryService.logEvent('audio_load_failed', {
+            phase,
+            programDay,
+            error: 'load_timeout',
+          });
+        }
+      } else {
+        setAudioState('timer_only');
+        TelemetryService.logEvent('audio_load_failed', {
+          phase,
+          programDay,
+          error: 'no_content',
+        });
+      }
+
+      // Ensure minimum buffer time for smooth transition
+      const elapsed = Date.now() - mountTime;
+      if (elapsed < MIN_BUFFER_MS) {
+        await new Promise<void>((r) => setTimeout(r, MIN_BUFFER_MS - elapsed));
+      }
+      if (cancelled) return;
+
+      // Set timer to correct duration
+      const newEnd = Date.now() + finalDuration * 1000;
+      endTimestampRef.current = newEnd;
+      setTotalSeconds(finalDuration);
+      setRemaining(finalDuration);
+
+      // Transition: fade out micro text → fade in timer
+      Animated.timing(microTextOpacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
+      Animated.timing(timerOpacity, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }).start();
+
+      // Play audio
+      if (loaded) {
+        AudioService.play();
+      }
+
+      setSessionStarted(true);
+    }
+
+    loadAndStart();
 
     return () => {
       cancelled = true;
+      clearTimeout(microTimer);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Retry audio load (single attempt) ──
   const handleRetryAudio = useCallback(async () => {
-    if (hasRetried.current || !sessionData) return;
+    if (hasRetried.current || !trackData) return;
     hasRetried.current = true;
     setAudioState('retrying');
 
-    const loaded = await AudioService.load(sessionData.signedAudioUrl);
+    const loaded = await AudioService.load(trackData.signedAudioUrl);
 
     if (loaded) {
       setAudioState('loaded');
-      adjustTimer(sessionData.durationSeconds);
+      adjustTimer(trackData.durationSeconds);
       AudioService.play();
     } else {
       setAudioState('timer_only');
     }
-  }, [sessionData, adjustTimer]);
+  }, [trackData, adjustTimer]);
 
   // ── Cleanup audio on unmount ──
   useEffect(() => {
@@ -251,41 +308,11 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Entry animation sequence ──
+  // Entry animation is now driven by the loadAndStart / resume effects above.
+
+  // ── Real-time timer tick (only after session is started) ──
   useEffect(() => {
-    const timers: ReturnType<typeof setTimeout>[] = [];
-
-    timers.push(
-      setTimeout(() => {
-        Animated.timing(microTextOpacity, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }).start();
-      }, 300),
-    );
-
-    timers.push(
-      setTimeout(() => {
-        Animated.timing(microTextOpacity, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }).start();
-        Animated.timing(timerOpacity, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }).start();
-      }, 1200),
-    );
-
-    return () => timers.forEach(clearTimeout);
-  }, [microTextOpacity, timerOpacity]);
-
-  // ── Real-time timer tick ──
-  useEffect(() => {
-    if (isComplete) return;
+    if (!sessionStarted || isComplete) return;
 
     tickRef.current = setInterval(() => {
       const r = getRemaining(endTimestampRef.current);
@@ -301,7 +328,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
     };
-  }, [isComplete]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionStarted, isComplete]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Timer completion ──
   const handleTimerComplete = useCallback(() => {
@@ -329,6 +356,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
     TelemetryService.logEvent('session_completed', {
       phase,
+      programDay,
       hasAudio: audioState === 'loaded',
     });
 
@@ -347,7 +375,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
         navigation.replace('Home');
       });
     }, 1500);
-  }, [isComplete, dispatch, phase, completeTextOpacity, timerOpacity, navigation, audioState, totalSeconds]);
+  }, [isComplete, dispatch, phase, completeTextOpacity, timerOpacity, navigation, audioState, totalSeconds, programDay]);
 
   // ── Hold-to-unlock handlers ──
   const handleHoldStart = useCallback(() => {
@@ -418,6 +446,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
     TelemetryService.logEvent('session_exited_early', {
       phase,
+      programDay,
       elapsedSeconds: totalSeconds - remaining,
     });
 
@@ -428,7 +457,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     }).start(() => {
       navigation.replace('Home');
     });
-  }, [dispatch, phase, timerOpacity, navigation, totalSeconds, remaining]);
+  }, [dispatch, phase, timerOpacity, navigation, totalSeconds, remaining, programDay]);
 
   // ── BackHandler: block Android back ──
   useEffect(() => {
@@ -517,11 +546,6 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
                   <Text style={styles.retryText}>Try again</Text>
                 </TouchableOpacity>
               </View>
-            )}
-
-            {/* Fallback indicator */}
-            {sessionData?.isFallback && audioState === 'loaded' && (
-              <Text style={styles.fallbackIndicator}>Using last published session</Text>
             )}
           </>
         ) : (
@@ -621,14 +645,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.accent,
     letterSpacing: 0.3,
-  },
-  fallbackIndicator: {
-    fontFamily: FontFamily.body,
-    fontSize: 12,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    marginTop: 12,
-    opacity: 0.5,
   },
   // ── Hold-to-unlock ──
   holdSection: {

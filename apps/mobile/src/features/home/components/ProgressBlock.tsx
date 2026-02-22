@@ -1,5 +1,7 @@
 /**
  * ProgressBlock — Compact block with Day X/90 + progress bar + streak badge + dynamic subtext.
+ *
+ * Uses completion-based computeCurrentDay(maxCompletedDay).
  */
 
 import React, { useEffect, useRef, useMemo } from 'react';
@@ -22,11 +24,11 @@ const ProgressBlock: React.FC = () => {
   const hasStreak = state.consecutiveStreak > 0;
 
   const currentDay = useMemo(
-    () => computeCurrentDay(state.startDayKey),
-    [state.startDayKey],
+    () => computeCurrentDay(state.maxCompletedDay),
+    [state.maxCompletedDay],
   );
 
-  const progressRatio = currentDay / 90;
+  const progressRatio = state.maxCompletedDay / 90;
 
   const subtext = useMemo(
     () => getProgressSubtext(state.consecutiveStreak, state.lastSessionDayKey),
@@ -63,7 +65,7 @@ const ProgressBlock: React.FC = () => {
       {/* Top row: Day X of 90 + Streak badge */}
       <View style={styles.topRow}>
         <Text style={styles.dayLabel}>
-          Day {state.startDayKey ? currentDay : '—'} of 90
+          Day {currentDay} of 90
         </Text>
         <View style={styles.streakBadge}>
           <LottieView

@@ -6,6 +6,9 @@
  *
  * Date-keyed completion: lastLockInCompletedDate / lastUnlockCompletedDate
  * prevent midnight bugs and make the AM/PM state machine deterministic.
+ *
+ * Program-day progression: maxCompletedDay tracks how many program days
+ * have been completed (0-90). Only Lock In completion advances the day.
  */
 
 /** Lock button / session lifecycle phases */
@@ -18,17 +21,18 @@ export type DayKey = string;
 export interface SessionState {
   phase: SessionPhase;
 
-  // ── 90-day program ──
-  startDayKey: DayKey | null;
-  completedDayKeys: DayKey[]; // unique days with a completed Lock In session
+  // ── 90-day program (current run) ──
+  programStartDate: DayKey | null;     // when this run started
+  maxCompletedDay: number;             // highest program day completed (0 = none)
 
-  // ── Streak (Lock In only) ──
+  // ── Streak (Lock In only, current run) ──
   lastSessionDayKey: DayKey | null;
   consecutiveStreak: number;
-  longestStreak: number;
 
-  // ── Lifetime ──
-  totalMinutes: number;
+  // ── Lifetime stats (survive restart) ──
+  lifetimeTotalMinutes: number;
+  lifetimeLongestStreak: number;
+  lifetimeRunsCompleted: number;       // how many 90-day programs finished
 
   // ── Active session (crash-resume) ──
   activeSession: {
@@ -37,23 +41,36 @@ export interface SessionState {
     durationMinutes: number;
   } | null;
 
-  // ── Date-keyed completion (replaces completedToday boolean) ──
+  // ── Date-keyed completion (daily CTA gating) ──
   lastLockInCompletedDate: DayKey | null;   // e.g. "2026-02-20"
   lastUnlockCompletedDate: DayKey | null;   // e.g. "2026-02-20"
-
 }
 
 /** Subset of state that gets persisted to AsyncStorage */
 export interface PersistedSessionState {
-  startDayKey: DayKey | null;
-  completedDayKeys: DayKey[];
+  // Current run
+  programStartDate: DayKey | null;
+  maxCompletedDay: number;
   lastSessionDayKey: DayKey | null;
   consecutiveStreak: number;
-  longestStreak: number;
-  totalMinutes: number;
+
+  // Lifetime
+  lifetimeTotalMinutes: number;
+  lifetimeLongestStreak: number;
+  lifetimeRunsCompleted: number;
+
+  // Active session
   activeSession: SessionState['activeSession'];
+
+  // Daily gating
   lastLockInCompletedDate: DayKey | null;
   lastUnlockCompletedDate: DayKey | null;
+
+  // ── Legacy fields (for migration compat) ──
+  startDayKey?: DayKey | null;
+  completedDayKeys?: DayKey[];
+  longestStreak?: number;
+  totalMinutes?: number;
 }
 
 /** All possible session actions */
@@ -63,4 +80,5 @@ export type SessionAction =
   | { type: 'START_SESSION'; payload: { startTimestamp: number; expectedEndTimestamp: number; durationMinutes: number } }
   | { type: 'COMPLETE_SESSION'; payload: { durationMinutes: number } }
   | { type: 'COMPLETE_UNLOCK'; payload: { durationMinutes: number } }
-  | { type: 'RESET_PHASE' };
+  | { type: 'RESET_PHASE' }
+  | { type: 'RESET_PROGRAM' };

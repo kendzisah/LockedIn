@@ -23,6 +23,8 @@ const LOAD_TIMEOUT_MS = 8_000;
 let player: AudioPlayer | null = null;
 let configured = false;
 let loadedUrl: string | null = null;
+let activeLoadUrl: string | null = null;
+let activeLoadPromise: Promise<boolean> | null = null;
 
 /**
  * Configure global audio mode. Call once at app boot (App.tsx).
@@ -46,6 +48,10 @@ async function configure(): Promise<void> {
  * Load audio from a signed URL.
  * Creates a new AudioPlayer, waits for isLoaded with timeout.
  * Returns true if loaded successfully, false on failure/timeout.
+ *
+ * Deduplicates concurrent loads of the same URL — if Home prefetch starts
+ * loading and SessionScreen calls load() with the same URL, both callers
+ * share the same promise instead of restarting the download.
  */
 async function load(url: string): Promise<boolean> {
   // Skip if this exact URL is already loaded
@@ -53,9 +59,33 @@ async function load(url: string): Promise<boolean> {
     return true;
   }
 
+  // Dedup: same URL is currently loading — return the existing promise
+  if (activeLoadUrl === url && activeLoadPromise) {
+    return activeLoadPromise;
+  }
+
   // Clean up any previous player
   unload();
 
+  activeLoadUrl = url;
+  const promise = _doLoad(url);
+  activeLoadPromise = promise;
+
+  try {
+    return await promise;
+  } finally {
+    // Clear active load tracking (only if we're still the active load)
+    if (activeLoadUrl === url) {
+      activeLoadUrl = null;
+      activeLoadPromise = null;
+    }
+  }
+}
+
+/**
+ * Internal: actually create the player and wait for load.
+ */
+async function _doLoad(url: string): Promise<boolean> {
   try {
     player = createAudioPlayer({ uri: url });
 
@@ -138,6 +168,8 @@ function stop(): void {
  * Must be called on screen unmount to prevent memory leaks.
  */
 function unload(): void {
+  activeLoadUrl = null;
+  activeLoadPromise = null;
   if (player) {
     try {
       player.remove();
