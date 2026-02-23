@@ -23,6 +23,22 @@ const DEFAULT_UNLOCK_START_HOUR = 20; // 8 PM local
 const UNLOCK_GRACE_END_HOUR = 2; // 2 AM local (next day)
 
 /**
+ * Format milliseconds remaining into a human-readable countdown string.
+ * e.g. "5h 23m", "45m", "< 1m"
+ */
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return '< 1m';
+  const totalMinutes = Math.ceil(ms / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h`;
+  if (minutes > 0) return `${minutes}m`;
+  return '< 1m';
+}
+
+/**
  * Returns YYYY-MM-DD in device local timezone.
  * This is the canonical "today" key used everywhere:
  * completion tracking, cache invalidation, streak checks.
@@ -71,21 +87,32 @@ function getCTAState(
   }
 
   if (unlockDoneToday) {
-    return { mode: 'all_done' };
+    // Compute time until midnight (next Lock In)
+    const d = now ?? new Date();
+    const midnight = new Date(d);
+    midnight.setDate(midnight.getDate() + 1);
+    midnight.setHours(0, 0, 0, 0);
+    const msUntilMidnight = midnight.getTime() - d.getTime();
+
+    return {
+      mode: 'all_done',
+      hint: `Next session in ${formatCountdown(msUntilMidnight)}`,
+    };
   }
 
   if (isInUnlockWindow(now, unlockWindowStartHour)) {
     return { mode: 'unlock' };
   }
 
-  // Lock In done, but not yet in unlock window
-  const formattedHour = unlockWindowStartHour > 12
-    ? `${unlockWindowStartHour - 12} PM`
-    : `${unlockWindowStartHour} AM`;
+  // Lock In done, but not yet in unlock window — countdown to 8 PM
+  const d = now ?? new Date();
+  const unlockTarget = new Date(d);
+  unlockTarget.setHours(unlockWindowStartHour, 0, 0, 0);
+  const msUntilUnlock = unlockTarget.getTime() - d.getTime();
 
   return {
     mode: 'lock_in_done_waiting',
-    hint: `Unlock available at ${formattedHour}`,
+    hint: `Reflect session in ${formatCountdown(msUntilUnlock)}`,
   };
 }
 

@@ -75,30 +75,71 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
     [state.maxCompletedDay],
   );
 
-  // ── CTA state (re-evaluated on mount, focus, and AppState resume) ──
-  const ctaState: CTAState = useMemo(
-    () =>
-      ClockService.getCTAState(
-        state.lastLockInCompletedDate,
-        state.lastUnlockCompletedDate,
-      ),
-    [state.lastLockInCompletedDate, state.lastUnlockCompletedDate],
-  );
-
-  // Force re-render on AppState resume (phase may have changed)
-  const [, setAppStateCounter] = useState(0);
+  // Force re-render on AppState resume or time-based transitions
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     const handleAppState = (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') {
-        // Force re-evaluation of ctaState via re-render
-        setAppStateCounter((c) => c + 1);
+        setTick((c) => c + 1);
       }
     };
 
     const sub = AppState.addEventListener('change', handleAppState);
     return () => sub.remove();
   }, []);
+
+  // ── CTA state (re-evaluated on mount, focus, AppState resume, and tick) ──
+  const ctaState: CTAState = useMemo(
+    () =>
+      ClockService.getCTAState(
+        state.lastLockInCompletedDate,
+        state.lastUnlockCompletedDate,
+      ),
+    [state.lastLockInCompletedDate, state.lastUnlockCompletedDate, tick],
+  );
+
+  // ── Live countdown + auto-transition ──
+  // Tick every 60s while in a waiting state so the countdown hint updates.
+  // Also schedules exact transition at the boundary (8 PM or midnight).
+  useEffect(() => {
+    if (
+      ctaState.mode !== 'lock_in_done_waiting' &&
+      ctaState.mode !== 'all_done'
+    )
+      return;
+
+    // Tick every minute to keep countdown hint fresh
+    const interval = setInterval(() => {
+      setTick((c) => c + 1);
+    }, 60_000);
+
+    // Schedule exact transition at the boundary
+    const now = new Date();
+    const target = new Date(now);
+
+    if (ctaState.mode === 'lock_in_done_waiting') {
+      target.setHours(20, 0, 0, 0);
+      if (now >= target) {
+        setTick((c) => c + 1);
+        clearInterval(interval);
+        return;
+      }
+    } else {
+      target.setDate(target.getDate() + 1);
+      target.setHours(0, 0, 0, 0);
+    }
+
+    const msUntilTransition = target.getTime() - now.getTime();
+    const boundaryTimer = setTimeout(() => {
+      setTick((c) => c + 1);
+    }, msUntilTransition + 500);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(boundaryTimer);
+    };
+  }, [ctaState.mode]);
 
   // ── Navigate to ProgramComplete if program is done ──
   useEffect(() => {

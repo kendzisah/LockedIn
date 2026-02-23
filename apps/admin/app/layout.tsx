@@ -44,6 +44,7 @@ export default function RootLayout({
           <div className="flex gap-4 text-sm text-text-secondary">
             <a href="/" className="hover:text-text-primary transition-colors">Dashboard</a>
             <a href="/program" className="hover:text-text-primary transition-colors">Program</a>
+            <a href="/privacy" className="hover:text-text-primary transition-colors">Privacy</a>
           </div>
         </nav>
         <main className="max-w-7xl mx-auto px-6 py-8">
