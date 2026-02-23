@@ -1,11 +1,11 @@
 /**
  * bulk-upload.ts — Upload 90 days of Lock In / Reflection audio to Supabase.
  *
- * Reads metadata from v1/json/day-XX.json, reads actual MP3 durations via
+ * Reads metadata from <version>/json/day-XX.json, reads actual MP3 durations via
  * music-metadata, uploads files to Supabase Storage, and upserts audio_tracks rows.
  *
  * Usage:
- *   npx tsx scripts/bulk-upload.ts              # full upload
+ *   npx tsx scripts/bulk-upload.ts              # full upload (v2)
  *   npx tsx scripts/bulk-upload.ts --dry-run    # validate only, no writes
  *
  * Env: reads from scripts/.env (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -30,12 +30,13 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 // ── Config ──
 const DRY_RUN = process.argv.includes('--dry-run');
-const V1_DIR = path.resolve(__dirname, '..', 'v1');
-const AUDIO_DIR = path.join(V1_DIR, 'audio');
-const JSON_DIR = path.join(V1_DIR, 'json');
-const MANIFEST_PATH = path.join(V1_DIR, 'manifest.json');
+const CONTENT_VERSION = 'v2';
+const CONTENT_DIR = path.resolve(__dirname, '..', CONTENT_VERSION);
+const AUDIO_DIR = path.join(CONTENT_DIR, 'audio');
+const JSON_DIR = path.join(CONTENT_DIR, 'json');
+const MANIFEST_PATH = path.join(CONTENT_DIR, 'manifest.json');
 const STORAGE_BUCKET = 'audio';
-const SCRIPT_VERSION = 'v1';
+const SCRIPT_VERSION = CONTENT_VERSION;
 const TOTAL_DAYS = 90;
 
 // ── Types ──
@@ -184,12 +185,29 @@ async function main(): Promise<void> {
   const manifest: Manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf-8'));
   console.log(`Voice ID: ${manifest.voice_id}`);
   console.log(`Script version: ${SCRIPT_VERSION}`);
-  console.log(`Source: ${V1_DIR}\n`);
+  console.log(`Source: ${CONTENT_DIR}\n`);
 
   // Create Supabase client
   const client = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { persistSession: false },
   });
+
+  // Deactivate all previously active tracks (any version) so v2 takes over
+  if (!DRY_RUN) {
+    console.log('── Deactivating previous tracks ──\n');
+    const { data: prevTracks, error: deactivateErr } = await client
+      .from('audio_tracks')
+      .update({ is_active: false })
+      .eq('is_active', true)
+      .not('day_number', 'is', null)
+      .select('id');
+
+    if (deactivateErr) {
+      console.error(`  [WARN] Could not deactivate old tracks: ${deactivateErr.message}`);
+    } else {
+      console.log(`  Deactivated ${prevTracks?.length ?? 0} previous tracks\n`);
+    }
+  }
 
   // Collect tracks to upload
   const tracks: TrackUpload[] = [];
@@ -265,7 +283,7 @@ async function main(): Promise<void> {
         continue;
       }
 
-      const storagePath = `v1/day-${dayStr}/${p.storageFile}`;
+      const storagePath = `${CONTENT_VERSION}/day-${dayStr}/${p.storageFile}`;
 
       tracks.push({
         dayNumber: day,
