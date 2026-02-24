@@ -1,17 +1,27 @@
+/**
+ * ExpiredPaywallScreen — Shown when a returning user's subscription has lapsed.
+ *
+ * Presents the RevenueCat paywall. On purchase/restore, signals the parent
+ * to re-check entitlements and grant access. No close button — the user
+ * must resubscribe to continue.
+ */
+
 import React, { useEffect, useCallback, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { OnboardingStackParamList } from '../../../types/navigation';
-import { useOnboarding } from '../state/OnboardingProvider';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
-import { ENTITLEMENT_ID } from '../../../services/PaywallService';
-import { Colors } from '../../../design/colors';
-import { FontFamily } from '../../../design/typography';
+import { ENTITLEMENT_ID } from '../../services/PaywallService';
+import { Colors } from '../../design/colors';
+import { FontFamily } from '../../design/typography';
 
-type Props = NativeStackScreenProps<OnboardingStackParamList, 'PaywallPlaceholder'>;
+interface ExpiredPaywallScreenProps {
+  /** Called when the user successfully resubscribes or restores */
+  onSubscriptionRestored: () => void;
+}
 
-const PaywallScreen: React.FC<Props> = () => {
-  const { dispatch } = useOnboarding();
+const ExpiredPaywallScreen: React.FC<ExpiredPaywallScreenProps> = ({
+  onSubscriptionRestored,
+}) => {
   const [presenting, setPresenting] = useState(false);
 
   const presentPaywall = useCallback(async () => {
@@ -26,21 +36,18 @@ const PaywallScreen: React.FC<Props> = () => {
 
       if (
         result === PAYWALL_RESULT.PURCHASED ||
-        result === PAYWALL_RESULT.RESTORED
+        result === PAYWALL_RESULT.RESTORED ||
+        result === PAYWALL_RESULT.NOT_PRESENTED
       ) {
-        // User purchased or restored — complete onboarding
-        dispatch({ type: 'COMPLETE_ONBOARDING' });
-      } else if (result === PAYWALL_RESULT.NOT_PRESENTED) {
-        // User already has the entitlement — skip paywall
-        dispatch({ type: 'COMPLETE_ONBOARDING' });
+        onSubscriptionRestored();
       }
-      // CANCELLED or ERROR — stay on this screen
+      // CANCELLED / ERROR → stay on this screen
     } catch (err) {
-      console.warn('[Paywall] Error presenting paywall:', err);
+      console.warn('[ExpiredPaywall] Error presenting paywall:', err);
     } finally {
       setPresenting(false);
     }
-  }, [dispatch, presenting]);
+  }, [presenting, onSubscriptionRestored]);
 
   // Auto-present on mount
   useEffect(() => {
@@ -48,14 +55,18 @@ const PaywallScreen: React.FC<Props> = () => {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       {presenting ? (
         <ActivityIndicator size="large" color={Colors.accent} />
       ) : (
         <View style={styles.content}>
-          <Text style={styles.headline}>Unlock Full{'\n'}Discipline System</Text>
+          <Text style={styles.badge}>SUBSCRIPTION EXPIRED</Text>
+          <Text style={styles.headline}>
+            Your access{'\n'}has ended.
+          </Text>
           <Text style={styles.subtext}>
-            Tap below to view subscription options.
+            Resubscribe to continue your Lock In program{'\n'}
+            and pick up where you left off.
           </Text>
 
           <TouchableOpacity
@@ -63,21 +74,11 @@ const PaywallScreen: React.FC<Props> = () => {
             activeOpacity={0.9}
             onPress={presentPaywall}
           >
-            <Text style={styles.ctaText}>View Plans</Text>
+            <Text style={styles.ctaText}>Resubscribe</Text>
           </TouchableOpacity>
-
-          {__DEV__ && (
-            <TouchableOpacity
-              onPress={() => dispatch({ type: 'COMPLETE_ONBOARDING' })}
-              style={styles.skipButton}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.skipText}>Skip (Dev)</Text>
-            </TouchableOpacity>
-          )}
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -91,6 +92,13 @@ const styles = StyleSheet.create({
   },
   content: {
     alignItems: 'center',
+  },
+  badge: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 11,
+    color: Colors.danger,
+    letterSpacing: 2,
+    marginBottom: 14,
   },
   headline: {
     fontFamily: FontFamily.headingBold,
@@ -106,6 +114,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textMuted,
     textAlign: 'center',
+    lineHeight: 21,
     marginBottom: 32,
   },
   ctaButton: {
@@ -121,16 +130,6 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     letterSpacing: -0.1,
   },
-  skipButton: {
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  skipText: {
-    fontFamily: FontFamily.body,
-    fontSize: 12,
-    color: Colors.textMuted,
-    opacity: 0.5,
-  },
 });
 
-export default PaywallScreen;
+export default ExpiredPaywallScreen;

@@ -132,14 +132,30 @@ export function isProgramComplete(maxCompletedDay: number): boolean {
   return maxCompletedDay >= 90;
 }
 
-/** Compute commitment percentage: completed days / calendar days elapsed (capped at 100%) */
+/**
+ * Compute commitment percentage: completed days / eligible calendar days (capped at 100%).
+ *
+ * Only counts today in the denominator if the user has already locked in today.
+ * This prevents commitment from dropping at midnight before the user has a
+ * chance to complete the day.
+ */
 export function computeCommitmentPercent(
   maxCompletedDay: number,
   programStartDate: DayKey | null,
+  lastLockInCompletedDate: DayKey | null,
 ): number {
   if (!programStartDate || maxCompletedDay <= 0) return 0;
-  const elapsed = Math.max(1, dayKeyDelta(programStartDate, getTodayKey()) + 1);
-  return Math.min(100, Math.round((maxCompletedDay / elapsed) * 100));
+
+  const today = getTodayKey();
+  const completedToday = lastLockInCompletedDate === today;
+
+  // Days fully elapsed (not counting today)
+  const pastDays = dayKeyDelta(programStartDate, today);
+
+  // Include today only if the user already completed it
+  const denominator = completedToday ? pastDays + 1 : Math.max(1, pastDays);
+
+  return Math.min(100, Math.round((maxCompletedDay / denominator) * 100));
 }
 
 // ─── Identity Card Messages ──────────────────────────────────────

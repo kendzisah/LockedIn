@@ -38,8 +38,13 @@ const ProgramCompleteScreen: React.FC<Props> = ({ navigation }) => {
   }, [state.programStartDate]);
 
   const commitment = useMemo(
-    () => computeCommitmentPercent(state.maxCompletedDay, state.programStartDate),
-    [state.maxCompletedDay, state.programStartDate],
+    () =>
+      computeCommitmentPercent(
+        state.maxCompletedDay,
+        state.programStartDate,
+        state.lastLockInCompletedDate,
+      ),
+    [state.maxCompletedDay, state.programStartDate, state.lastLockInCompletedDate],
   );
 
   const totalHours = Math.floor(state.lifetimeTotalMinutes / 60);

@@ -15,8 +15,13 @@ const StatsRow: React.FC = () => {
   const { state } = useSession();
 
   const commitment = useMemo(
-    () => computeCommitmentPercent(state.maxCompletedDay, state.programStartDate),
-    [state.maxCompletedDay, state.programStartDate],
+    () =>
+      computeCommitmentPercent(
+        state.maxCompletedDay,
+        state.programStartDate,
+        state.lastLockInCompletedDate,
+      ),
+    [state.maxCompletedDay, state.programStartDate, state.lastLockInCompletedDate],
   );
 
   return (

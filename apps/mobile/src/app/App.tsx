@@ -16,6 +16,7 @@ import RootNavigator from '../navigation/RootNavigator';
 import { Colors } from '../design/colors';
 import { SupabaseService } from '../services/SupabaseService';
 import { AudioService } from '../services/AudioService';
+import { PaywallService } from '../services/PaywallService';
 
 // Keep splash screen visible while fonts + auth load
 SplashScreen.preventAutoHideAsync();
@@ -42,6 +43,9 @@ const App: React.FC = () => {
       // Initialize Supabase client + anonymous auth
       // If it fails (e.g., no network), app still works in timer-only mode
       await SupabaseService.initialize();
+
+      // Initialize RevenueCat for paywall / subscription management
+      await PaywallService.initialize();
 
       if (!cancelled) {
         setAuthReady(true);
