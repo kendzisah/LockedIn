@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@lockedin/supabase-client';
+import { requireAdmin } from '../../../lib/require-admin';
 
 /**
  * Advisory duration check — returns audio length vs session slot for info purposes.
@@ -7,6 +8,10 @@ import { createAdminClient } from '@lockedin/supabase-client';
  * Always returns valid: true (audio can be any length).
  */
 export async function POST(request: NextRequest) {
+  // ── Auth gate (defence-in-depth) ──
+  const auth = await requireAdmin();
+  if (!auth.ok) return auth.response;
+
   const supabase = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -25,6 +30,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Validate UUID format to prevent injection
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(audioTrackId)) {
+    return NextResponse.json(
+      { error: 'Invalid audioTrackId format' },
+      { status: 400 },
+    );
+  }
+
   const { data: track, error } = await supabase
     .from('audio_tracks')
     .select('duration_seconds')
@@ -39,7 +53,7 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({
-    valid: true, // duration is advisory, not a hard constraint
+    valid: true,
     actualDurationSeconds: track.duration_seconds,
     expectedDurationSeconds,
     diffSeconds: Math.abs(track.duration_seconds - expectedDurationSeconds),

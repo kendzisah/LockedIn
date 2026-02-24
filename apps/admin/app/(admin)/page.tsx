@@ -1,5 +1,5 @@
-import { ProgramKPI } from '../components/ProgramKPI';
-import { OnboardingTrackPanel } from '../components/OnboardingTrackPanel';
+import { ProgramKPI } from '../../components/ProgramKPI';
+import { OnboardingTrackPanel } from '../../components/OnboardingTrackPanel';
 
 export default function DashboardPage() {
   return (

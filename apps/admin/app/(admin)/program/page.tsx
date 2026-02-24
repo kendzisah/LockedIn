@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { ProgramGrid } from '../../components/ProgramGrid';
-import { DayEditorPanel } from '../../components/DayEditorPanel';
+import { ProgramGrid } from '../../../components/ProgramGrid';
+import { DayEditorPanel } from '../../../components/DayEditorPanel';
 
 export default function ProgramPage() {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
