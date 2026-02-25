@@ -5,14 +5,14 @@
  * Deterministic copy states based on streak.
  * First-week cap on variant diversity.
  *
- * Uses completion-based computeCurrentDay(maxCompletedDay).
+ * Uses getDisplayDay() so the day stays consistent through Lock In + Reflect.
  */
 
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSession } from '../state/SessionProvider';
 import {
-  computeCurrentDay,
+  getDisplayDay,
   getIdentityMessage,
 } from '../engine/SessionEngine';
 import { Colors } from '../../../design/colors';
@@ -22,8 +22,8 @@ const IdentityCard: React.FC = () => {
   const { state } = useSession();
 
   const currentDay = useMemo(
-    () => computeCurrentDay(state.maxCompletedDay),
-    [state.maxCompletedDay],
+    () => getDisplayDay(state.maxCompletedDay, state.lastLockInCompletedDate),
+    [state.maxCompletedDay, state.lastLockInCompletedDate],
   );
 
   const message = useMemo(

@@ -122,8 +122,28 @@ export function computeNewStreak(
 
 // ─── Day & Progress Calculation ──────────────────────────────────
 
-/** Compute current program day (1-90). Based on completion count, not calendar. */
+/** Compute the next program day to lock in (1-90). */
 export function computeCurrentDay(maxCompletedDay: number): number {
+  return Math.min(90, maxCompletedDay + 1);
+}
+
+/**
+ * The program day to display in the UI and use for content fetch.
+ *
+ * After Lock In completes for Day N, the user still needs to Reflect on Day N,
+ * so the display stays on Day N until the next calendar day.
+ *
+ *  - Lock In not done today → next day to lock in (maxCompletedDay + 1)
+ *  - Lock In done today     → the day just completed (maxCompletedDay)
+ */
+export function getDisplayDay(
+  maxCompletedDay: number,
+  lastLockInCompletedDate: DayKey | null,
+): number {
+  const today = getTodayKey();
+  if (lastLockInCompletedDate === today) {
+    return Math.max(1, maxCompletedDay);
+  }
   return Math.min(90, maxCompletedDay + 1);
 }
 

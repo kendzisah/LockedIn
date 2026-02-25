@@ -31,7 +31,7 @@ import { useSession } from './state/SessionProvider';
 import {
   createSession,
   getRemaining,
-  computeCurrentDay,
+  getDisplayDay,
   isProgramComplete,
 } from './engine/SessionEngine';
 import AnimatedGradient from './components/AnimatedGradient';
@@ -65,9 +65,10 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const autoResumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Program day ──
+  // Display day stays on the current day after Lock In (reflect is same day)
   const programDay = useMemo(
-    () => computeCurrentDay(state.maxCompletedDay),
-    [state.maxCompletedDay],
+    () => getDisplayDay(state.maxCompletedDay, state.lastLockInCompletedDate),
+    [state.maxCompletedDay, state.lastLockInCompletedDate],
   );
 
   const programComplete = useMemo(

@@ -1,7 +1,7 @@
 /**
  * ProgressBlock — Compact block with Day X/90 + progress bar + streak badge + dynamic subtext.
  *
- * Uses completion-based computeCurrentDay(maxCompletedDay).
+ * Uses getDisplayDay() so the day stays consistent through Lock In + Reflect.
  */
 
 import React, { useEffect, useRef, useMemo } from 'react';
@@ -9,7 +9,7 @@ import { Animated, StyleSheet, Text, View } from 'react-native';
 import LottieView from 'lottie-react-native';
 import { useSession } from '../state/SessionProvider';
 import {
-  computeCurrentDay,
+  getDisplayDay,
   getProgressSubtext,
 } from '../engine/SessionEngine';
 import { Colors } from '../../../design/colors';
@@ -24,8 +24,8 @@ const ProgressBlock: React.FC = () => {
   const hasStreak = state.consecutiveStreak > 0;
 
   const currentDay = useMemo(
-    () => computeCurrentDay(state.maxCompletedDay),
-    [state.maxCompletedDay],
+    () => getDisplayDay(state.maxCompletedDay, state.lastLockInCompletedDate),
+    [state.maxCompletedDay, state.lastLockInCompletedDate],
   );
 
   const progressRatio = state.maxCompletedDay / 90;
