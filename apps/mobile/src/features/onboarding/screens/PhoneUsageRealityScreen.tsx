@@ -164,6 +164,7 @@ const PhoneUsageRealityScreen: React.FC<Props> = ({ navigation }) => {
     if (!selected) return;
 
     setIsTransitioning(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     // Fade out all selection content
     Animated.parallel([

@@ -8,6 +8,7 @@ const initialState: OnboardingState = {
   selectedPainPoint: null,
   phoneUsageHours: null,
   dailyDedication: null,
+  selectedGoals: [],
   screenTimeStatus: 'not_requested',
   notificationsGranted: null,
   demoCompleted: false,
@@ -25,6 +26,8 @@ function onboardingReducer(
       return { ...state, phoneUsageHours: action.payload };
     case 'SET_DAILY_DEDICATION':
       return { ...state, dailyDedication: action.payload };
+    case 'SET_GOALS':
+      return { ...state, selectedGoals: action.payload };
     case 'SET_SCREEN_TIME_STATUS':
       return { ...state, screenTimeStatus: action.payload };
     case 'SET_NOTIFICATIONS_GRANTED':

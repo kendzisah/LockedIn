@@ -1,0 +1,12 @@
+{
+  "name": "expo-screen-time",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "types": "index.ts",
+  "dependencies": {
+    "expo-modules-core": "~2.2.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2"
+  }
+}

@@ -86,6 +86,7 @@ const ConfrontTruthScreen: React.FC<Props> = ({ navigation }) => {
   const handleContinue = useCallback(() => {
     if (phase !== 'intro') return;
     setPhase('transition');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     // Fade out all intro content
     Animated.timing(introOpacity, {

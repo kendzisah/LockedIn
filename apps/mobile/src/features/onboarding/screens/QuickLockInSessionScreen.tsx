@@ -151,7 +151,7 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
       LockModeService.endSession();
       AudioService.stop();
       dispatch({ type: 'SET_DEMO_COMPLETED' });
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Animated.timing(screenOpacity, {
         toValue: 0,
         duration: 500,
@@ -201,6 +201,7 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
   }, [paused, stopTimer]);
 
   const handleResume = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowResumeModal(false);
     setConfirmEnd(false);
     setPaused(false);
@@ -218,7 +219,7 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
     stopTimer();
     AudioService.stop();
     LockModeService.endSession();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 500,

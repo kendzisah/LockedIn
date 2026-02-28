@@ -5,6 +5,7 @@ import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 import { ENTITLEMENT_ID } from '../../../services/PaywallService';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -16,6 +17,7 @@ const PaywallScreen: React.FC<Props> = () => {
 
   const presentPaywall = useCallback(async () => {
     if (presenting) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setPresenting(true);
 
     try {
@@ -68,7 +70,10 @@ const PaywallScreen: React.FC<Props> = () => {
 
           {__DEV__ && (
             <TouchableOpacity
-              onPress={() => dispatch({ type: 'COMPLETE_ONBOARDING' })}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                dispatch({ type: 'COMPLETE_ONBOARDING' });
+              }}
               style={styles.skipButton}
               activeOpacity={0.6}
             >

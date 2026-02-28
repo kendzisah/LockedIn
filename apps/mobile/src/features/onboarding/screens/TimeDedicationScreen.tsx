@@ -151,6 +151,7 @@ const TimeDedicationScreen: React.FC<Props> = ({ navigation }) => {
     if (!selected) return;
 
     setIsTransitioning(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     // Fade out selection content
     Animated.parallel([
