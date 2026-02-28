@@ -1,23 +1,20 @@
+import { Platform } from 'react-native';
 import type { ScreenTimeStatus } from '../features/onboarding/state/types';
 
-/**
- * Permission service.
- * Screen Time: stubbed for Phase 1.
- * Notifications: real expo-notifications integration (lazy-loaded to avoid
- * crash when native module isn't yet in the dev build binary).
- */
 export class PermissionService {
-  /**
-   * Request Screen Time / app-blocking permission.
-   * Phase 1: returns 'requested' — real implementation in Phase 2+.
-   * iOS: Family Controls entitlement required.
-   * Android: Usage Access / DND permission required.
-   */
   static async requestScreenTimePermission(): Promise<ScreenTimeStatus> {
-    // TODO (Phase 2+): Implement real Screen Time permission request
-    // iOS — FamilyControls AuthorizationCenter
-    // Android — UsageStatsManager / DND policy
-    return 'requested';
+    if (Platform.OS !== 'ios') return 'unavailable';
+
+    try {
+      const ScreenTime = await import('../../modules/screen-time/src');
+      const result = await ScreenTime.requestAuthorization();
+
+      if (result === 'approved') return 'granted';
+      if (result.startsWith('denied')) return 'denied';
+      return 'not_requested';
+    } catch {
+      return 'unavailable';
+    }
   }
 
   /**

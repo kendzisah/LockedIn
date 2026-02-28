@@ -17,6 +17,9 @@
       "bundleIdentifier": "com.flocktechnologies.lockedin",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.developer.family-controls": true
       }
     },
     "android": {
@@ -29,6 +32,8 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
@@ -39,10 +44,19 @@
       "expo-font",
       "expo-audio"
     ],
+    "autolinking": {
+      "nativeModulesDir": "modules"
+    },
     "extra": {
       "eas": {
         "projectId": "4ab861f7-b73d-4578-96a5-ac6bdd7d0cd5"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/4ab861f7-b73d-4578-96a5-ac6bdd7d0cd5"
     }
   }
 }

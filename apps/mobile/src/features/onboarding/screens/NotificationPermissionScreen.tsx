@@ -13,6 +13,7 @@ import { useOnboarding } from '../state/OnboardingProvider';
 import { PermissionService } from '../../../services/PermissionService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -114,6 +115,7 @@ const NotificationPermissionScreen: React.FC<Props> = ({ navigation }) => {
   ]);
 
   const fadeAndNavigate = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 500,
@@ -146,7 +148,7 @@ const NotificationPermissionScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer>
-      <ProgressIndicator current={8} total={11} />
+      <ProgressIndicator current={10} total={13} />
 
       <View style={styles.body}>
         {/* Headline */}

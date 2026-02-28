@@ -13,6 +13,7 @@ import { useOnboarding } from '../state/OnboardingProvider';
 import { PermissionService } from '../../../services/PermissionService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -43,6 +44,9 @@ const ScreenTimePermissionScreen: React.FC<Props> = ({ navigation }) => {
   const buttonOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    // We removed the auto-request logic to require user interaction.
+    // The user must tap "Enforce My Focus" to trigger the permission request.
+
     const timers: ReturnType<typeof setTimeout>[] = [];
 
     // Dot fades in
@@ -144,6 +148,7 @@ const ScreenTimePermissionScreen: React.FC<Props> = ({ navigation }) => {
   const handleRequest = useCallback(async () => {
     const status = await PermissionService.requestScreenTimePermission();
     dispatch({ type: 'SET_SCREEN_TIME_STATUS', payload: status });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 500,
@@ -156,7 +161,7 @@ const ScreenTimePermissionScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer>
-      <ProgressIndicator current={7} total={11} />
+      <ProgressIndicator current={9} total={13} />
 
       <View style={styles.body}>
         {/* Subtle animated pulse ring */}

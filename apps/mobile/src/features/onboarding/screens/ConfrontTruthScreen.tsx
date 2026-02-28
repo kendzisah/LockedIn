@@ -10,6 +10,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { Typography } from '../../../design/typography';
 
@@ -108,6 +109,7 @@ const ConfrontTruthScreen: React.FC<Props> = ({ navigation }) => {
       ]).start(() => {
         // Hold for 1.5s, then fade out awareness before navigating
         setTimeout(() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           Animated.timing(awarenessOpacity, {
             toValue: 0,
             duration: 500,
@@ -124,7 +126,7 @@ const ConfrontTruthScreen: React.FC<Props> = ({ navigation }) => {
     <ScreenContainer>
       {/* Intro content — fades out on Continue */}
       <Animated.View style={[styles.introWrap, { opacity: introOpacity }]}>
-        <ProgressIndicator current={1} total={11} />
+        <ProgressIndicator current={1} total={13} />
 
         <Animated.Text
           style={[

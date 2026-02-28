@@ -46,6 +46,7 @@ import { ClockService, type CTAState } from '../../services/ClockService';
 import { SessionRepository } from '../../services/SessionRepository';
 import { AudioService } from '../../services/AudioService';
 import type { ContentPhase } from '@lockedin/shared-types';
+import { LockModeService } from '../../services/LockModeService';
 
 const SESSION_DURATION = 5; // minutes — all sessions are ~5 min
 
@@ -214,6 +215,8 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
     if (autoResumeTimer.current) clearTimeout(autoResumeTimer.current);
     setShowResumeModal(false);
 
+    LockModeService.endSession();
+
     if (state.activeSession) {
       dispatch({
         type: 'COMPLETE_SESSION',
@@ -228,8 +231,10 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       ctaState.mode === 'unlock' ? 'unlock' : 'lock_in';
 
     if (phase === 'lock_in') {
-      // Lock In: create active session, animate, navigate
+      // Lock In: create active session, shield apps, animate, navigate
       const session = createSession(SESSION_DURATION);
+
+      LockModeService.beginSession();
 
       dispatch({
         type: 'START_SESSION',

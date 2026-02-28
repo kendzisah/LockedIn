@@ -10,6 +10,7 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import ScreenContainer from '../../../design/components/ScreenContainer';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -89,6 +90,7 @@ const IdentityReinforcementScreen: React.FC<Props> = ({ navigation }) => {
   ]);
 
   const handleContinue = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 500,

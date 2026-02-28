@@ -1,31 +1,41 @@
-/**
- * Lock Mode service.
- *
- * Phase 1 (current): no-op stubs. The app is full-screen with
- *   BackHandler blocking and no in-app navigation during sessions.
- *
- * Phase 2+: explore Screen Time API (iOS) / UsageStatsManager (Android)
- *   for real enforcement. Note: iOS does NOT allow programmatic DND
- *   activation or arbitrary app blocking. Any future enforcement must
- *   work within platform sandbox constraints.
- *
- * Copy guidance: never promise "DND activated" or "apps blocked."
- *   Use "full-screen" and "interruption-minimized" instead.
- */
+import { Platform } from 'react-native';
+
+let ScreenTime: typeof import('../../modules/screen-time/src') | null = null;
+
+async function getScreenTime() {
+  if (Platform.OS !== 'ios') return null;
+  if (ScreenTime) return ScreenTime;
+  try {
+    ScreenTime = await import('../../modules/screen-time/src');
+    return ScreenTime;
+  } catch {
+    return null;
+  }
+}
+
 export class LockModeService {
-  /** Begin a Lock In session. Phase 2+: explore platform enforcement APIs. */
-  static beginSession(): void {
-    // No-op in Phase 1. BackHandler + full-screen provides baseline.
+  static async beginSession(): Promise<void> {
+    const mod = await getScreenTime();
+    mod?.shieldApps();
   }
 
-  /** End a Lock In session. Phase 2+: restore any enforcement state. */
-  static endSession(): void {
-    // No-op in Phase 1.
+  static async endSession(): Promise<void> {
+    const mod = await getScreenTime();
+    mod?.removeShield();
   }
 
-  /** Check if a session is currently active. */
-  static isActive(): boolean {
-    // Phase 1: always returns false (no native enforcement layer).
-    return false;
+  static async isActive(): Promise<boolean> {
+    const mod = await getScreenTime();
+    return mod?.isShielding() ?? false;
+  }
+
+  static async showAppPicker(): Promise<number> {
+    const mod = await getScreenTime();
+    return mod?.showAppPicker() ?? 0;
+  }
+
+  static async getSelectedAppCount(): Promise<number> {
+    const mod = await getScreenTime();
+    return mod?.getSelectedAppCount() ?? 0;
   }
 }

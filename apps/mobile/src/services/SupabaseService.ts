@@ -40,20 +40,19 @@ let initialized = false;
 async function initialize(): Promise<boolean> {
   if (initialized) return true;
 
-  client = createMobileClient(
-    ENV.SUPABASE_URL,
-    ENV.SUPABASE_ANON_KEY,
-    SecureStoreAdapter,
-  );
-
   try {
+    client = createMobileClient(
+      ENV.SUPABASE_URL,
+      ENV.SUPABASE_ANON_KEY,
+      SecureStoreAdapter,
+    );
+
     currentUserId = await ensureAnonymousSession(client);
     initialized = true;
     console.log('[SupabaseService] Authenticated anonymously:', currentUserId);
     return true;
   } catch (error) {
-    console.warn('[SupabaseService] Auth failed (app will run in timer-only mode):', error);
-    // Client is still created — queries will just fail with 401 and return null
+    console.warn('[SupabaseService] Init failed (app will run in timer-only mode):', error);
     initialized = true;
     return false;
   }

@@ -9,10 +9,11 @@
 function requireEnv(key: string): string {
   const value = process.env[key];
   if (!value) {
-    throw new Error(
+    console.error(
       `[ENV] Missing required environment variable: ${key}. ` +
-        'Ensure it is set in apps/mobile/.env',
+        'Ensure it is set in apps/mobile/.env or eas.json env config.',
     );
+    return '';
   }
   return value;
 }

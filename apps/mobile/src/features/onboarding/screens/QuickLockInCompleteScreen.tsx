@@ -11,6 +11,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -103,6 +104,7 @@ const QuickLockInCompleteScreen: React.FC<Props> = ({ navigation }) => {
   ]);
 
   const handleUnlock = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 500,
@@ -115,7 +117,7 @@ const QuickLockInCompleteScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer>
-      <ProgressIndicator current={10} total={11} />
+      <ProgressIndicator current={12} total={13} />
 
       <View style={styles.body}>
         {/* Headline — verdict, not explanation */}

@@ -40,6 +40,7 @@ import { AudioService } from '../../services/AudioService';
 import { SessionRepository, type DayTrack } from '../../services/SessionRepository';
 import { TelemetryService } from '../../services/TelemetryService';
 import type { ContentPhase } from '@lockedin/shared-types';
+import { LockModeService } from '../../services/LockModeService';
 
 const SESSION_DURATION = 5; // minutes — session duration in DB
 const FALLBACK_SECONDS = 150; // 2:30 when audio is unavailable
@@ -337,10 +338,9 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    // Stop audio
     AudioService.stop();
+    LockModeService.endSession();
 
-    // Dispatch appropriate completion action
     const durationMinutes = Math.ceil(totalSeconds / 60);
     if (phase === 'lock_in') {
       dispatch({
@@ -427,10 +427,9 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    // Stop audio
     AudioService.stop();
+    LockModeService.endSession();
 
-    // Dispatch appropriate completion
     const durationMinutes = Math.ceil(totalSeconds / 60);
     if (phase === 'lock_in') {
       dispatch({

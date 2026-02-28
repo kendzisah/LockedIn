@@ -13,6 +13,7 @@ import { LockModeService } from '../../../services/LockModeService';
 import { SessionRepository } from '../../../services/SessionRepository';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -132,6 +133,7 @@ const QuickLockInIntroScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleLockIn = useCallback(() => {
     LockModeService.beginSession();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 500,
@@ -144,7 +146,7 @@ const QuickLockInIntroScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer>
-      <ProgressIndicator current={9} total={11} />
+      <ProgressIndicator current={11} total={13} />
 
       <View style={styles.body}>
         {/* Headline — commanding, not inviting */}

@@ -12,6 +12,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -234,6 +235,7 @@ const ProjectionScreen: React.FC<Props> = ({ navigation }) => {
 
     // After a beat, fade out the entire page
     setTimeout(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       Animated.timing(pageOpacity, {
         toValue: 0,
         duration: 400,
@@ -258,7 +260,7 @@ const ProjectionScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={[styles.pageWrap, { opacity: pageOpacity }]}>
       <ScreenContainer>
-        <ProgressIndicator current={6} total={11} />
+        <ProgressIndicator current={8} total={13} />
 
         <Animated.View style={[styles.signalBar, { opacity: signalOpacity }]} />
 
@@ -326,10 +328,10 @@ const ProjectionScreen: React.FC<Props> = ({ navigation }) => {
         <Animated.View style={[styles.buttonWrap, { opacity: buttonOpacity }]}>
           <TouchableOpacity
             onPress={handleBeginLockIn}
-            activeOpacity={0.9}
+            activeOpacity={0.85}
             style={styles.ctaButton}
           >
-            <Text style={styles.ctaText}>Begin Lock In</Text>
+            <Text style={styles.ctaText}>Continue →</Text>
           </TouchableOpacity>
         </Animated.View>
       </ScreenContainer>
@@ -418,20 +420,16 @@ const styles = StyleSheet.create({
   // ── CTA ──
   buttonWrap: {
     paddingBottom: 32,
-    paddingHorizontal: 4,
-  },
-  ctaButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 17,
-    borderRadius: 6,
     alignItems: 'center',
   },
+  ctaButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
   ctaText: {
-    fontFamily: FontFamily.heading,
+    fontFamily: FontFamily.bodyMedium,
     fontSize: 17,
-    letterSpacing: 0.3,
-    color: Colors.textPrimary,
-    textTransform: 'uppercase',
+    color: Colors.textSecondary,
   },
 });
 

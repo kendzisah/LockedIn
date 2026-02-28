@@ -13,6 +13,7 @@ import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import OptionItem from '../../../design/components/OptionItem';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -219,7 +220,7 @@ const TimeDedicationScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer centered={false}>
-      <ProgressIndicator current={4} total={11} />
+      <ProgressIndicator current={4} total={13} />
 
       {!isTransitioning ? (
         <>
@@ -315,12 +316,13 @@ const TimeDedicationScreen: React.FC<Props> = ({ navigation }) => {
           >
             <TouchableOpacity
               onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 Animated.timing(screenOpacity, {
                   toValue: 0,
                   duration: 500,
                   useNativeDriver: true,
                 }).start(() => {
-                  navigation.navigate('MechanismIntro');
+                  navigation.navigate('HabitFormation');
                 });
               }}
               activeOpacity={0.7}

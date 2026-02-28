@@ -26,6 +26,7 @@ import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import { LockModeService } from '../../../services/LockModeService';
 import PrimaryButton from '../../../design/components/PrimaryButton';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { Typography, FontFamily } from '../../../design/typography';
 import { AudioService } from '../../../services/AudioService';
@@ -150,6 +151,7 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
       LockModeService.endSession();
       AudioService.stop();
       dispatch({ type: 'SET_DEMO_COMPLETED' });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       Animated.timing(screenOpacity, {
         toValue: 0,
         duration: 500,
@@ -216,6 +218,7 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
     stopTimer();
     AudioService.stop();
     LockModeService.endSession();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 500,

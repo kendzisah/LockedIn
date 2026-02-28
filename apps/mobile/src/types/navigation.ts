@@ -8,6 +8,8 @@ export type OnboardingStackParamList = {
   SurfacePain: undefined;
   PhoneUsageReality: undefined;
   TimeDedication: undefined;
+  HabitFormation: undefined;
+  DisciplineVision: undefined;
   MechanismIntro: undefined;
   Projection: undefined;
   ScreenTimePermission: undefined;

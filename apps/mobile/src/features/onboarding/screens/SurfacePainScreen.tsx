@@ -12,6 +12,7 @@ import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import OptionItem from '../../../design/components/OptionItem';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { Typography } from '../../../design/typography';
 
@@ -117,6 +118,7 @@ const SurfacePainScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleContinue = useCallback(() => {
     if (!selected) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 500,
@@ -129,7 +131,7 @@ const SurfacePainScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer centered={false}>
-      <ProgressIndicator current={2} total={11} />
+      <ProgressIndicator current={2} total={13} />
 
       <View style={styles.body}>
         {/* Title — slides in first */}

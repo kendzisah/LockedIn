@@ -9,6 +9,8 @@ import SurfacePainScreen from '../features/onboarding/screens/SurfacePainScreen'
 import PhoneUsageRealityScreen from '../features/onboarding/screens/PhoneUsageRealityScreen';
 import TimeDedicationScreen from '../features/onboarding/screens/TimeDedicationScreen';
 import MechanismIntroScreen from '../features/onboarding/screens/MechanismIntroScreen';
+import HabitFormationScreen from '../features/onboarding/screens/HabitFormationScreen';
+import DisciplineVisionScreen from '../features/onboarding/screens/DisciplineVisionScreen';
 import ProjectionScreen from '../features/onboarding/screens/ProjectionScreen';
 import ScreenTimePermissionScreen from '../features/onboarding/screens/ScreenTimePermissionScreen';
 import NotificationPermissionScreen from '../features/onboarding/screens/NotificationPermissionScreen';
@@ -46,6 +48,16 @@ const OnboardingNavigator: React.FC = () => {
       <Stack.Screen
         name="TimeDedication"
         component={TimeDedicationScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="HabitFormation"
+        component={HabitFormationScreen}
+        options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="DisciplineVision"
+        component={DisciplineVisionScreen}
         options={{ animation: 'none' }}
       />
       <Stack.Screen
