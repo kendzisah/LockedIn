@@ -6,7 +6,7 @@
  *
  * Interruption policy:
  *  - playsInSilentMode: true (plays even with ringer muted on iOS)
- *  - shouldPlayInBackground: false (pauses when app is backgrounded)
+ *  - shouldPlayInBackground: true (continues when app is backgrounded / screen locked)
  *  - SessionScreen manages AppState to pause/resume + timestamp-based timer
  *
  * Route changes (AirPods/Bluetooth): handled automatically by expo-audio.
@@ -34,7 +34,7 @@ async function configure(): Promise<void> {
   try {
     await setAudioModeAsync({
       playsInSilentMode: true,
-      shouldPlayInBackground: false,
+      shouldPlayInBackground: true,
       interruptionMode: 'duckOthers',
       shouldRouteThroughEarpiece: false,
     });

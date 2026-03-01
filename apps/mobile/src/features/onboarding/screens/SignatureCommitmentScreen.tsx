@@ -23,13 +23,38 @@ interface InkPoint {
   y: number;
 }
 
+type Stroke = InkPoint[];
+
+function interpolateStroke(stroke: Stroke): InkPoint[] {
+  if (stroke.length < 2) return stroke;
+  const result: InkPoint[] = [stroke[0]];
+  for (let i = 1; i < stroke.length; i++) {
+    const prev = stroke[i - 1];
+    const curr = stroke[i];
+    const dx = curr.x - prev.x;
+    const dy = curr.y - prev.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const step = 2;
+    if (dist > step) {
+      const steps = Math.ceil(dist / step);
+      for (let s = 1; s <= steps; s++) {
+        const t = s / steps;
+        result.push({ x: prev.x + dx * t, y: prev.y + dy * t });
+      }
+    } else {
+      result.push(curr);
+    }
+  }
+  return result;
+}
+
 type Props = NativeStackScreenProps<
   OnboardingStackParamList,
   'SignatureCommitment'
 >;
 
 const SignatureCommitmentScreen: React.FC<Props> = ({ navigation }) => {
-  const [points, setPoints] = useState<InkPoint[]>([]);
+  const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [hasSigned, setHasSigned] = useState(false);
 
   // ── Screen-level fade ──
@@ -144,18 +169,23 @@ const SignatureCommitmentScreen: React.FC<Props> = ({ navigation }) => {
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
         const { locationX, locationY } = evt.nativeEvent;
-        setPoints((prev) => [...prev, { x: locationX, y: locationY }]);
+        setStrokes((prev) => [...prev, [{ x: locationX, y: locationY }]]);
         if (!hasSigned) setHasSigned(true);
       },
       onPanResponderMove: (evt) => {
         const { locationX, locationY } = evt.nativeEvent;
-        setPoints((prev) => [...prev, { x: locationX, y: locationY }]);
+        setStrokes((prev) => {
+          const updated = [...prev];
+          const last = [...updated[updated.length - 1], { x: locationX, y: locationY }];
+          updated[updated.length - 1] = last;
+          return updated;
+        });
       },
     }),
   ).current;
 
   const handleClear = useCallback(() => {
-    setPoints([]);
+    setStrokes([]);
     setHasSigned(false);
   }, []);
 
@@ -203,15 +233,17 @@ const SignatureCommitmentScreen: React.FC<Props> = ({ navigation }) => {
         {/* Signature canvas — View-based dot trail */}
         <Animated.View style={[styles.canvasWrap, { opacity: canvasOpacity }]}>
           <View style={styles.canvas} {...panResponder.panHandlers}>
-            {points.map((p, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.inkDot,
-                  { left: p.x - 1.5, top: p.y - 1.5 },
-                ]}
-              />
-            ))}
+            {strokes.map((stroke, si) =>
+              interpolateStroke(stroke).map((p, pi) => (
+                <View
+                  key={`${si}-${pi}`}
+                  style={[
+                    styles.inkDot,
+                    { left: p.x - 1.5, top: p.y - 1.5 },
+                  ]}
+                />
+              )),
+            )}
             {!hasSigned && (
               <Text style={styles.canvasPlaceholder}>Sign here</Text>
             )}

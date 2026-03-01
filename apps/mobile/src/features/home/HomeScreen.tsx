@@ -257,7 +257,9 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         });
       });
     } else {
-      // Unlock: navigate directly (no lock animation, no crash-resume)
+      // Unlock: shield apps, navigate directly (no lock animation, no crash-resume)
+      LockModeService.beginSession();
+
       Animated.timing(screenOpacity, {
         toValue: 0,
         duration: 400,

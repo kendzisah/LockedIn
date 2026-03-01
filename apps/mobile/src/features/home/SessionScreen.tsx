@@ -464,20 +464,13 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     return () => handler.remove();
   }, []);
 
-  // ── AppState: pause/resume audio + recalculate timer ──
+  // ── AppState: recalculate timer on foreground return ──
+  // Audio continues in background (shouldPlayInBackground: true).
   useEffect(() => {
     const subscription = AppState.addEventListener(
       'change',
       (nextState: AppStateStatus) => {
-        if (nextState === 'background') {
-          AudioService.pause();
-        } else if (nextState === 'active') {
-          // Resume audio
-          if (audioState === 'loaded') {
-            AudioService.play();
-          }
-
-          // Recalculate timer from end timestamp
+        if (nextState === 'active') {
           const r = getRemaining(endTimestampRef.current);
           setRemaining(r);
           if (r <= 0) {
@@ -487,7 +480,7 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       },
     );
     return () => subscription.remove();
-  }, [handleTimerComplete, audioState]);
+  }, [handleTimerComplete]);
 
   // Cleanup hold interval on unmount
   useEffect(() => {

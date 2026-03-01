@@ -11,6 +11,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import { PermissionService } from '../../../services/PermissionService';
+import { LockModeService } from '../../../services/LockModeService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
@@ -149,6 +150,11 @@ const ScreenTimePermissionScreen: React.FC<Props> = ({ navigation }) => {
     const status = await PermissionService.requestScreenTimePermission();
     dispatch({ type: 'SET_SCREEN_TIME_STATUS', payload: status });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    if (status === 'granted') {
+      await LockModeService.showAppPicker();
+    }
+
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 500,

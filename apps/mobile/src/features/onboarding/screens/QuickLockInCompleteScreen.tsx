@@ -153,14 +153,13 @@ const QuickLockInCompleteScreen: React.FC<Props> = ({ navigation }) => {
         </Animated.Text>
       </View>
 
-      {/* CTA — transitions into paywall */}
       <Animated.View style={[styles.buttonWrap, { opacity: buttonOpacity }]}>
         <TouchableOpacity
           onPress={handleUnlock}
-          activeOpacity={0.9}
-          style={styles.ctaButton}
+          activeOpacity={0.7}
+          style={styles.continueButton}
         >
-          <Text style={styles.ctaText}>Unlock Full Lock In</Text>
+          <Text style={styles.continueText}>Continue →</Text>
         </TouchableOpacity>
       </Animated.View>
     </ScreenContainer>
@@ -201,22 +200,18 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: Colors.textSecondary,
   },
-  // ── CTA ──
   buttonWrap: {
     paddingBottom: 32,
-    paddingHorizontal: 4,
+    alignItems: 'flex-end',
   },
-  ctaButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 17,
-    borderRadius: 6,
-    alignItems: 'center',
+  continueButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
   },
-  ctaText: {
-    fontFamily: FontFamily.heading,
+  continueText: {
+    fontFamily: FontFamily.bodyMedium,
+    color: Colors.textSecondary,
     fontSize: 17,
-    letterSpacing: 0.2,
-    color: Colors.textPrimary,
   },
 });
 

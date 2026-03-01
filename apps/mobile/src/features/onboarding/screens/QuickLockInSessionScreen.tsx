@@ -177,7 +177,7 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
     return () => handler.remove();
   }, [totalSeconds]);
 
-  // ── AppState handler: pause/resume ──
+  // ── AppState handler: pause timer (audio continues in background) ──
   useEffect(() => {
     const subscription = AppState.addEventListener(
       'change',
@@ -187,7 +187,6 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
 
         if (wasActive && !isActive) {
           stopTimer();
-          AudioService.pause();
           setPaused(true);
         } else if (!wasActive && isActive && paused) {
           setShowResumeModal(true);
