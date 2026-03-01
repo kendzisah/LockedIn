@@ -30,6 +30,9 @@ export const ENV = {
   /** Supabase anonymous/public key */
   SUPABASE_ANON_KEY: requireEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY'),
 
-  /** RevenueCat API key */
+  /** RevenueCat API key (default / Android) */
   REVENUECAT_API_KEY: requireEnv('EXPO_PUBLIC_REVENUECAT_API_KEY'),
+
+  /** RevenueCat iOS-specific API key */
+  REVENUECAT_IOS_API_KEY: requireEnv('EXPO_PUBLIC_REVENUECAT_IOS_API_KEY'),
 };

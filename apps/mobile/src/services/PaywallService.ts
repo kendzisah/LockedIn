@@ -35,9 +35,12 @@ export class PaywallService {
         Purchases.setLogLevel(LOG_LEVEL.VERBOSE);
       }
 
-      Purchases.configure({
-        apiKey: ENV.REVENUECAT_API_KEY,
-      });
+      const apiKey =
+        Platform.OS === 'ios'
+          ? ENV.REVENUECAT_IOS_API_KEY
+          : ENV.REVENUECAT_API_KEY;
+
+      Purchases.configure({ apiKey });
 
       this._initialized = true;
       console.log('[PaywallService] RevenueCat initialized');
