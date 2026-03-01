@@ -60,21 +60,44 @@ const ExpiredPaywallScreen: React.FC<ExpiredPaywallScreenProps> = ({
         <ActivityIndicator size="large" color={Colors.accent} />
       ) : (
         <View style={styles.content}>
-          <Text style={styles.badge}>SUBSCRIPTION EXPIRED</Text>
-          <Text style={styles.headline}>
-            Your access{'\n'}has ended.
-          </Text>
+          {/* Progress preview */}
+          <View style={styles.progressPreview}>
+            <View style={styles.dayRow}>
+              <View style={[styles.dayDot, styles.dayDotComplete]} />
+              <Text style={[styles.dayLabel, styles.dayLabelComplete]}>Day 1</Text>
+              <Text style={styles.dayCheck}>✓</Text>
+            </View>
+            <View style={styles.dayConnector} />
+            <View style={styles.dayRow}>
+              <View style={styles.dayDot} />
+              <Text style={styles.dayLabel}>Day 2</Text>
+              <Text style={styles.dayLock}>🔒</Text>
+            </View>
+            <View style={styles.dayConnector} />
+            <View style={styles.dayRow}>
+              <View style={styles.dayDot} />
+              <Text style={styles.dayLabel}>Day 3</Text>
+              <Text style={styles.dayLock}>🔒</Text>
+            </View>
+          </View>
+
+          <Text style={styles.headline}>Don't Break the{'\n'}System Now.</Text>
           <Text style={styles.subtext}>
-            Resubscribe to continue your Lock In program{'\n'}
-            and pick up where you left off.
+            You started the 90-Day Discipline Framework.{'\n'}
+            Without full access, your progress stops here.
           </Text>
+          <Text style={styles.supportingText}>
+            Structure builds identity. Inconsistency erodes it.
+          </Text>
+
+          <View style={styles.divider} />
 
           <TouchableOpacity
             style={styles.ctaButton}
             activeOpacity={0.9}
             onPress={presentPaywall}
           >
-            <Text style={styles.ctaText}>Resubscribe</Text>
+            <Text style={styles.ctaText}>Unlock Full Access</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -88,17 +111,52 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 32,
   },
   content: {
     alignItems: 'center',
+    width: '100%',
   },
-  badge: {
-    fontFamily: FontFamily.bodyMedium,
-    fontSize: 11,
-    color: Colors.danger,
-    letterSpacing: 2,
-    marginBottom: 14,
+  progressPreview: {
+    alignSelf: 'stretch',
+    marginBottom: 40,
+    opacity: 0.45,
+  },
+  dayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  dayDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.surface,
+  },
+  dayDotComplete: {
+    backgroundColor: Colors.accent,
+  },
+  dayLabel: {
+    fontFamily: FontFamily.body,
+    fontSize: 14,
+    color: Colors.textMuted,
+    flex: 1,
+  },
+  dayLabelComplete: {
+    color: Colors.textSecondary,
+  },
+  dayCheck: {
+    fontSize: 13,
+    color: Colors.accent,
+  },
+  dayLock: {
+    fontSize: 12,
+  },
+  dayConnector: {
+    width: 1,
+    height: 16,
+    backgroundColor: Colors.surface,
+    marginLeft: 3.5,
   },
   headline: {
     fontFamily: FontFamily.headingBold,
@@ -111,17 +169,31 @@ const styles = StyleSheet.create({
   },
   subtext: {
     fontFamily: FontFamily.body,
-    fontSize: 14,
+    fontSize: 15,
     color: Colors.textMuted,
     textAlign: 'center',
-    lineHeight: 21,
-    marginBottom: 32,
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  supportingText: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.textMuted,
+    opacity: 0.5,
+    textAlign: 'center',
+    marginBottom: 0,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.surface,
+    alignSelf: 'stretch',
+    marginVertical: 28,
   },
   ctaButton: {
     backgroundColor: Colors.primary,
     borderRadius: 8,
     paddingVertical: 16,
-    paddingHorizontal: 48,
+    alignSelf: 'stretch',
     alignItems: 'center',
   },
   ctaText: {
