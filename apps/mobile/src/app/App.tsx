@@ -17,6 +17,7 @@ import { Colors } from '../design/colors';
 import { SupabaseService } from '../services/SupabaseService';
 import { AudioService } from '../services/AudioService';
 import { PaywallService } from '../services/PaywallService';
+import { NotificationService } from '../services/NotificationService';
 
 // Keep splash screen visible while fonts + auth load
 SplashScreen.preventAutoHideAsync();
@@ -64,6 +65,8 @@ const App: React.FC = () => {
         setBootStatus('initializing payments...');
         // #endregion
         await PaywallService.initialize();
+
+        await NotificationService.scheduleDailyReminders();
 
         // #region agent log
         _bl('boot: all done');
