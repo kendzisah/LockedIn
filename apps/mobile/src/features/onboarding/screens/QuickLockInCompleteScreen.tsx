@@ -12,6 +12,7 @@ import type { OnboardingStackParamList } from '../../../types/navigation';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
+import * as StoreReview from 'expo-store-review';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -91,6 +92,15 @@ const QuickLockInCompleteScreen: React.FC<Props> = ({ navigation }) => {
           useNativeDriver: true,
         }).start();
       }, 3000),
+    );
+
+    // 3500ms — Request App Store review
+    timers.push(
+      setTimeout(async () => {
+        if (await StoreReview.hasAction()) {
+          StoreReview.requestReview();
+        }
+      }, 3500),
     );
 
     return () => timers.forEach(clearTimeout);
