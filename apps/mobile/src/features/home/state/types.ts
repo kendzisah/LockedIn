@@ -78,6 +78,7 @@ export type SessionAction =
   | { type: 'HYDRATE'; payload: PersistedSessionState }
   | { type: 'SET_ANIMATING' }
   | { type: 'START_SESSION'; payload: { startTimestamp: number; expectedEndTimestamp: number; durationMinutes: number } }
+  | { type: 'UPDATE_SESSION_END'; payload: { expectedEndTimestamp: number; durationMinutes: number } }
   | { type: 'COMPLETE_SESSION'; payload: { durationMinutes: number } }
   | { type: 'COMPLETE_UNLOCK'; payload: { durationMinutes: number } }
   | { type: 'RESET_PHASE' }

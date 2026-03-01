@@ -233,11 +233,21 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       }
       if (cancelled) return;
 
-      // Set timer to correct duration
+      // Set timer to correct duration and persist for crash-resume
       const newEnd = Date.now() + finalDuration * 1000;
       endTimestampRef.current = newEnd;
       setTotalSeconds(finalDuration);
       setRemaining(finalDuration);
+
+      if (phase === 'lock_in') {
+        dispatch({
+          type: 'UPDATE_SESSION_END',
+          payload: {
+            expectedEndTimestamp: newEnd,
+            durationMinutes: Math.ceil(finalDuration / 60),
+          },
+        });
+      }
 
       // Transition: fade out micro text → fade in timer
       Animated.timing(microTextOpacity, {

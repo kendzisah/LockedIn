@@ -105,6 +105,18 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       };
     }
 
+    case 'UPDATE_SESSION_END': {
+      if (!state.activeSession) return state;
+      return {
+        ...state,
+        activeSession: {
+          ...state.activeSession,
+          expectedEndTimestamp: action.payload.expectedEndTimestamp,
+          durationMinutes: action.payload.durationMinutes,
+        },
+      };
+    }
+
     case 'COMPLETE_SESSION': {
       // Guard: only from ACTIVE or COMPLETING
       if (state.phase !== 'ACTIVE' && state.phase !== 'COMPLETING') return state;
