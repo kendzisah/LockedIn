@@ -55,9 +55,13 @@ const PaywallScreen: React.FC<Props> = () => {
         <ActivityIndicator size="large" color={Colors.accent} />
       ) : (
         <View style={styles.content}>
-          <Text style={styles.headline}>Unlock Full{'\n'}Discipline System</Text>
+          <Text style={styles.headline}>Don't Break the{'\n'}System Now.</Text>
           <Text style={styles.subtext}>
-            Tap below to view subscription options.
+            You started the 90-Day Discipline Framework.{'\n'}
+            Without full access, your progress stops here.
+          </Text>
+          <Text style={styles.supportingText}>
+            Structure builds identity. Inconsistency erodes it.
           </Text>
 
           <TouchableOpacity
@@ -65,21 +69,8 @@ const PaywallScreen: React.FC<Props> = () => {
             activeOpacity={0.9}
             onPress={presentPaywall}
           >
-            <Text style={styles.ctaText}>View Plans</Text>
+            <Text style={styles.ctaText}>Unlock Full Access</Text>
           </TouchableOpacity>
-
-          {__DEV__ && (
-            <TouchableOpacity
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                dispatch({ type: 'COMPLETE_ONBOARDING' });
-              }}
-              style={styles.skipButton}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.skipText}>Skip (Dev)</Text>
-            </TouchableOpacity>
-          )}
         </View>
       )}
     </View>
@@ -108,10 +99,19 @@ const styles = StyleSheet.create({
   },
   subtext: {
     fontFamily: FontFamily.body,
-    fontSize: 14,
+    fontSize: 15,
     color: Colors.textMuted,
     textAlign: 'center',
-    marginBottom: 32,
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  supportingText: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.textMuted,
+    opacity: 0.5,
+    textAlign: 'center',
+    marginBottom: 36,
   },
   ctaButton: {
     backgroundColor: Colors.primary,
@@ -125,16 +125,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     color: Colors.textPrimary,
     letterSpacing: -0.1,
-  },
-  skipButton: {
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  skipText: {
-    fontFamily: FontFamily.body,
-    fontSize: 12,
-    color: Colors.textMuted,
-    opacity: 0.5,
   },
 });
 
