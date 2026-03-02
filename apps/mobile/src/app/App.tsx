@@ -11,6 +11,7 @@ import { InterTight_600SemiBold } from '@expo-google-fonts/inter-tight/600SemiBo
 import { InterTight_700Bold } from '@expo-google-fonts/inter-tight/700Bold';
 import { InterTight_800ExtraBold } from '@expo-google-fonts/inter-tight/800ExtraBold';
 import { OnboardingProvider } from '../features/onboarding/state/OnboardingProvider';
+import { SubscriptionProvider } from '../features/subscription/SubscriptionProvider';
 import { SessionProvider } from '../features/home/state/SessionProvider';
 import RootNavigator from '../navigation/RootNavigator';
 import { Colors } from '../design/colors';
@@ -39,7 +40,6 @@ const App: React.FC = () => {
       try {
         await AudioService.configure();
         await SupabaseService.initialize();
-        // PaywallService is initialized by SubscriptionProvider
         await NotificationService.scheduleDailyReminders();
       } catch (e: any) {
         console.warn('[App] boot() failed, continuing anyway:', e);
@@ -74,12 +74,14 @@ const App: React.FC = () => {
     <View style={styles.root} onLayout={onLayoutRootView}>
       <SafeAreaProvider>
         <OnboardingProvider>
-          <SessionProvider>
-            <NavigationContainer>
-              <StatusBar style="light" />
-              <RootNavigator />
-            </NavigationContainer>
-          </SessionProvider>
+          <SubscriptionProvider>
+            <SessionProvider>
+              <NavigationContainer>
+                <StatusBar style="light" />
+                <RootNavigator />
+              </NavigationContainer>
+            </SessionProvider>
+          </SubscriptionProvider>
         </OnboardingProvider>
       </SafeAreaProvider>
     </View>

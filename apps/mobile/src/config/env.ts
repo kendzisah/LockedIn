@@ -28,4 +28,10 @@ export const ENV = {
 
   /** Supabase anonymous/public key */
   SUPABASE_ANON_KEY: requireEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY', process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY),
+
+  /** RevenueCat iOS API key */
+  REVENUECAT_IOS_API_KEY: requireEnv(
+    'EXPO_PUBLIC_REVENUECAT_IOS_API_KEY',
+    process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY,
+  ),
 };

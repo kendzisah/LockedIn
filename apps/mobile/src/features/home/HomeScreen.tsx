@@ -47,6 +47,7 @@ import { SessionRepository } from '../../services/SessionRepository';
 import { AudioService } from '../../services/AudioService';
 import type { ContentPhase } from '@lockedin/shared-types';
 import { LockModeService } from '../../services/LockModeService';
+import { useSubscription } from '../subscription/SubscriptionProvider';
 
 const SESSION_DURATION = 5; // minutes — all sessions are ~5 min
 
@@ -59,6 +60,7 @@ type Props = NativeStackScreenProps<MainStackParamList, 'Home'>;
 
 const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const { state, dispatch, isHydrated } = useSession();
+  const { isSubscribed, showPaywall } = useSubscription();
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const [showResumeModal, setShowResumeModal] = useState(false);
   const [resumeRemaining, setResumeRemaining] = useState(0);
@@ -226,12 +228,16 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   }, [dispatch, state.activeSession]);
 
   // ── Lock animation complete → start session → navigate ──
-  const handleLockAnimationComplete = useCallback(() => {
+  const handleLockAnimationComplete = useCallback(async () => {
+    if (!isSubscribed) {
+      await showPaywall();
+      return;
+    }
+
     const phase: ContentPhase =
       ctaState.mode === 'unlock' ? 'unlock' : 'lock_in';
 
     if (phase === 'lock_in') {
-      // Lock In: create active session, shield apps, animate, navigate
       const session = createSession(SESSION_DURATION);
 
       LockModeService.beginSession();
@@ -257,7 +263,6 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         });
       });
     } else {
-      // Unlock: shield apps, navigate directly (no lock animation, no crash-resume)
       LockModeService.beginSession();
 
       Animated.timing(screenOpacity, {
@@ -272,7 +277,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         });
       });
     }
-  }, [ctaState.mode, dispatch, navigation, screenOpacity, programDay]);
+  }, [ctaState.mode, dispatch, navigation, screenOpacity, programDay, isSubscribed, showPaywall]);
 
   // ── Reset opacity when screen mounts or comes back into focus ──
   useEffect(() => {
