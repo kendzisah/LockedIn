@@ -103,7 +103,7 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
             <LottieView
               source={require('../../../assets/lottie/fire.json')}
               autoPlay
-              loop={false}
+              loop
               style={styles.flameLottie}
             />
             <Text style={styles.streakNumber}>{streak}</Text>
