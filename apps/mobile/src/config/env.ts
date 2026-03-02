@@ -6,10 +6,9 @@
  * Do NOT commit secrets to source control.
  */
 
-function requireEnv(key: string): string {
-  const value = process.env[key];
+function requireEnv(key: string, value: string | undefined): string {
   if (!value) {
-    console.error(
+    console.warn(
       `[ENV] Missing required environment variable: ${key}. ` +
         'Ensure it is set in apps/mobile/.env or eas.json env config.',
     );
@@ -25,14 +24,14 @@ export const ENV = {
   mode: isDev ? ('development' as const) : ('production' as const),
 
   /** Supabase project URL */
-  SUPABASE_URL: requireEnv('EXPO_PUBLIC_SUPABASE_URL'),
+  SUPABASE_URL: requireEnv('EXPO_PUBLIC_SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL),
 
   /** Supabase anonymous/public key */
-  SUPABASE_ANON_KEY: requireEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY'),
+  SUPABASE_ANON_KEY: requireEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY', process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY),
 
   /** RevenueCat API key (default / Android) */
-  REVENUECAT_API_KEY: requireEnv('EXPO_PUBLIC_REVENUECAT_API_KEY'),
+  REVENUECAT_API_KEY: requireEnv('EXPO_PUBLIC_REVENUECAT_API_KEY', process.env.EXPO_PUBLIC_REVENUECAT_API_KEY),
 
   /** RevenueCat iOS-specific API key */
-  REVENUECAT_IOS_API_KEY: requireEnv('EXPO_PUBLIC_REVENUECAT_IOS_API_KEY'),
+  REVENUECAT_IOS_API_KEY: requireEnv('EXPO_PUBLIC_REVENUECAT_IOS_API_KEY', process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY),
 };
