@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { AppState, type AppStateStatus, View, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useOnboarding } from '../features/onboarding/state/OnboardingProvider';
 import { PaywallService } from '../services/PaywallService';
@@ -9,46 +9,94 @@ import ExpiredPaywallScreen from '../features/paywall/ExpiredPaywallScreen';
 import type { RootStackParamList } from '../types/navigation';
 import { Colors } from '../design/colors';
 
+const RESTORE_TIMEOUT_MS = 5_000;
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const RootNavigator: React.FC = () => {
-  const { state, isHydrated } = useOnboarding();
+  const { state, dispatch, isHydrated } = useOnboarding();
 
-  // Subscription gate: null = checking, true = active, false = expired
+  // null = still checking, true = active, false = expired
   const [isPremium, setIsPremium] = useState<boolean | null>(null);
 
-  // Check entitlement status
-  const checkSubscription = useCallback(async () => {
-    const premium = await PaywallService.isPremium();
-    setIsPremium(premium);
-  }, []);
+  // Whether we've attempted auto-restore for returning subscribers
+  const [restoreAttempted, setRestoreAttempted] = useState(false);
 
-  // Check on mount (once onboarding state is hydrated and onboarding is complete)
+  // Tracks whether onboarding was incomplete when we first rendered.
+  // If onboarding completes during this session, the user just purchased
+  // through the paywall — so we trust that and skip re-verification
+  // (RevenueCat's anonymous ID aliasing makes getCustomerInfo unreliable).
+  const wasOnboardingIncomplete = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (wasOnboardingIncomplete.current === null) {
+      wasOnboardingIncomplete.current = !state.onboardingComplete;
+    }
+  }, [isHydrated, state.onboardingComplete]);
+
+  // ── Auto-restore: detect returning subscribers on fresh install ──
+  useEffect(() => {
+    if (!isHydrated || state.onboardingComplete) {
+      setRestoreAttempted(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function tryAutoRestore() {
+      try {
+        const restored = await Promise.race([
+          PaywallService.restorePurchases(),
+          new Promise<false>((r) => setTimeout(() => r(false), RESTORE_TIMEOUT_MS)),
+        ]);
+
+        if (!cancelled && restored) {
+          console.log('[RootNavigator] Returning subscriber detected — skipping onboarding');
+          setIsPremium(true);
+          dispatch({ type: 'COMPLETE_ONBOARDING' });
+        }
+      } catch {
+        // Restore failed — proceed to onboarding
+      } finally {
+        if (!cancelled) setRestoreAttempted(true);
+      }
+    }
+
+    tryAutoRestore();
+    return () => { cancelled = true; };
+  }, [isHydrated, state.onboardingComplete, dispatch]);
+
+  // ── Subscription check after onboarding is complete ──
+  // Skip if onboarding just completed this session (user just purchased).
   useEffect(() => {
     if (!isHydrated || !state.onboardingComplete) return;
-    checkSubscription();
-  }, [isHydrated, state.onboardingComplete, checkSubscription]);
+    if (isPremium !== null) return;
 
-  // Re-check when app comes back to foreground (catches server-side expiry)
-  useEffect(() => {
-    if (!state.onboardingComplete) return;
+    // Onboarding just finished this session — user purchased through
+    // the paywall. Trust that instead of re-checking (aliasing bug).
+    if (wasOnboardingIncomplete.current) {
+      setIsPremium(true);
+      return;
+    }
 
-    const handleAppState = (nextState: AppStateStatus) => {
-      if (nextState === 'active') {
-        checkSubscription();
-      }
-    };
+    let cancelled = false;
 
-    const sub = AppState.addEventListener('change', handleAppState);
-    return () => sub.remove();
-  }, [state.onboardingComplete, checkSubscription]);
+    async function check() {
+      const premium = await PaywallService.isPremium();
+      if (!cancelled) setIsPremium(premium);
+    }
 
-  // Wait until onboarding hydration is complete
-  if (!isHydrated) {
+    check();
+    return () => { cancelled = true; };
+  }, [isHydrated, state.onboardingComplete, isPremium]);
+
+  // Wait until hydration + restore attempt
+  if (!isHydrated || !restoreAttempted) {
     return <View style={styles.loading} />;
   }
 
-  // ── Not yet onboarded → show onboarding flow ──
+  // ── Not yet onboarded → onboarding (paywall is the last screen) ──
   if (!state.onboardingComplete) {
     return (
       <Stack.Navigator
@@ -60,12 +108,12 @@ const RootNavigator: React.FC = () => {
     );
   }
 
-  // ── Onboarded, still checking subscription ──
+  // ── Still checking subscription ──
   if (isPremium === null) {
     return <View style={styles.loading} />;
   }
 
-  // ── Subscription expired → show paywall gate ──
+  // ── Subscription inactive → paywall on home screen ──
   if (!isPremium) {
     return (
       <ExpiredPaywallScreen
@@ -74,7 +122,7 @@ const RootNavigator: React.FC = () => {
     );
   }
 
-  // ── Active subscriber → full app ──
+  // ── Active subscriber → main app ──
   return (
     <Stack.Navigator
       initialRouteName="Main"

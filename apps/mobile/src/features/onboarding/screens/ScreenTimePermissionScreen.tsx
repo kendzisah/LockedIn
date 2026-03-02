@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Easing,
   StyleSheet,
@@ -146,23 +147,32 @@ const ScreenTimePermissionScreen: React.FC<Props> = ({ navigation }) => {
     buttonOpacity,
   ]);
 
+  const [loading, setLoading] = useState(false);
+
   const handleRequest = useCallback(async () => {
-    const status = await PermissionService.requestScreenTimePermission();
-    dispatch({ type: 'SET_SCREEN_TIME_STATUS', payload: status });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (loading) return;
+    setLoading(true);
 
-    if (status === 'granted') {
-      await LockModeService.showAppPicker();
+    try {
+      const status = await PermissionService.requestScreenTimePermission();
+      dispatch({ type: 'SET_SCREEN_TIME_STATUS', payload: status });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      if (status === 'granted') {
+        await LockModeService.showAppPicker();
+      }
+
+      Animated.timing(screenOpacity, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }).start(() => {
+        navigation.navigate('NotificationPermission');
+      });
+    } finally {
+      setLoading(false);
     }
-
-    Animated.timing(screenOpacity, {
-      toValue: 0,
-      duration: 500,
-      useNativeDriver: true,
-    }).start(() => {
-      navigation.navigate('NotificationPermission');
-    });
-  }, [navigation, dispatch, screenOpacity]);
+  }, [loading, navigation, dispatch, screenOpacity]);
 
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
@@ -231,9 +241,14 @@ const ScreenTimePermissionScreen: React.FC<Props> = ({ navigation }) => {
         <TouchableOpacity
           onPress={handleRequest}
           activeOpacity={0.9}
-          style={styles.ctaButton}
+          disabled={loading}
+          style={[styles.ctaButton, loading && styles.ctaButtonLoading]}
         >
-          <Text style={styles.ctaText}>Enforce My Focus</Text>
+          {loading ? (
+            <ActivityIndicator size="small" color={Colors.textPrimary} />
+          ) : (
+            <Text style={styles.ctaText}>Enforce My Focus</Text>
+          )}
         </TouchableOpacity>
       </Animated.View>
     </ScreenContainer>
@@ -318,6 +333,11 @@ const styles = StyleSheet.create({
     paddingVertical: 17,
     borderRadius: 6,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 54,
+  },
+  ctaButtonLoading: {
+    opacity: 0.8,
   },
   ctaText: {
     fontFamily: FontFamily.heading,

@@ -2,10 +2,13 @@
  * QuickLockInSessionScreen — Onboarding Lock In demo.
  *
  * Fetches the active onboarding track from Supabase (audio_tracks category='onboarding').
- * Timer matches the audio length. Falls back to 2-minute timer-only if no track exists
+ * Timer matches the audio length. Falls back to 2:30 timer-only if no track exists
  * or audio fails to load.
  *
- * On background: pauses audio + timer. On resume: shows resume modal.
+ * On background: pauses audio + timer. On return: shows resume/end modal.
+ * On resume: audio + timer restart from the paused position.
+ * Screen stays awake during the session via expo-keep-awake.
+ *
  * On completion: dispatches SET_DEMO_COMPLETED and navigates to QuickLockInComplete.
  */
 
@@ -21,6 +24,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useKeepAwake } from 'expo-keep-awake';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
@@ -54,52 +58,62 @@ type Props = NativeStackScreenProps<
 
 const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
   const { dispatch } = useOnboarding();
+  useKeepAwake();
 
-  // Total seconds determined by onboarding track duration or fallback
-  const [totalSeconds, setTotalSeconds] = useState(FALLBACK_SECONDS);
-  const [remaining, setRemaining] = useState(FALLBACK_SECONDS);
+  const [totalSeconds, setTotalSeconds] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState<number | null>(null);
   const [paused, setPaused] = useState(false);
   const [showResumeModal, setShowResumeModal] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [audioLoaded, setAudioLoaded] = useState(false);
 
+  const endTimestampRef = useRef<number | null>(null);
+  const pausedRemainingRef = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const completedRef = useRef(false);
 
-  // ── Screen-level fade ──
   const screenOpacity = useRef(new Animated.Value(1)).current;
 
-  // ── Fetch and load onboarding track ──
+  // ── Start / restart the tick interval from endTimestampRef ──
+  const startTick = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      if (!endTimestampRef.current) return;
+      const r = Math.max(0, Math.ceil((endTimestampRef.current - Date.now()) / 1000));
+      setRemaining(r);
+    }, 250);
+  }, []);
+
+  const stopTick = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  // ── Fetch track, set duration, start timer ──
   useEffect(() => {
     let cancelled = false;
 
     async function loadOnboardingTrack() {
-      // Get track metadata (cached from IntroScreen prefetch)
       const track: OnboardingTrack | null = await SessionRepository.getOnboardingTrack();
-
       if (cancelled) return;
 
-      if (!track) {
-        setTotalSeconds(FALLBACK_SECONDS);
-        setRemaining(FALLBACK_SECONDS);
-        return;
-      }
+      const duration = track?.durationSeconds && track.durationSeconds > 0
+        ? track.durationSeconds
+        : FALLBACK_SECONDS;
 
-      // Set timer to match audio duration immediately
-      const trackDuration = track.durationSeconds;
-      if (trackDuration > 0) {
-        setTotalSeconds(trackDuration);
-        setRemaining(trackDuration);
-      }
+      endTimestampRef.current = Date.now() + duration * 1000;
+      setTotalSeconds(duration);
+      setRemaining(duration);
+      startTick();
 
-      // load() is a no-op if already pre-loaded from IntroScreen
-      const loaded = await AudioService.load(track.signedAudioUrl);
-
-      if (cancelled) return;
-
-      if (loaded) {
-        setAudioLoaded(true);
-        AudioService.play();
+      if (track) {
+        const loaded = await AudioService.load(track.signedAudioUrl);
+        if (!cancelled && loaded) {
+          setAudioLoaded(true);
+          AudioService.play();
+        }
       }
     }
 
@@ -107,47 +121,19 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
 
     return () => {
       cancelled = true;
+      stopTick();
     };
-  }, []);
+  }, [startTick, stopTick]);
 
-  // ── Cleanup audio on unmount ──
   useEffect(() => {
-    return () => {
-      AudioService.unload();
-    };
+    return () => { AudioService.unload(); };
   }, []);
-
-  // ── Timer logic ──
-  const startTimer = useCallback(() => {
-    if (intervalRef.current) return;
-    intervalRef.current = setInterval(() => {
-      setRemaining((prev) => {
-        if (prev <= 1) {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          intervalRef.current = null;
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }, []);
-
-  const stopTimer = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  }, []);
-
-  // Start timer on mount
-  useEffect(() => {
-    startTimer();
-    return () => stopTimer();
-  }, [startTimer, stopTimer]);
 
   // ── Completion ──
   useEffect(() => {
-    if (remaining === 0) {
+    if (remaining !== null && remaining <= 0 && !completedRef.current) {
+      completedRef.current = true;
+      stopTick();
       LockModeService.endSession();
       AudioService.stop();
       dispatch({ type: 'SET_DEMO_COMPLETED' });
@@ -160,12 +146,11 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
         navigation.replace('QuickLockInComplete');
       });
     }
-  }, [remaining, dispatch, navigation, screenOpacity]);
+  }, [remaining, dispatch, navigation, screenOpacity, stopTick]);
 
-  // ── Android back handler ──
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
-      const mins = Math.ceil(totalSeconds / 60);
+      const mins = Math.ceil((totalSeconds ?? FALLBACK_SECONDS) / 60);
       Alert.alert(
         'Stay Locked',
         `Finish the ${mins} minutes. Stay locked.`,
@@ -177,45 +162,49 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
     return () => handler.remove();
   }, [totalSeconds]);
 
-  // ── AppState handler: pause timer (audio continues in background) ──
+  // ── AppState: pause on background, show modal on return ──
   useEffect(() => {
     const subscription = AppState.addEventListener(
       'change',
       (nextState: AppStateStatus) => {
-        const wasActive = appStateRef.current === 'active';
-        const isActive = nextState === 'active';
-
-        if (wasActive && !isActive) {
-          stopTimer();
+        if (nextState !== 'active' && !paused && endTimestampRef.current && !completedRef.current) {
+          // Going to background — freeze timer + pause audio
+          const r = Math.max(0, Math.ceil((endTimestampRef.current - Date.now()) / 1000));
+          pausedRemainingRef.current = r;
+          stopTick();
+          AudioService.pause();
           setPaused(true);
-        } else if (!wasActive && isActive && paused) {
+        } else if (nextState === 'active' && paused) {
           setShowResumeModal(true);
         }
-
-        appStateRef.current = nextState;
       },
     );
-
     return () => subscription.remove();
-  }, [paused, stopTimer]);
+  }, [paused, stopTick]);
 
-  const handleResume = () => {
+  const handleResume = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowResumeModal(false);
     setConfirmEnd(false);
     setPaused(false);
-    startTimer();
-    if (audioLoaded) AudioService.play();
-  };
 
-  const handleEndRequest = () => {
+    const frozenRemaining = pausedRemainingRef.current ?? 0;
+    if (frozenRemaining <= 0) return;
+
+    endTimestampRef.current = Date.now() + frozenRemaining * 1000;
+    setRemaining(frozenRemaining);
+    startTick();
+    if (audioLoaded) AudioService.play();
+  }, [audioLoaded, startTick]);
+
+  const handleEndRequest = useCallback(() => {
     if (!confirmEnd) {
       setConfirmEnd(true);
       return;
     }
+    completedRef.current = true;
+    stopTick();
     setShowResumeModal(false);
-    setPaused(false);
-    stopTimer();
     AudioService.stop();
     LockModeService.endSession();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -226,15 +215,27 @@ const QuickLockInSessionScreen: React.FC<Props> = ({ navigation }) => {
     }).start(() => {
       navigation.replace('QuickLockInComplete');
     });
-  };
+  }, [confirmEnd, stopTick, screenOpacity, navigation]);
 
-  const elapsed = totalSeconds - remaining;
+  const safeTotal = totalSeconds ?? FALLBACK_SECONDS;
+  const safeRemaining = remaining ?? safeTotal;
+  const elapsed = safeTotal - safeRemaining;
+
+  if (totalSeconds === null) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.content}>
+          <Text style={styles.phase}>Preparing session…</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <Animated.View style={[styles.container, { opacity: screenOpacity }]}>
       <View style={styles.content}>
-        <Text style={styles.timer}>{formatTime(remaining)}</Text>
-        <Text style={styles.phase}>{getPhaseText(elapsed, totalSeconds)}</Text>
+        <Text style={styles.timer}>{formatTime(safeRemaining)}</Text>
+        <Text style={styles.phase}>{getPhaseText(elapsed, safeTotal)}</Text>
       </View>
 
       <Modal
