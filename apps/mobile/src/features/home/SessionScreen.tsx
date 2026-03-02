@@ -68,10 +68,6 @@ function getMicroText(phase: ContentPhase): string {
   return 'Commit to the full timer.';
 }
 
-function getCompletionText(phase: ContentPhase): string {
-  return phase === 'unlock' ? 'Reflection Complete.' : 'Session Complete.';
-}
-
 function getPhaseTextForPhase(
   phase: ContentPhase,
   elapsed: number,
@@ -138,7 +134,6 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
   // ── Entry animation ──
   const microTextOpacity = useRef(new Animated.Value(0)).current;
   const timerOpacity = useRef(new Animated.Value(resuming ? 1 : 0)).current;
-  const completeTextOpacity = useRef(new Animated.Value(0)).current;
 
   // ── Hold-to-unlock ──
   const [holdProgress, setHoldProgress] = useState(0);
@@ -383,22 +378,18 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       hasAudio: audioState === 'loaded',
     });
 
-    Animated.timing(completeTextOpacity, {
-      toValue: 1,
+    Animated.timing(timerOpacity, {
+      toValue: 0,
       duration: 500,
       useNativeDriver: true,
-    }).start();
-
-    setTimeout(() => {
-      Animated.timing(timerOpacity, {
-        toValue: 0,
-        duration: 500,
-        useNativeDriver: true,
-      }).start(() => {
-        navigation.replace('Home');
+    }).start(() => {
+      navigation.replace('SessionComplete', {
+        phase: phase === 'lock_in' ? 'lock_in' : 'unlock',
+        durationMinutes,
+        streak: phase === 'lock_in' ? state.consecutiveStreak : 0,
       });
-    }, 1500);
-  }, [isComplete, dispatch, phase, completeTextOpacity, timerOpacity, navigation, audioState, totalSeconds, programDay]);
+    });
+  }, [isComplete, dispatch, phase, timerOpacity, navigation, audioState, totalSeconds, programDay, state.consecutiveStreak]);
 
   // ── Hold-to-unlock handlers ──
   const handleHoldStart = useCallback(() => {
@@ -477,9 +468,13 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       duration: 500,
       useNativeDriver: true,
     }).start(() => {
-      navigation.replace('Home');
+      navigation.replace('SessionComplete', {
+        phase: phase === 'lock_in' ? 'lock_in' : 'unlock',
+        durationMinutes: Math.ceil(totalSeconds / 60),
+        streak: phase === 'lock_in' ? state.consecutiveStreak : 0,
+      });
     });
-  }, [dispatch, phase, timerOpacity, navigation, totalSeconds, remaining, programDay]);
+  }, [dispatch, phase, timerOpacity, navigation, totalSeconds, remaining, programDay, state.consecutiveStreak]);
 
   // ── BackHandler: block Android back ──
   useEffect(() => {
@@ -583,32 +578,24 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
       {/* Timer + Phase text */}
       <Animated.View style={[styles.centerContent, { opacity: timerOpacity }]}>
-        {!isComplete ? (
-          <>
-            <Text style={styles.timer}>{formatTime(remaining)}</Text>
-            <Text style={styles.phaseText}>{phaseText}</Text>
+        <Text style={styles.timer}>{formatTime(remaining)}</Text>
+        <Text style={styles.phaseText}>{phaseText}</Text>
 
-            {/* Audio status indicators */}
-            {audioIndicator && (
-              <Text style={styles.audioIndicator}>{audioIndicator}</Text>
-            )}
+        {/* Audio status indicators */}
+        {audioIndicator && (
+          <Text style={styles.audioIndicator}>{audioIndicator}</Text>
+        )}
 
-            {/* Failed state with retry button */}
-            {audioState === 'failed' && (
-              <View style={styles.audioFailedContainer}>
-                <Text style={styles.audioIndicator}>
-                  Audio unavailable — run the protocol anyway.
-                </Text>
-                <TouchableOpacity onPress={handleRetryAudio} style={styles.retryButton}>
-                  <Text style={styles.retryText}>Try again</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </>
-        ) : (
-          <Animated.Text style={[styles.completeText, { opacity: completeTextOpacity }]}>
-            {getCompletionText(phase)}
-          </Animated.Text>
+        {/* Failed state with retry button */}
+        {audioState === 'failed' && (
+          <View style={styles.audioFailedContainer}>
+            <Text style={styles.audioIndicator}>
+              Audio unavailable — run the protocol anyway.
+            </Text>
+            <TouchableOpacity onPress={handleRetryAudio} style={styles.retryButton}>
+              <Text style={styles.retryText}>Try again</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </Animated.View>
 
@@ -696,12 +683,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
-  },
-  completeText: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 32,
-    color: Colors.textPrimary,
-    letterSpacing: -0.6,
   },
   audioIndicator: {
     fontFamily: FontFamily.body,

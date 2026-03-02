@@ -27,6 +27,12 @@ export type OnboardingStackParamList = {
 export type MainStackParamList = {
   Home: undefined;
   Session: { phase: 'lock_in' | 'unlock'; programDay: number; resuming?: boolean };
+  ExecutionBlock: { durationMinutes: number };
+  SessionComplete: {
+    phase: 'lock_in' | 'unlock' | 'execution_block';
+    durationMinutes: number;
+    streak: number;
+  };
   ProgramComplete: undefined;
 };
 
