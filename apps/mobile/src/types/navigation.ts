@@ -19,7 +19,6 @@ export type OnboardingStackParamList = {
   QuickLockInComplete: undefined;
   IdentityReinforcement: undefined;
   SignatureCommitment: undefined;
-  PaywallPlaceholder: undefined;
 };
 
 /**
