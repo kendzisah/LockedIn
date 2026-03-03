@@ -20,9 +20,19 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     mounted.current = true;
+    let removeListener: (() => void) | undefined;
 
     async function init() {
       await SubscriptionService.initialize();
+
+      if (!mounted.current) return;
+
+      removeListener = SubscriptionService.addListener((info) => {
+        if (mounted.current) {
+          setIsSubscribed(SubscriptionService.hasEntitlement(info));
+        }
+      });
+
       const subscribed = await SubscriptionService.checkSubscription();
       if (mounted.current) {
         setIsSubscribed(subscribed);
@@ -32,15 +42,9 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
 
     init();
 
-    const removeListener = SubscriptionService.addListener((info) => {
-      if (mounted.current) {
-        setIsSubscribed(SubscriptionService.hasEntitlement(info));
-      }
-    });
-
     return () => {
       mounted.current = false;
-      removeListener();
+      removeListener?.();
     };
   }, []);
 
