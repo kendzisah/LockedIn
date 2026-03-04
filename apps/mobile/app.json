@@ -18,7 +18,8 @@
       "appleTeamId": "NGFWFKBJU2",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": ["audio"],
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
       },
       "entitlements": {
         "com.apple.developer.family-controls": true
@@ -49,6 +50,12 @@
         "expo-notifications",
         {
           "sounds": []
+        }
+      ],
+      [
+        "expo-tracking-transparency",
+        {
+          "userTrackingPermission": "This identifier will be used to deliver personalized ads to you."
         }
       ]
     ],

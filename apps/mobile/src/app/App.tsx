@@ -15,6 +15,8 @@ import { SubscriptionProvider } from '../features/subscription/SubscriptionProvi
 import { SessionProvider } from '../features/home/state/SessionProvider';
 import RootNavigator from '../navigation/RootNavigator';
 import { Colors } from '../design/colors';
+import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
+import { Platform } from 'react-native';
 import { SupabaseService } from '../services/SupabaseService';
 import { AudioService } from '../services/AudioService';
 import { NotificationService } from '../services/NotificationService';
@@ -60,9 +62,18 @@ const App: React.FC = () => {
     };
   }, []);
 
+  const attRequested = useRef(false);
+
   const onLayoutRootView = useCallback(async () => {
     if (fontsLoaded && authReady) {
       await SplashScreen.hideAsync();
+
+      if (Platform.OS === 'ios' && !attRequested.current) {
+        attRequested.current = true;
+        setTimeout(() => {
+          requestTrackingPermissionsAsync();
+        }, 500);
+      }
     }
   }, [fontsLoaded, authReady]);
 
