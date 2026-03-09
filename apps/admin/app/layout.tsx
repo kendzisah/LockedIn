@@ -31,7 +31,7 @@ export default function RootLayout({
       localization={{
         waitlist: {
           start: {
-            title: 'Join the Waitlist',
+            title: 'Get Early Access',
             subtitle: 'Enter your email to reserve your spot.',
           },
           success: {

@@ -7,16 +7,7 @@ export default function WaitlistPage() {
   return (
     <Hero
       title="Locked In"
-      subtitle={
-        <>
-          <span className="block font-semibold text-foreground text-lg md:text-xl mb-2">
-            Build discipline. Eliminate distractions. Execute daily.
-          </span>
-          Locked In is a system designed to help you take control of your
-          attention and build real consistency.
-          <span className="block mt-2">Join the early access waitlist.</span>
-        </>
-      }
+      subtitle="Locked In trains discipline through daily focus sessions and distraction blocking."
       titleClassName="text-5xl md:text-6xl lg:text-7xl font-extrabold"
       subtitleClassName="text-sm md:text-base max-w-[500px] leading-relaxed"
       className="min-h-screen"
@@ -43,7 +34,7 @@ export default function WaitlistPage() {
         />
 
         <p className="text-muted-foreground text-xs md:text-sm tracking-wide">
-          Join <span className="text-foreground font-semibold">3,200</span> people already Locked In.
+          Join <span className="text-foreground font-semibold">3,214</span> people already on the waitlist.
         </p>
       </div>
     </Hero>
