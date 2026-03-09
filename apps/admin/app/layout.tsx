@@ -33,14 +33,10 @@ export default function RootLayout({
           start: {
             title: 'Join the Waitlist',
             subtitle: 'Enter your email to reserve your spot.',
-            actionLink: '',
-            actionText: '',
           },
           success: {
             title: "You're on the list!",
             subtitle: "We'll notify you once the app is available.",
-            actionLink: '',
-            actionText: '',
           },
         },
       }}
