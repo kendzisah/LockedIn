@@ -9,15 +9,16 @@
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0E1116"
+      "resizeMode": "cover",
+      "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.flocktechnologies.lockedin",
+      "appleTeamId": "NGFWFKBJU2",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["audio"]
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
       },
       "entitlements": {
         "com.apple.developer.family-controls": true
@@ -43,7 +44,19 @@
     },
     "plugins": [
       "expo-font",
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-notifications",
+        {
+          "sounds": []
+        }
+      ],
+      [
+        "expo-tracking-transparency",
+        {
+          "userTrackingPermission": "This identifier will be used to deliver personalized ads to you."
+        }
+      ]
     ],
     "autolinking": {
       "nativeModulesDir": "modules"

@@ -34,6 +34,10 @@ export interface SessionState {
   lifetimeLongestStreak: number;
   lifetimeRunsCompleted: number;       // how many 90-day programs finished
 
+  // ── Execution Block stats (survive restart) ──
+  lifetimeExecutionBlocks: number;
+  lifetimeExecutionMinutes: number;
+
   // ── Active session (crash-resume) ──
   activeSession: {
     startTimestamp: number;
@@ -59,6 +63,10 @@ export interface PersistedSessionState {
   lifetimeLongestStreak: number;
   lifetimeRunsCompleted: number;
 
+  // Execution Block
+  lifetimeExecutionBlocks: number;
+  lifetimeExecutionMinutes: number;
+
   // Active session
   activeSession: SessionState['activeSession'];
 
@@ -81,5 +89,6 @@ export type SessionAction =
   | { type: 'UPDATE_SESSION_END'; payload: { expectedEndTimestamp: number; durationMinutes: number } }
   | { type: 'COMPLETE_SESSION'; payload: { durationMinutes: number } }
   | { type: 'COMPLETE_UNLOCK'; payload: { durationMinutes: number } }
+  | { type: 'COMPLETE_EXECUTION_BLOCK'; payload: { durationMinutes: number } }
   | { type: 'RESET_PHASE' }
   | { type: 'RESET_PROGRAM' };

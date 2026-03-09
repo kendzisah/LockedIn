@@ -19,7 +19,6 @@ import QuickLockInSessionScreen from '../features/onboarding/screens/QuickLockIn
 import QuickLockInCompleteScreen from '../features/onboarding/screens/QuickLockInCompleteScreen';
 import IdentityReinforcementScreen from '../features/onboarding/screens/IdentityReinforcementScreen';
 import SignatureCommitmentScreen from '../features/onboarding/screens/SignatureCommitmentScreen';
-import PaywallPlaceholderScreen from '../features/onboarding/screens/PaywallPlaceholderScreen';
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
 
@@ -103,11 +102,6 @@ const OnboardingNavigator: React.FC = () => {
       <Stack.Screen
         name="SignatureCommitment"
         component={SignatureCommitmentScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="PaywallPlaceholder"
-        component={PaywallPlaceholderScreen}
         options={{ animation: 'none' }}
       />
     </Stack.Navigator>

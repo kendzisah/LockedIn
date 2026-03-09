@@ -10,6 +10,7 @@ out/
 .env*.local
 android/
 ios/
+!apps/mobile/modules/**/ios/
 .DS_Store
 *.pem
 *.jks

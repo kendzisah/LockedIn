@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
+import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
@@ -54,6 +55,7 @@ type Props = NativeStackScreenProps<
 >;
 
 const SignatureCommitmentScreen: React.FC<Props> = ({ navigation }) => {
+  const { dispatch } = useOnboarding();
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [hasSigned, setHasSigned] = useState(false);
 
@@ -271,7 +273,7 @@ const SignatureCommitmentScreen: React.FC<Props> = ({ navigation }) => {
               duration: 500,
               useNativeDriver: true,
             }).start(() => {
-              navigation.navigate('PaywallPlaceholder');
+              dispatch({ type: 'COMPLETE_ONBOARDING' });
             });
           }}
           activeOpacity={0.9}

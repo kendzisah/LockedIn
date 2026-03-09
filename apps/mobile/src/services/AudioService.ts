@@ -6,8 +6,8 @@
  *
  * Interruption policy:
  *  - playsInSilentMode: true (plays even with ringer muted on iOS)
- *  - shouldPlayInBackground: true (continues when app is backgrounded / screen locked)
- *  - SessionScreen manages AppState to pause/resume + timestamp-based timer
+ *  - shouldPlayInBackground: true (keeps player alive; sessions pause explicitly)
+ *  - Session screens pause audio on background + show resume modal on return
  *
  * Route changes (AirPods/Bluetooth): handled automatically by expo-audio.
  */
@@ -132,10 +132,10 @@ async function _doLoad(url: string): Promise<boolean> {
 
 /**
  * Play loaded audio (or resume from paused position).
- * Synchronous — expo-audio play() is non-async.
+ * No-op if already playing — prevents double-play.
  */
 function play(): void {
-  if (player?.isLoaded) {
+  if (player?.isLoaded && !player.playing) {
     player.play();
   }
 }

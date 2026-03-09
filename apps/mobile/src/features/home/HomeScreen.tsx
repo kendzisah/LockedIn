@@ -19,11 +19,13 @@ import {
   AppState,
   type AppStateStatus,
   Modal,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
@@ -45,8 +47,19 @@ import { FontFamily } from '../../design/typography';
 import { ClockService, type CTAState } from '../../services/ClockService';
 import { SessionRepository } from '../../services/SessionRepository';
 import { AudioService } from '../../services/AudioService';
+import { NotificationService } from '../../services/NotificationService';
 import type { ContentPhase } from '@lockedin/shared-types';
 import { LockModeService } from '../../services/LockModeService';
+import { useSubscription } from '../subscription/SubscriptionProvider';
+import { Ionicons } from '@expo/vector-icons';
+import ScrollPicker from './components/ScrollPicker';
+
+const TUTORIAL_STORAGE_KEY = '@lockedin/home_tutorial_shown';
+const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120] as const;
+
+const HOURS_VALUES = Array.from({ length: 24 }, (_, i) => i);
+const MINUTES_VALUES = Array.from({ length: 60 }, (_, i) => i);
+const padTwo = (n: number) => n.toString().padStart(2, '0');
 
 const SESSION_DURATION = 5; // minutes — all sessions are ~5 min
 
@@ -59,11 +72,22 @@ type Props = NativeStackScreenProps<MainStackParamList, 'Home'>;
 
 const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const { state, dispatch, isHydrated } = useSession();
+  const { isSubscribed, showPaywall } = useSubscription();
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const [showResumeModal, setShowResumeModal] = useState(false);
   const [resumeRemaining, setResumeRemaining] = useState(0);
   const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
   const autoResumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Execution Block
+  const [showDurationPicker, setShowDurationPicker] = useState(false);
+  const [showCustomTime, setShowCustomTime] = useState(false);
+  const [customHours, setCustomHours] = useState(0);
+  const [customMinutes, setCustomMinutes] = useState(30);
+
+  // Tutorial dialog
+  const [showTutorial, setShowTutorial] = useState(false);
+  const tutorialChecked = useRef(false);
 
   // ── Program day ──
   // Display day stays on the current day after Lock In (reflect is same day)
@@ -142,6 +166,28 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       clearTimeout(boundaryTimer);
     };
   }, [ctaState.mode]);
+
+  // ── First-open tutorial check ──
+  useEffect(() => {
+    if (!isHydrated || tutorialChecked.current) return;
+    tutorialChecked.current = true;
+
+    AsyncStorage.getItem(TUTORIAL_STORAGE_KEY).then((val) => {
+      if (!val) setShowTutorial(true);
+    });
+  }, [isHydrated]);
+
+  // ── Lock In reminder notification scheduling ──
+  useEffect(() => {
+    if (!isHydrated) return;
+    const todayKey = new Date().toISOString().slice(0, 10);
+
+    if (state.lastLockInCompletedDate === todayKey) {
+      NotificationService.cancelLockInReminder();
+    } else {
+      NotificationService.scheduleLockInReminder();
+    }
+  }, [isHydrated, state.lastLockInCompletedDate]);
 
   // ── Navigate to ProgramComplete if program is done ──
   useEffect(() => {
@@ -226,12 +272,16 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   }, [dispatch, state.activeSession]);
 
   // ── Lock animation complete → start session → navigate ──
-  const handleLockAnimationComplete = useCallback(() => {
+  const handleLockAnimationComplete = useCallback(async () => {
+    if (!isSubscribed) {
+      await showPaywall();
+      return;
+    }
+
     const phase: ContentPhase =
       ctaState.mode === 'unlock' ? 'unlock' : 'lock_in';
 
     if (phase === 'lock_in') {
-      // Lock In: create active session, shield apps, animate, navigate
       const session = createSession(SESSION_DURATION);
 
       LockModeService.beginSession();
@@ -257,7 +307,6 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         });
       });
     } else {
-      // Unlock: shield apps, navigate directly (no lock animation, no crash-resume)
       LockModeService.beginSession();
 
       Animated.timing(screenOpacity, {
@@ -272,7 +321,33 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         });
       });
     }
-  }, [ctaState.mode, dispatch, navigation, screenOpacity, programDay]);
+  }, [ctaState.mode, dispatch, navigation, screenOpacity, programDay, isSubscribed, showPaywall]);
+
+  // ── Tutorial dismiss ──
+  const handleDismissTutorial = useCallback(() => {
+    setShowTutorial(false);
+    AsyncStorage.setItem(TUTORIAL_STORAGE_KEY, 'true');
+  }, []);
+
+  // ── Execution Block ──
+  const handleExecutionBlockSelect = useCallback(async (minutes: number) => {
+    setShowDurationPicker(false);
+
+    if (!isSubscribed) {
+      await showPaywall();
+      return;
+    }
+
+    LockModeService.beginSession();
+
+    Animated.timing(screenOpacity, {
+      toValue: 0,
+      duration: 400,
+      useNativeDriver: true,
+    }).start(() => {
+      navigation.replace('ExecutionBlock', { durationMinutes: minutes });
+    });
+  }, [isSubscribed, showPaywall, screenOpacity, navigation]);
 
   // ── Reset opacity when screen mounts or comes back into focus ──
   useEffect(() => {
@@ -316,6 +391,16 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
           />
         </View>
 
+        {/* Execution Block Button */}
+        <TouchableOpacity
+          style={styles.executionBlockButton}
+          onPress={() => setShowDurationPicker(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="flash" size={16} color={Colors.accent} style={styles.executionBlockIcon} />
+          <Text style={styles.executionBlockText}>Execution Block</Text>
+        </TouchableOpacity>
+
         <StatsRow />
 
         <View style={styles.identitySection}>
@@ -349,6 +434,186 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
               activeOpacity={0.7}
             >
               <Text style={styles.modalSecondaryText}>End Session</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Duration Picker Modal */}
+      <Modal
+        visible={showDurationPicker}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => { setShowCustomTime(false); setShowDurationPicker(false); }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Execution Block</Text>
+            <Text style={styles.pickerSubtext}>
+              Lock down your phone. Choose a duration.
+            </Text>
+
+            {!showCustomTime ? (
+              <>
+                <View style={styles.durationGrid}>
+                  {DURATION_OPTIONS.map((mins) => (
+                    <TouchableOpacity
+                      key={mins}
+                      style={styles.durationOption}
+                      onPress={() => handleExecutionBlockSelect(mins)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.durationValue}>
+                        {mins >= 60 ? `${mins / 60}h` : `${mins}`}
+                      </Text>
+                      {mins < 60 && <Text style={styles.durationLabel}>min</Text>}
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity
+                    style={styles.durationOption}
+                    onPress={() => setShowCustomTime(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="timer-outline" size={24} color={Colors.accent} />
+                    <Text style={styles.durationLabel}>Custom</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <View style={styles.customTimeContainer}>
+                <View style={styles.customTimeRow}>
+                  <ScrollPicker
+                    values={HOURS_VALUES}
+                    selectedValue={customHours}
+                    onValueChange={setCustomHours}
+                    formatValue={padTwo}
+                    label="Hours"
+                    style={styles.customTimeColumn}
+                  />
+                  <Text style={styles.customTimeSeparator}>:</Text>
+                  <ScrollPicker
+                    values={MINUTES_VALUES}
+                    selectedValue={customMinutes}
+                    onValueChange={setCustomMinutes}
+                    formatValue={padTwo}
+                    label="Minutes"
+                    style={styles.customTimeColumn}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.customTimeConfirm,
+                    (customHours === 0 && customMinutes === 0) && styles.customTimeConfirmDisabled,
+                  ]}
+                  onPress={() => {
+                    const total = customHours * 60 + customMinutes;
+                    if (total > 0) {
+                      setShowCustomTime(false);
+                      handleExecutionBlockSelect(total);
+                    }
+                  }}
+                  activeOpacity={0.9}
+                  disabled={customHours === 0 && customMinutes === 0}
+                >
+                  <Text style={styles.customTimeConfirmText}>
+                    Start {customHours > 0 ? `${customHours}h ` : ''}{customMinutes > 0 ? `${customMinutes}m` : ''} Block
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setShowCustomTime(false)}
+                  style={styles.modalSecondary}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.modalSecondaryText}>Back</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {!showCustomTime && (
+              <TouchableOpacity
+                onPress={() => {
+                  setShowCustomTime(false);
+                  setShowDurationPicker(false);
+                }}
+                style={styles.modalSecondary}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* First-Open Tutorial Dialog */}
+      <Modal
+        visible={showTutorial}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={handleDismissTutorial}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.tutorialCard}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.tutorialTitle}>How It Works</Text>
+
+              <View style={styles.tutorialSection}>
+                <View style={styles.tutorialIconWrap}>
+                  <Ionicons name="lock-closed" size={22} color={Colors.accent} />
+                </View>
+                <View style={styles.tutorialContent}>
+                  <Text style={styles.tutorialHeading}>Lock In</Text>
+                  <Text style={styles.tutorialBody}>
+                    Your daily 5-minute discipline session. Available all day. Builds your streak and advances your 90-day program.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.tutorialSection}>
+                <View style={styles.tutorialIconWrap}>
+                  <Ionicons name="lock-open" size={22} color={Colors.accent} />
+                </View>
+                <View style={styles.tutorialContent}>
+                  <Text style={styles.tutorialHeading}>Reflect</Text>
+                  <Text style={styles.tutorialBody}>
+                    Evening review session. Opens at 8 PM after Lock In is complete. Adds listening time.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.tutorialSection}>
+                <View style={styles.tutorialIconWrap}>
+                  <Ionicons name="flash" size={22} color={Colors.accent} />
+                </View>
+                <View style={styles.tutorialContent}>
+                  <Text style={styles.tutorialHeading}>Execution Block</Text>
+                  <Text style={styles.tutorialBody}>
+                    Focus timer for any task. Lock down your phone for a custom duration. Available anytime, unlimited uses.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.tutorialSection}>
+                <View style={styles.tutorialIconWrap}>
+                  <Ionicons name="calendar-outline" size={22} color={Colors.textMuted} />
+                </View>
+                <View style={styles.tutorialContent}>
+                  <Text style={styles.tutorialHeading}>Missed Day</Text>
+                  <Text style={styles.tutorialBody}>
+                    If you don't complete a Lock In by midnight, your streak resets.
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity
+              onPress={handleDismissTutorial}
+              style={styles.tutorialButton}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.tutorialButtonText}>Got it</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -397,6 +662,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: '35%',
+  },
+  executionBlockButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.surface,
+    marginBottom: 12,
+  },
+  executionBlockIcon: {
+    marginRight: 8,
+  },
+  executionBlockText: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 14,
+    color: Colors.accent,
+    letterSpacing: 0.2,
   },
   identitySection: {
     marginBottom: 16,
@@ -454,6 +740,138 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.body,
     fontSize: 15,
     color: Colors.textMuted,
+  },
+  // Duration picker
+  pickerSubtext: {
+    fontFamily: FontFamily.body,
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  durationGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  durationOption: {
+    width: 72,
+    height: 72,
+    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  durationValue: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 22,
+    color: Colors.textPrimary,
+  },
+  durationLabel: {
+    fontFamily: FontFamily.body,
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  // Custom time picker
+  customTimeContainer: {
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 8,
+  },
+  customTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+    width: '100%',
+  },
+  customTimeColumn: {
+    flex: 1,
+  },
+  customTimeSeparator: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 28,
+    color: Colors.textMuted,
+    width: 20,
+    textAlign: 'center',
+  },
+  customTimeConfirm: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    width: '100%',
+  },
+  customTimeConfirmDisabled: {
+    opacity: 0.4,
+  },
+  customTimeConfirmText: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 17,
+    color: Colors.textPrimary,
+    letterSpacing: 0.2,
+  },
+  // Tutorial dialog
+  tutorialCard: {
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 16,
+    padding: 28,
+    width: '100%',
+    maxHeight: '80%',
+    borderWidth: 1,
+    borderColor: Colors.surface,
+  },
+  tutorialTitle: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 24,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: 24,
+    letterSpacing: -0.3,
+  },
+  tutorialSection: {
+    flexDirection: 'row',
+    marginBottom: 20,
+  },
+  tutorialIconWrap: {
+    width: 36,
+    alignItems: 'center',
+    marginRight: 12,
+    marginTop: 2,
+  },
+  tutorialContent: {
+    flex: 1,
+  },
+  tutorialHeading: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 16,
+    color: Colors.textPrimary,
+    marginBottom: 4,
+    letterSpacing: -0.1,
+  },
+  tutorialBody: {
+    fontFamily: FontFamily.body,
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  tutorialButton: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    width: '100%',
+    marginTop: 12,
+  },
+  tutorialButtonText: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 17,
+    color: Colors.textPrimary,
+    letterSpacing: 0.2,
   },
 });
 

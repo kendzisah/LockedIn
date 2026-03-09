@@ -46,6 +46,8 @@ const initialState: SessionState = {
   lifetimeTotalMinutes: 0,
   lifetimeLongestStreak: 0,
   lifetimeRunsCompleted: 0,
+  lifetimeExecutionBlocks: 0,
+  lifetimeExecutionMinutes: 0,
   activeSession: null,
   lastLockInCompletedDate: null,
   lastUnlockCompletedDate: null,
@@ -74,6 +76,8 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         lifetimeTotalMinutes: migratedLifetimeMinutes,
         lifetimeLongestStreak: migratedLifetimeLongest,
         lifetimeRunsCompleted: migratedRunsCompleted,
+        lifetimeExecutionBlocks: p.lifetimeExecutionBlocks ?? 0,
+        lifetimeExecutionMinutes: p.lifetimeExecutionMinutes ?? 0,
         activeSession: p.activeSession,
         lastLockInCompletedDate: p.lastLockInCompletedDate ?? null,
         lastUnlockCompletedDate: p.lastUnlockCompletedDate ?? null,
@@ -171,6 +175,16 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       };
     }
 
+    case 'COMPLETE_EXECUTION_BLOCK': {
+      const mins = action.payload.durationMinutes || 0;
+      return {
+        ...state,
+        lifetimeExecutionBlocks: state.lifetimeExecutionBlocks + 1,
+        lifetimeExecutionMinutes: state.lifetimeExecutionMinutes + mins,
+        lifetimeTotalMinutes: state.lifetimeTotalMinutes + mins,
+      };
+    }
+
     case 'RESET_PHASE': {
       return { ...state, phase: 'IDLE' };
     }
@@ -253,6 +267,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       lifetimeTotalMinutes: state.lifetimeTotalMinutes,
       lifetimeLongestStreak: state.lifetimeLongestStreak,
       lifetimeRunsCompleted: state.lifetimeRunsCompleted,
+      lifetimeExecutionBlocks: state.lifetimeExecutionBlocks,
+      lifetimeExecutionMinutes: state.lifetimeExecutionMinutes,
       activeSession: state.activeSession,
       lastLockInCompletedDate: state.lastLockInCompletedDate,
       lastUnlockCompletedDate: state.lastUnlockCompletedDate,
@@ -270,6 +286,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     state.lifetimeTotalMinutes,
     state.lifetimeLongestStreak,
     state.lifetimeRunsCompleted,
+    state.lifetimeExecutionBlocks,
+    state.lifetimeExecutionMinutes,
     state.activeSession,
     state.lastLockInCompletedDate,
     state.lastUnlockCompletedDate,

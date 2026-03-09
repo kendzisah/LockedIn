@@ -15,6 +15,9 @@
  *
  * Timer integrity: remaining is computed from endTimestampRef - Date.now().
  * The setInterval(250ms) is purely a render trigger — never accumulates time.
+ *
+ * On background: pauses audio + freezes timer. On return: shows resume/end modal.
+ * Screen stays awake during the session via expo-keep-awake.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -24,11 +27,13 @@ import {
   type AppStateStatus,
   BackHandler,
   Easing,
+  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useKeepAwake } from 'expo-keep-awake';
 import * as Haptics from 'expo-haptics';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
@@ -41,6 +46,7 @@ import { SessionRepository, type DayTrack } from '../../services/SessionReposito
 import { TelemetryService } from '../../services/TelemetryService';
 import type { ContentPhase } from '@lockedin/shared-types';
 import { LockModeService } from '../../services/LockModeService';
+import PrimaryButton from '../../design/components/PrimaryButton';
 
 const SESSION_DURATION = 5; // minutes — session duration in DB
 const FALLBACK_SECONDS = 150; // 2:30 when audio is unavailable
@@ -60,10 +66,6 @@ const HOLD_DURATION = 2000;
 function getMicroText(phase: ContentPhase): string {
   if (phase === 'unlock') return 'Reflect. Process. Release.';
   return 'Commit to the full timer.';
-}
-
-function getCompletionText(phase: ContentPhase): string {
-  return phase === 'unlock' ? 'Reflection Complete.' : 'Session Complete.';
 }
 
 function getPhaseTextForPhase(
@@ -88,6 +90,13 @@ type AudioLoadState =
 const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
   const { phase, programDay, resuming } = route.params;
   const { state, dispatch } = useSession();
+  useKeepAwake();
+
+  // ── Pause / resume state ──
+  const [paused, setPaused] = useState(false);
+  const [showResumeModal, setShowResumeModal] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
+  const pausedRemainingRef = useRef<number | null>(null);
 
   // ── Timer state ──
   const [totalSeconds, setTotalSeconds] = useState(() => {
@@ -125,7 +134,6 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
   // ── Entry animation ──
   const microTextOpacity = useRef(new Animated.Value(0)).current;
   const timerOpacity = useRef(new Animated.Value(resuming ? 1 : 0)).current;
-  const completeTextOpacity = useRef(new Animated.Value(0)).current;
 
   // ── Hold-to-unlock ──
   const [holdProgress, setHoldProgress] = useState(0);
@@ -370,22 +378,18 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       hasAudio: audioState === 'loaded',
     });
 
-    Animated.timing(completeTextOpacity, {
-      toValue: 1,
+    Animated.timing(timerOpacity, {
+      toValue: 0,
       duration: 500,
       useNativeDriver: true,
-    }).start();
-
-    setTimeout(() => {
-      Animated.timing(timerOpacity, {
-        toValue: 0,
-        duration: 500,
-        useNativeDriver: true,
-      }).start(() => {
-        navigation.replace('Home');
+    }).start(() => {
+      navigation.replace('SessionComplete', {
+        phase: phase === 'lock_in' ? 'lock_in' : 'unlock',
+        durationMinutes,
+        streak: phase === 'lock_in' ? state.consecutiveStreak : 0,
       });
-    }, 1500);
-  }, [isComplete, dispatch, phase, completeTextOpacity, timerOpacity, navigation, audioState, totalSeconds, programDay]);
+    });
+  }, [isComplete, dispatch, phase, timerOpacity, navigation, audioState, totalSeconds, programDay, state.consecutiveStreak]);
 
   // ── Hold-to-unlock handlers ──
   const handleHoldStart = useCallback(() => {
@@ -464,9 +468,13 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       duration: 500,
       useNativeDriver: true,
     }).start(() => {
-      navigation.replace('Home');
+      navigation.replace('SessionComplete', {
+        phase: phase === 'lock_in' ? 'lock_in' : 'unlock',
+        durationMinutes: Math.ceil(totalSeconds / 60),
+        streak: phase === 'lock_in' ? state.consecutiveStreak : 0,
+      });
     });
-  }, [dispatch, phase, timerOpacity, navigation, totalSeconds, remaining, programDay]);
+  }, [dispatch, phase, timerOpacity, navigation, totalSeconds, remaining, programDay, state.consecutiveStreak]);
 
   // ── BackHandler: block Android back ──
   useEffect(() => {
@@ -474,23 +482,65 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
     return () => handler.remove();
   }, []);
 
-  // ── AppState: recalculate timer on foreground return ──
-  // Audio continues in background (shouldPlayInBackground: true).
+  // ── AppState: pause on background, show resume modal on return ──
   useEffect(() => {
     const subscription = AppState.addEventListener(
       'change',
       (nextState: AppStateStatus) => {
-        if (nextState === 'active') {
+        if (nextState !== 'active' && !paused && sessionStarted && !isComplete) {
           const r = getRemaining(endTimestampRef.current);
-          setRemaining(r);
-          if (r <= 0) {
-            handleTimerComplete();
+          pausedRemainingRef.current = r;
+          if (tickRef.current) {
+            clearInterval(tickRef.current);
+            tickRef.current = null;
           }
+          AudioService.pause();
+          setPaused(true);
+        } else if (nextState === 'active' && paused) {
+          setShowResumeModal(true);
         }
       },
     );
     return () => subscription.remove();
-  }, [handleTimerComplete]);
+  }, [paused, sessionStarted, isComplete]);
+
+  // ── Resume / End session handlers ──
+  const handleResumeSession = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowResumeModal(false);
+    setConfirmEnd(false);
+    setPaused(false);
+
+    const frozenRemaining = pausedRemainingRef.current ?? 0;
+    if (frozenRemaining <= 0) {
+      handleTimerComplete();
+      return;
+    }
+
+    endTimestampRef.current = Date.now() + frozenRemaining * 1000;
+    setRemaining(frozenRemaining);
+
+    tickRef.current = setInterval(() => {
+      const r = getRemaining(endTimestampRef.current);
+      setRemaining(r);
+      if (r <= 0) {
+        if (tickRef.current) clearInterval(tickRef.current);
+        tickRef.current = null;
+        handleTimerComplete();
+      }
+    }, 250);
+
+    if (audioState === 'loaded') AudioService.play();
+  }, [audioState, handleTimerComplete]);
+
+  const handleEndRequest = useCallback(() => {
+    if (!confirmEnd) {
+      setConfirmEnd(true);
+      return;
+    }
+    setShowResumeModal(false);
+    handleHoldComplete();
+  }, [confirmEnd, handleHoldComplete]);
 
   // Cleanup hold interval on unmount
   useEffect(() => {
@@ -528,32 +578,24 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
 
       {/* Timer + Phase text */}
       <Animated.View style={[styles.centerContent, { opacity: timerOpacity }]}>
-        {!isComplete ? (
-          <>
-            <Text style={styles.timer}>{formatTime(remaining)}</Text>
-            <Text style={styles.phaseText}>{phaseText}</Text>
+        <Text style={styles.timer}>{formatTime(remaining)}</Text>
+        <Text style={styles.phaseText}>{phaseText}</Text>
 
-            {/* Audio status indicators */}
-            {audioIndicator && (
-              <Text style={styles.audioIndicator}>{audioIndicator}</Text>
-            )}
+        {/* Audio status indicators */}
+        {audioIndicator && (
+          <Text style={styles.audioIndicator}>{audioIndicator}</Text>
+        )}
 
-            {/* Failed state with retry button */}
-            {audioState === 'failed' && (
-              <View style={styles.audioFailedContainer}>
-                <Text style={styles.audioIndicator}>
-                  Audio unavailable — run the protocol anyway.
-                </Text>
-                <TouchableOpacity onPress={handleRetryAudio} style={styles.retryButton}>
-                  <Text style={styles.retryText}>Try again</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </>
-        ) : (
-          <Animated.Text style={[styles.completeText, { opacity: completeTextOpacity }]}>
-            {getCompletionText(phase)}
-          </Animated.Text>
+        {/* Failed state with retry button */}
+        {audioState === 'failed' && (
+          <View style={styles.audioFailedContainer}>
+            <Text style={styles.audioIndicator}>
+              Audio unavailable — run the protocol anyway.
+            </Text>
+            <TouchableOpacity onPress={handleRetryAudio} style={styles.retryButton}>
+              <Text style={styles.retryText}>Try again</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </Animated.View>
 
@@ -582,6 +624,29 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
           <Text style={styles.holdHint}>Hold to end session</Text>
         </View>
       )}
+
+      <Modal
+        visible={showResumeModal}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Session paused</Text>
+            <Text style={styles.modalSubtext}>
+              You left the app. Pick up where you left off.
+            </Text>
+            <PrimaryButton title="Resume session" onPress={handleResumeSession} />
+            <View style={styles.modalSpacer} />
+            <PrimaryButton
+              title={confirmEnd ? 'Are you sure?' : 'End session'}
+              onPress={handleEndRequest}
+              secondary
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -618,12 +683,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
-  },
-  completeText: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 32,
-    color: Colors.textPrimary,
-    letterSpacing: -0.6,
   },
   audioIndicator: {
     fontFamily: FontFamily.body,
@@ -698,6 +757,40 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     opacity: 0.4,
     letterSpacing: 0.3,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  modalCard: {
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 16,
+    padding: 28,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.surface,
+  },
+  modalTitle: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 22,
+    color: Colors.textPrimary,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalSubtext: {
+    fontFamily: FontFamily.body,
+    fontSize: 15,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  modalSpacer: {
+    height: 12,
   },
 });
 
