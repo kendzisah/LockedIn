@@ -53,6 +53,7 @@ import { LockModeService } from '../../services/LockModeService';
 import { useSubscription } from '../subscription/SubscriptionProvider';
 import { Ionicons } from '@expo/vector-icons';
 import ScrollPicker from './components/ScrollPicker';
+import { ACTIVE_EB_KEY } from './ExecutionBlockScreen';
 
 const TUTORIAL_STORAGE_KEY = '@lockedin/home_tutorial_shown';
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120] as const;
@@ -239,6 +240,48 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       if (autoResumeTimer.current) clearTimeout(autoResumeTimer.current);
     };
   }, [isHydrated]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Recover orphaned execution blocks (app-kill, background expiry, mid-block kill) ──
+  useEffect(() => {
+    if (!isHydrated) return;
+
+    async function recoverOrphanedEB() {
+      try {
+        const raw = await AsyncStorage.getItem(ACTIVE_EB_KEY);
+        if (!raw) return;
+
+        const info = JSON.parse(raw) as {
+          startTimestamp: number;
+          endTimestamp: number;
+          durationMinutes: number;
+        };
+
+        await LockModeService.endSession();
+
+        const now = Date.now();
+        const elapsedMs = Math.min(now, info.endTimestamp) - info.startTimestamp;
+        const elapsedMinutes = Math.ceil(Math.max(0, elapsedMs) / 60_000);
+
+        if (elapsedMinutes >= 1) {
+          dispatch({
+            type: 'COMPLETE_EXECUTION_BLOCK',
+            payload: { durationMinutes: elapsedMinutes },
+          });
+        }
+
+        await AsyncStorage.removeItem(ACTIVE_EB_KEY);
+      } catch {
+        AsyncStorage.removeItem(ACTIVE_EB_KEY);
+      }
+    }
+
+    recoverOrphanedEB();
+
+    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState === 'active') recoverOrphanedEB();
+    });
+    return () => sub.remove();
+  }, [isHydrated, dispatch]);
 
   const handleResume = useCallback(() => {
     if (autoResumeTimer.current) clearTimeout(autoResumeTimer.current);

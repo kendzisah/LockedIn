@@ -17,6 +17,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useKeepAwake } from 'expo-keep-awake';
 import * as Haptics from 'expo-haptics';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -26,6 +27,8 @@ import { LockModeService } from '../../services/LockModeService';
 import { NotificationService } from '../../services/NotificationService';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
+
+export const ACTIVE_EB_KEY = '@lockedin/active_execution_block';
 
 const HOLD_DURATION = 2000;
 
@@ -68,6 +71,7 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
 
   const timerOpacity = useRef(new Animated.Value(0)).current;
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const completedRef = useRef(false);
 
   // Hold-to-unlock
   const [holdProgress, setHoldProgress] = useState(0);
@@ -81,12 +85,14 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
   }, [totalSeconds]);
 
   const handleTimerComplete = useCallback(() => {
-    if (isComplete) return;
+    if (completedRef.current) return;
+    completedRef.current = true;
     setIsComplete(true);
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     LockModeService.endSession();
     NotificationService.cancelExecutionBlockDone();
+    AsyncStorage.removeItem(ACTIVE_EB_KEY);
 
     dispatch({
       type: 'COMPLETE_EXECUTION_BLOCK',
@@ -104,14 +110,17 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
         streak: 0,
       });
     });
-  }, [isComplete, dispatch, durationMinutes, timerOpacity, navigation]);
+  }, [dispatch, durationMinutes, timerOpacity, navigation]);
 
   const handleHoldComplete = useCallback(() => {
+    if (completedRef.current) return;
+    completedRef.current = true;
     setIsComplete(true);
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     LockModeService.endSession();
     NotificationService.cancelExecutionBlockDone();
+    AsyncStorage.removeItem(ACTIVE_EB_KEY);
 
     const elapsedSeconds = totalSeconds - Math.max(0, Math.ceil((endTimestampRef.current - Date.now()) / 1000));
 
@@ -140,8 +149,17 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
     });
   }, [dispatch, totalSeconds, timerOpacity, navigation]);
 
-  // Schedule push notification for when the block ends & fade in timer
+  // Persist execution block info, schedule notification, fade in timer
   useEffect(() => {
+    AsyncStorage.setItem(
+      ACTIVE_EB_KEY,
+      JSON.stringify({
+        startTimestamp: Date.now(),
+        endTimestamp: endTimestampRef.current,
+        durationMinutes,
+      }),
+    );
+
     NotificationService.scheduleExecutionBlockDone(new Date(endTimestampRef.current));
 
     Animated.timing(timerOpacity, {
