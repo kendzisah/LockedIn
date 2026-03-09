@@ -29,7 +29,7 @@ import type {
   SessionAction,
   PersistedSessionState,
 } from './types';
-import { getTodayKey, computeNewStreak } from '../engine/SessionEngine';
+import { getTodayKey, computeNewStreak, dayKeyFromTimestamp } from '../engine/SessionEngine';
 
 // ─── Constants ───────────────────────────────────────────────────
 
@@ -144,9 +144,9 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       const newLifetimeLongest = Math.max(state.lifetimeLongestStreak, newStreak);
       const newLifetimeMinutes = state.lifetimeTotalMinutes + (action.payload.durationMinutes || 0);
 
-      // Session day key: use the day the session started (for midnight rollover)
+      // Session day key: use LOCAL date the session started (for midnight rollover)
       const sessionDayKey = state.activeSession
-        ? new Date(state.activeSession.startTimestamp).toISOString().slice(0, 10)
+        ? dayKeyFromTimestamp(state.activeSession.startTimestamp)
         : todayKey;
 
       return {

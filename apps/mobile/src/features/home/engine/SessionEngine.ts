@@ -102,21 +102,25 @@ export function getUnlockPhaseText(elapsedSeconds: number, totalSeconds: number)
  * Compute the new streak value after completing a session today.
  *
  * Rules:
+ * - If lastSessionDayKey === today:     keep current streak (same-day completion)
  * - If lastSessionDayKey === yesterday: streak + 1 (consecutive)
- * - If lastSessionDayKey !== yesterday (gap): reset to 1 (today = day 1)
+ * - Otherwise (gap or first session):   reset to 1
  */
 export function computeNewStreak(
   lastSessionDayKey: DayKey | null,
   currentStreak: number,
   todayKey: DayKey,
 ): number {
+  if (lastSessionDayKey === todayKey) {
+    return currentStreak;
+  }
+
   const yesterdayKey = getYesterdayKey();
 
   if (lastSessionDayKey === yesterdayKey) {
     return currentStreak + 1;
   }
 
-  // Gap or first session ever: reset to 1
   return 1;
 }
 
