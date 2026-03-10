@@ -29,12 +29,12 @@ export async function middleware(request: NextRequest) {
   // Fast-fail: no user or email not in allowlist
   // RLS on profiles.role='admin' is the real authorization gate
   if (!user || !ALLOWED_EMAILS.includes(user.email ?? '')) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    return NextResponse.redirect(new URL('/admin', request.url));
   }
 
   return response;
 }
 
 export const config = {
-  matcher: ['/((?!login|privacy|waitlist|terms|support|_next/static|_next/image|favicon\\.ico|favicon\\.svg|favicon-96x96\\.png|apple-touch-icon\\.png|site\\.webmanifest|logo\\.png|web-app-manifest-.*\\.png).*)'],
+  matcher: ['/dashboard/:path*', '/program/:path*', '/api/:path*'],
 };

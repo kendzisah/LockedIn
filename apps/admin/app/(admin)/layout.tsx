@@ -8,7 +8,7 @@ export default function AdminLayout({
   return (
     <>
       <nav className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <a href="/" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity">
+        <a href="/dashboard" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity">
           <Image
             src="/logo.png"
             alt="LockedIn"
@@ -22,7 +22,7 @@ export default function AdminLayout({
           </span>
         </a>
         <div className="flex gap-4 text-sm text-text-secondary">
-          <a href="/" className="hover:text-text-primary transition-colors">Dashboard</a>
+          <a href="/dashboard" className="hover:text-text-primary transition-colors">Dashboard</a>
           <a href="/program" className="hover:text-text-primary transition-colors">Program</a>
         </div>
       </nav>
