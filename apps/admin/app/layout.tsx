@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
+import { ClerkProvider } from '@clerk/nextjs';
+import { dark } from '@clerk/themes';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -24,10 +26,26 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.className} bg-background text-text-primary min-h-screen`}>
-        {children}
-      </body>
-    </html>
+    <ClerkProvider
+      appearance={{ baseTheme: dark }}
+      localization={{
+        waitlist: {
+          start: {
+            title: 'Get Early Access',
+            subtitle: 'Enter your email to reserve your spot.',
+          },
+          success: {
+            title: "You're on the list!",
+            subtitle: "We'll notify you once the app is available.",
+          },
+        },
+      }}
+    >
+      <html lang="en" className="dark">
+        <body className={`${inter.className} bg-background text-text-primary min-h-screen`}>
+          {children}
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }
