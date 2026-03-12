@@ -24,6 +24,7 @@ import React, {
   useRef,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppsFlyerService } from '../../../services/AppsFlyerService';
 import type {
   SessionState,
   SessionAction,
@@ -34,6 +35,9 @@ import { getTodayKey, computeNewStreak, dayKeyFromTimestamp } from '../engine/Se
 // ─── Constants ───────────────────────────────────────────────────
 
 const STORAGE_KEY = '@lockedin/session_state';
+const AF_FIRST_SESSION_KEY = '@lockedin/af_first_session_sent';
+const AF_MILESTONES_KEY = '@lockedin/af_streak_milestones_sent';
+const STREAK_MILESTONES = [3, 7, 14, 30, 60, 90] as const;
 
 // ─── Initial State ───────────────────────────────────────────────
 
@@ -292,6 +296,52 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     state.lastLockInCompletedDate,
     state.lastUnlockCompletedDate,
   ]);
+
+  // ── AppsFlyer: first session activation ──
+  useEffect(() => {
+    if (!isHydrated || state.maxCompletedDay < 1) return;
+
+    (async () => {
+      try {
+        const sent = await AsyncStorage.getItem(AF_FIRST_SESSION_KEY);
+        if (!sent) {
+          AppsFlyerService.logEvent('af_tutorial_completion', {
+            af_success: '1',
+            af_content_id: 'first_lock_in',
+          });
+          await AsyncStorage.setItem(AF_FIRST_SESSION_KEY, '1');
+        }
+      } catch {}
+    })();
+  }, [isHydrated, state.maxCompletedDay]);
+
+  // ── AppsFlyer: streak milestones ──
+  useEffect(() => {
+    if (!isHydrated || state.consecutiveStreak < STREAK_MILESTONES[0]) return;
+
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(AF_MILESTONES_KEY);
+        const sent: number[] = raw ? JSON.parse(raw) : [];
+
+        const newMilestones = STREAK_MILESTONES.filter(
+          (m) => state.consecutiveStreak >= m && !sent.includes(m),
+        );
+
+        for (const milestone of newMilestones) {
+          AppsFlyerService.logEvent('af_achievement_unlocked', {
+            af_description: `streak_${milestone}`,
+            af_score: String(milestone),
+          });
+          sent.push(milestone);
+        }
+
+        if (newMilestones.length > 0) {
+          await AsyncStorage.setItem(AF_MILESTONES_KEY, JSON.stringify(sent));
+        }
+      } catch {}
+    })();
+  }, [isHydrated, state.consecutiveStreak]);
 
   return (
     <SessionContext.Provider value={{ state, dispatch, isHydrated }}>

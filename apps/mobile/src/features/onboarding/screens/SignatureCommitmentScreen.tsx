@@ -8,14 +8,18 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
+import { AppsFlyerService } from '../../../services/AppsFlyerService';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+
+const AF_REG_SENT_KEY = '@lockedin/af_reg_sent';
 
 const SLIDE = 25;
 
@@ -266,8 +270,19 @@ const SignatureCommitmentScreen: React.FC<Props> = ({ navigation }) => {
       {/* CTA */}
       <Animated.View style={[styles.buttonWrap, { opacity: buttonOpacity }]}>
         <TouchableOpacity
-          onPress={() => {
+          onPress={async () => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+            try {
+              const sent = await AsyncStorage.getItem(AF_REG_SENT_KEY);
+              if (!sent) {
+                AppsFlyerService.logEvent('af_complete_registration', {
+                  af_registration_method: 'signature',
+                });
+                await AsyncStorage.setItem(AF_REG_SENT_KEY, '1');
+              }
+            } catch {}
+
             Animated.timing(screenOpacity, {
               toValue: 0,
               duration: 500,

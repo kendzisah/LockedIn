@@ -34,4 +34,16 @@ export const ENV = {
     'EXPO_PUBLIC_REVENUECAT_IOS_API_KEY',
     process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY,
   ),
+
+  /** AppsFlyer dev key */
+  APPSFLYER_DEV_KEY: requireEnv(
+    'EXPO_PUBLIC_APPSFLYER_DEV_KEY',
+    process.env.EXPO_PUBLIC_APPSFLYER_DEV_KEY,
+  ),
+
+  /** AppsFlyer iOS app ID */
+  APPSFLYER_APP_ID: requireEnv(
+    'EXPO_PUBLIC_APPSFLYER_APP_ID',
+    process.env.EXPO_PUBLIC_APPSFLYER_APP_ID,
+  ),
 };

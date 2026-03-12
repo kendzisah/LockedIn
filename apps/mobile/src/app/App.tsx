@@ -20,6 +20,8 @@ import { Platform } from 'react-native';
 import { SupabaseService } from '../services/SupabaseService';
 import { AudioService } from '../services/AudioService';
 import { NotificationService } from '../services/NotificationService';
+import { AppsFlyerService } from '../services/AppsFlyerService';
+import { ENV } from '../config/env';
 
 // Keep splash screen visible while fonts + auth load
 SplashScreen.preventAutoHideAsync();
@@ -34,12 +36,21 @@ const App: React.FC = () => {
   });
 
   const [authReady, setAuthReady] = useState(false);
+  const attRequested = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function boot() {
       try {
+        AppsFlyerService.initSdk({
+          devKey: ENV.APPSFLYER_DEV_KEY,
+          isDebug: __DEV__,
+          appId: ENV.APPSFLYER_APP_ID,
+          manualStart: true,
+          timeToWaitForATTUserAuthorization: 10,
+        });
+
         await AudioService.configure();
         await SupabaseService.initialize();
         await NotificationService.scheduleDailyReminders();
@@ -62,18 +73,21 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const attRequested = useRef(false);
-
   const onLayoutRootView = useCallback(async () => {
     if (fontsLoaded && authReady) {
       await SplashScreen.hideAsync();
 
       if (Platform.OS === 'ios' && !attRequested.current) {
         attRequested.current = true;
-        setTimeout(() => {
-          requestTrackingPermissionsAsync();
-        }, 500);
+        try {
+          await requestTrackingPermissionsAsync();
+        } catch {
+          // ATT not available (e.g. simulator) — continue
+        }
       }
+
+      AppsFlyerService.startSdk();
+      AppsFlyerService.logEvent('af_login', {});
     }
   }, [fontsLoaded, authReady]);
 

@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
@@ -13,8 +14,11 @@ import ScreenContainer from '../../../design/components/ScreenContainer';
 import OptionItem from '../../../design/components/OptionItem';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
+import { AppsFlyerService } from '../../../services/AppsFlyerService';
 import { Colors } from '../../../design/colors';
 import { Typography } from '../../../design/typography';
+
+const AF_LEAD_SENT_KEY = '@lockedin/af_lead_sent';
 
 const PAIN_POINTS = [
   'I scroll when I should execute',
@@ -116,9 +120,18 @@ const SurfacePainScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  const handleContinue = useCallback(() => {
+  const handleContinue = useCallback(async () => {
     if (!selected) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    try {
+      const sent = await AsyncStorage.getItem(AF_LEAD_SENT_KEY);
+      if (!sent) {
+        AppsFlyerService.logEvent('lead', { af_content: 'surface_pain' });
+        await AsyncStorage.setItem(AF_LEAD_SENT_KEY, '1');
+      }
+    } catch {}
+
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 500,
