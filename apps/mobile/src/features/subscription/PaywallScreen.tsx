@@ -2,8 +2,8 @@
  * PaywallScreen — Hard-gate paywall shown after onboarding.
  *
  * Presents the RevenueCat paywall on mount. If the user dismisses without
- * subscribing, re-presents after a brief delay. Includes a "Restore Purchases"
- * option for users who reinstalled the app.
+ * subscribing, they land on a backing screen with "View Plans" and
+ * "Restore Purchases" options.
  *
  * Transitions away automatically when SubscriptionProvider detects an active
  * entitlement (RootNavigator swaps to MainNavigator).

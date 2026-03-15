@@ -18,7 +18,9 @@
       "appleTeamId": "NGFWFKBJU2",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you.",
+        "NSAdvertisingAttributionReportEndpoint": "https://appsflyer-skadnetwork.com/",
+        "NSAdvertisingAttributionReportURL": "https://appsflyer-skadnetwork.com/"
       },
       "entitlements": {
         "com.apple.developer.family-controls": true
