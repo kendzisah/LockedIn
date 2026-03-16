@@ -18,6 +18,7 @@ import { useSubscription } from './SubscriptionProvider';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
+import { AppsFlyerService } from '../../services/AppsFlyerService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -69,6 +70,14 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
   const projBarAnims = useRef(projections.map(() => new Animated.Value(0))).current;
   const buttonOpacity = useRef(new Animated.Value(0)).current;
   const sweepAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    AppsFlyerService.logEvent('paywall_view', {
+      source: 'home',
+      goal: state.mainGoal ?? '',
+      daily_commitment: state.dailyMinutes ?? '',
+    });
+  }, [state.mainGoal, state.dailyMinutes]);
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -129,15 +138,25 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
         navigation.goBack();
       });
     } else {
+      AppsFlyerService.logEvent('paywall_dismiss', {
+        source: 'home',
+        goal: state.mainGoal ?? '',
+        daily_commitment: state.dailyMinutes ?? '',
+      });
       navigation.goBack();
     }
-  }, [showPaywall, isSubscribed, screenOpacity, navigation]);
+  }, [showPaywall, isSubscribed, screenOpacity, navigation, state.mainGoal, state.dailyMinutes]);
 
   const handleDismiss = useCallback(() => {
+    AppsFlyerService.logEvent('paywall_dismiss', {
+      source: 'home',
+      goal: state.mainGoal ?? '',
+      daily_commitment: state.dailyMinutes ?? '',
+    });
     Animated.timing(screenOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
       navigation.goBack();
     });
-  }, [screenOpacity, navigation]);
+  }, [screenOpacity, navigation, state.mainGoal, state.dailyMinutes]);
 
   const fiveYearHours = projections[projections.length - 1].hours;
 

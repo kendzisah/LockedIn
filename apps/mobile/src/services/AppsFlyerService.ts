@@ -30,6 +30,19 @@ export const AppsFlyerService = {
     }
   },
 
+  getAppsFlyerUID(): Promise<string | null> {
+    return new Promise((resolve) => {
+      if (!sdk) { resolve(null); return; }
+      try {
+        sdk.getAppsFlyerUID(
+          (_err: unknown, uid: string) => resolve(uid ?? null),
+        );
+      } catch {
+        resolve(null);
+      }
+    });
+  },
+
   logEvent(name: string, values: Record<string, string>) {
     try {
       sdk?.logEvent(

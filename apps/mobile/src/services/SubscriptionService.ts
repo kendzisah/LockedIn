@@ -13,6 +13,7 @@ import Purchases, {
   LOG_LEVEL,
 } from 'react-native-purchases';
 import { ENV } from '../config/env';
+import { AppsFlyerService } from './AppsFlyerService';
 
 const ENTITLEMENT_ID = 'Inner_Circle';
 
@@ -33,8 +34,25 @@ async function initialize(): Promise<boolean> {
     await Purchases.configure(config);
     initialized = true;
 
+    // Send device identifiers (IDFA/IDFV) to RevenueCat for attribution
+    try {
+      Purchases.collectDeviceIdentifiers();
+    } catch (e) {
+      console.warn('[SubscriptionService] collectDeviceIdentifiers failed (non-fatal):', e);
+    }
+
+    // Send AppsFlyer ID to RevenueCat for S2S integration
+    try {
+      const afUID = await AppsFlyerService.getAppsFlyerUID();
+      if (afUID) {
+        Purchases.setAppsflyerID(afUID);
+        console.log('[SubscriptionService] AppsFlyer ID set on RevenueCat:', afUID);
+      }
+    } catch (e) {
+      console.warn('[SubscriptionService] setAppsflyerID failed (non-fatal):', e);
+    }
+
     // Restore purchases to cover reinstall / new anonymous-ID scenarios.
-    // This transfers any active App Store subscription to the current RC user.
     try {
       await Purchases.restorePurchases();
     } catch (restoreErr) {

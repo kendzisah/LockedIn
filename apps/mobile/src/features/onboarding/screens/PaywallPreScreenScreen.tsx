@@ -19,6 +19,7 @@ import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import { AppsFlyerService } from '../../../services/AppsFlyerService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -71,6 +72,14 @@ const PaywallPreScreenScreen: React.FC<Props> = ({ navigation }) => {
   const projBarAnims = useRef(projections.map(() => new Animated.Value(0))).current;
   const buttonOpacity = useRef(new Animated.Value(0)).current;
   const sweepAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    AppsFlyerService.logEvent('paywall_view', {
+      source: 'onboarding',
+      goal: state.mainGoal ?? '',
+      daily_commitment: state.dailyMinutes ?? '',
+    });
+  }, [state.mainGoal, state.dailyMinutes]);
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -131,13 +140,23 @@ const PaywallPreScreenScreen: React.FC<Props> = ({ navigation }) => {
         navigation.navigate('SignatureCommitment');
       });
     } else {
+      AppsFlyerService.logEvent('paywall_dismiss', {
+        source: 'onboarding',
+        goal: state.mainGoal ?? '',
+        daily_commitment: state.dailyMinutes ?? '',
+      });
       setDismissed(true);
     }
-  }, [showPaywall, isSubscribed, screenOpacity, navigation]);
+  }, [showPaywall, isSubscribed, screenOpacity, navigation, state.mainGoal, state.dailyMinutes]);
 
   const handleMaybeLater = useCallback(() => {
+    AppsFlyerService.logEvent('paywall_dismiss', {
+      source: 'onboarding',
+      goal: state.mainGoal ?? '',
+      daily_commitment: state.dailyMinutes ?? '',
+    });
     dispatch({ type: 'COMPLETE_ONBOARDING' });
-  }, [dispatch]);
+  }, [dispatch, state.mainGoal, state.dailyMinutes]);
 
   const fiveYearHours = projections[projections.length - 1].hours;
 

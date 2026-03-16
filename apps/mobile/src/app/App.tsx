@@ -21,6 +21,7 @@ import { SupabaseService } from '../services/SupabaseService';
 import { AudioService } from '../services/AudioService';
 import { NotificationService } from '../services/NotificationService';
 import { AppsFlyerService } from '../services/AppsFlyerService';
+import Purchases from 'react-native-purchases';
 import { ENV } from '../config/env';
 
 // Keep splash screen visible while fonts + auth load
@@ -81,6 +82,8 @@ const App: React.FC = () => {
         attRequested.current = true;
         try {
           await requestTrackingPermissionsAsync();
+          // Re-collect identifiers now that IDFA may be available
+          try { Purchases.collectDeviceIdentifiers(); } catch {}
         } catch {
           // ATT not available (e.g. simulator) — continue
         }
