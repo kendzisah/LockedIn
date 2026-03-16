@@ -32,7 +32,7 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'GoalQuiz'>;
 
 const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'GoalQuiz', step: 6, total_steps: 19 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'GoalQuiz', step: 6, total_steps: 18 });
   }, []);
 
   const { dispatch } = useOnboarding();

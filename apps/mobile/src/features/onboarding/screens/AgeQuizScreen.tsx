@@ -36,7 +36,7 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'AgeQuiz'>;
 
 export const AgeQuizScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'AgeQuiz', step: 3, total_steps: 19 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'AgeQuiz', step: 3, total_steps: 18 });
   }, []);
 
   const { dispatch } = useOnboarding();

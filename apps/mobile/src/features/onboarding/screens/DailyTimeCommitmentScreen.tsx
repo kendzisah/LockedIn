@@ -39,7 +39,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
   const optionsTranslateY = useRef(new Animated.Value(SLIDE)).current;
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'DailyTimeCommitment', step: 8, total_steps: 19 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'DailyTimeCommitment', step: 8, total_steps: 18 });
   }, []);
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
   Animated,
   Dimensions,
@@ -13,7 +13,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
+import { useSubscription } from '../../subscription/SubscriptionProvider';
 import { MixpanelService } from '../../../services/MixpanelService';
+import { AppsFlyerService } from '../../../services/AppsFlyerService';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
@@ -43,10 +45,17 @@ function formatHours(h: number): string {
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'PersonalizedPlanCard'>;
 
 const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
-  const { state } = useOnboarding();
+  const { state, dispatch } = useOnboarding();
+  const { showPaywall } = useSubscription();
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PersonalizedPlanCard', step: 17, total_steps: 19 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PersonalizedPlanCard', step: 17, total_steps: 18 });
+    MixpanelService.track('Paywall Viewed', { source: 'onboarding' });
+    AppsFlyerService.logEvent('paywall_view', {
+      source: 'onboarding',
+      goal: state.primaryGoal ?? '',
+      daily_commitment: state.dailyMinutes ?? '',
+    });
   }, []);
 
   const reclaimedBase = computeReclaimedHours(state.dailyMinutes);
@@ -218,16 +227,28 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
 
         <Animated.View style={[styles.buttonWrap, { opacity: buttonOpacity }]}>
           <TouchableOpacity
-            onPress={() => {
+            onPress={async () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
-                navigation.navigate('PaywallPreScreen');
-              });
+              MixpanelService.track('Paywall CTA Tapped', { source: 'onboarding' });
+              const subscribed = await showPaywall();
+              if (subscribed) {
+                MixpanelService.track('Subscription Started', { source: 'onboarding' });
+                Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
+                  navigation.navigate('SignatureCommitment');
+                });
+              } else {
+                AppsFlyerService.logEvent('paywall_dismiss', {
+                  source: 'onboarding',
+                  goal: state.primaryGoal ?? '',
+                  daily_commitment: state.dailyMinutes ?? '',
+                });
+                MixpanelService.track('Paywall Dismissed', { source: 'onboarding' });
+              }
             }}
             activeOpacity={0.9}
             style={styles.ctaButton}
           >
-            <Text style={styles.ctaText}>Unlock This Protocol</Text>
+            <Text style={styles.ctaText}>Lock In</Text>
 
             <Animated.View
               style={[
@@ -252,6 +273,22 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
                 style={StyleSheet.absoluteFill}
               />
             </Animated.View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => {
+              MixpanelService.track('Paywall Skipped', { source: 'onboarding' });
+              AppsFlyerService.logEvent('paywall_dismiss', {
+                source: 'onboarding',
+                goal: state.primaryGoal ?? '',
+                daily_commitment: state.dailyMinutes ?? '',
+              });
+              dispatch({ type: 'COMPLETE_ONBOARDING' });
+            }}
+            activeOpacity={0.7}
+            style={styles.skipButton}
+          >
+            <Text style={styles.skipText}>Maybe Later</Text>
           </TouchableOpacity>
         </Animated.View>
         </View>
@@ -393,6 +430,16 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     width: 120,
+  },
+  skipButton: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  skipText: {
+    fontFamily: FontFamily.body,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.3)',
   },
 });
 

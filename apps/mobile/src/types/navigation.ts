@@ -22,7 +22,6 @@ export type OnboardingStackParamList = {
   PostSessionAffirmation: undefined;
   NotificationPreFrame: undefined;
   PersonalizedPlanCard: undefined;
-  PaywallPreScreen: undefined;
   SignatureCommitment: undefined;
 };
 

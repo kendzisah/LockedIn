@@ -28,7 +28,7 @@ const EnforceMyFocusScreen: React.FC<Props> = ({ navigation }) => {
   const flashOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'EnforceMyFocus', step: 13, total_steps: 19 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'EnforceMyFocus', step: 13, total_steps: 18 });
   }, []);
 
   const headlineOpacity = useRef(new Animated.Value(0)).current;

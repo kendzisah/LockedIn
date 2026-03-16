@@ -65,7 +65,7 @@ const SignatureCommitmentScreen: React.FC<Props> = ({ navigation }) => {
   const [hasSigned, setHasSigned] = useState(false);
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'SignatureCommitment', step: 19, total_steps: 19 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'SignatureCommitment', step: 18, total_steps: 18 });
   }, []);
 
   // ── Screen-level fade ──

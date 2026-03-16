@@ -25,7 +25,7 @@ const PostSessionAffirmationScreen: React.FC<Props> = ({ navigation }) => {
   const screenOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PostSessionAffirmation', step: 15, total_steps: 19 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PostSessionAffirmation', step: 15, total_steps: 18 });
   }, []);
 
   const headlineOpacity = useRef(new Animated.Value(0)).current;

@@ -20,7 +20,6 @@ import LiveSessionScreen from '../features/onboarding/screens/LiveSessionScreen'
 import PostSessionAffirmationScreen from '../features/onboarding/screens/PostSessionAffirmationScreen';
 import NotificationPreFrameScreen from '../features/onboarding/screens/NotificationPreFrameScreen';
 import PersonalizedPlanCardScreen from '../features/onboarding/screens/PersonalizedPlanCardScreen';
-import PaywallPreScreenScreen from '../features/onboarding/screens/PaywallPreScreenScreen';
 import SignatureCommitmentScreen from '../features/onboarding/screens/SignatureCommitmentScreen';
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
@@ -53,7 +52,6 @@ const OnboardingNavigator: React.FC = () => {
       <Stack.Screen name="PostSessionAffirmation" component={PostSessionAffirmationScreen} options={{ animation: 'none' }} />
       <Stack.Screen name="NotificationPreFrame" component={NotificationPreFrameScreen} options={{ animation: 'none' }} />
       <Stack.Screen name="PersonalizedPlanCard" component={PersonalizedPlanCardScreen} options={{ animation: 'none' }} />
-      <Stack.Screen name="PaywallPreScreen" component={PaywallPreScreenScreen} options={{ animation: 'none' }} />
       <Stack.Screen name="SignatureCommitment" component={SignatureCommitmentScreen} options={{ animation: 'none' }} />
     </Stack.Navigator>
   );

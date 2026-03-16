@@ -38,7 +38,7 @@ const CompoundStatScreen: React.FC<Props> = ({ navigation }) => {
   const buttonOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'CompoundStat', step: 9, total_steps: 19 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'CompoundStat', step: 9, total_steps: 18 });
   }, []);
 
   useEffect(() => {

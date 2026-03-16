@@ -54,7 +54,7 @@ const LiveSessionScreen: React.FC<Props> = ({ navigation }) => {
   useKeepAwake();
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'LiveSession', step: 14, total_steps: 19 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'LiveSession', step: 14, total_steps: 18 });
   }, []);
 
   const [totalSeconds, setTotalSeconds] = useState<number | null>(null);

@@ -39,7 +39,7 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'LossAversionStat'
 
 const LossAversionStatScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'LossAversionStat', step: 4, total_steps: 19 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'LossAversionStat', step: 4, total_steps: 18 });
   }, []);
 
   const { state } = useOnboarding();
