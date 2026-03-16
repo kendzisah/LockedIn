@@ -51,6 +51,7 @@ import { NotificationService } from '../../services/NotificationService';
 import type { ContentPhase } from '@lockedin/shared-types';
 import { LockModeService } from '../../services/LockModeService';
 import { useSubscription } from '../subscription/SubscriptionProvider';
+import { MixpanelService } from '../../services/MixpanelService';
 import { Ionicons } from '@expo/vector-icons';
 import ScrollPicker from './components/ScrollPicker';
 import { ACTIVE_EB_KEY } from './ExecutionBlockScreen';
@@ -326,6 +327,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
     if (phase === 'lock_in') {
       const session = createSession(SESSION_DURATION);
+      MixpanelService.track('Session Started', { phase: 'lock_in', program_day: programDay });
 
       LockModeService.beginSession();
 
@@ -350,6 +352,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         });
       });
     } else {
+      MixpanelService.track('Session Started', { phase: 'unlock', program_day: programDay });
       LockModeService.beginSession();
 
       Animated.timing(screenOpacity, {
@@ -381,6 +384,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       return;
     }
 
+    MixpanelService.track('Execution Block Started', { duration_minutes: minutes });
     LockModeService.beginSession();
 
     Animated.timing(screenOpacity, {

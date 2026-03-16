@@ -14,6 +14,7 @@ import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import { MixpanelService } from '../../../services/MixpanelService';
 
 const SLIDE = 25;
 
@@ -30,6 +31,10 @@ const GOALS = [
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'GoalQuiz'>;
 
 const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'GoalQuiz', step: 6, total_steps: 19 });
+  }, []);
+
   const { dispatch } = useOnboarding();
   const [selected, setSelected] = useState<string | null>(null);
   const advancingRef = useRef(false);
@@ -68,6 +73,7 @@ const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
     setSelected(goal);
     dispatch({ type: 'SET_PRIMARY_GOAL', payload: goal });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    MixpanelService.track('Onboarding Answer Submitted', { screen: 'GoalQuiz', answer: goal });
 
     advancingRef.current = true;
     setTimeout(() => {

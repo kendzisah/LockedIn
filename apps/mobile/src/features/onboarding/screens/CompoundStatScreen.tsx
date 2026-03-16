@@ -11,6 +11,7 @@ import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import { MixpanelService } from '../../../services/MixpanelService';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -35,6 +36,10 @@ const CompoundStatScreen: React.FC<Props> = ({ navigation }) => {
   const [displayNum, setDisplayNum] = React.useState(0);
   const subtextOpacity = useRef(new Animated.Value(0)).current;
   const buttonOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'CompoundStat', step: 9, total_steps: 19 });
+  }, []);
 
   useEffect(() => {
     const listenerId = countAnim.addListener(({ value }) => {

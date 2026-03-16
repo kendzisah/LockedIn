@@ -17,6 +17,7 @@ import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import { MixpanelService } from '../../../services/MixpanelService';
 
 const MIN_HOURS = 1;
 const MAX_HOURS = 12;
@@ -27,6 +28,10 @@ const CIRCLE_BTN = 44;
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'PhoneTimeQuiz'>;
 
 const PhoneTimeQuizScreen: React.FC<Props> = ({ navigation }) => {
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PhoneTimeQuiz', step: 2, total_steps: 19 });
+  }, []);
+
   const { dispatch } = useOnboarding();
   const [hours, setHours] = useState(DEFAULT_HOURS);
   const screenOpacity = useRef(new Animated.Value(0)).current;
@@ -130,11 +135,13 @@ const PhoneTimeQuizScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleContinue = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    MixpanelService.track('Onboarding Answer Submitted', { screen: 'PhoneTimeQuiz', answer: `${hours} hours` });
     fadeAndNavigate(`${hours} hours`);
   };
 
   const handleDontKnow = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    MixpanelService.track('Onboarding Answer Submitted', { screen: 'PhoneTimeQuiz', answer: 'unknown' });
     fadeAndNavigate('unknown');
   };
 

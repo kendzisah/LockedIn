@@ -11,6 +11,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import { PermissionService } from '../../../services/PermissionService';
+import { MixpanelService } from '../../../services/MixpanelService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
@@ -23,6 +24,10 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'NotificationPreFr
 
 const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
   const { dispatch } = useOnboarding();
+
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'NotificationPreFrame', step: 16, total_steps: 19 });
+  }, []);
 
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const headlineOpacity = useRef(new Animated.Value(0)).current;
@@ -64,11 +69,17 @@ const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
   const handleTurnOn = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const granted = await PermissionService.requestNotificationPermission();
+    if (granted) {
+      MixpanelService.track('Permission Granted', { screen: 'NotificationPreFrame', permission: 'notifications' });
+    } else {
+      MixpanelService.track('Permission Denied', { screen: 'NotificationPreFrame', permission: 'notifications' });
+    }
     dispatch({ type: 'SET_NOTIFICATIONS_GRANTED', payload: granted });
     navigateForward();
   }, [dispatch, navigateForward]);
 
   const handleSkip = useCallback(() => {
+    MixpanelService.track('Permission Skipped', { screen: 'NotificationPreFrame', permission: 'notifications' });
     dispatch({ type: 'SET_NOTIFICATIONS_GRANTED', payload: false });
     navigateForward();
   }, [dispatch, navigateForward]);

@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
+import { MixpanelService } from '../../../services/MixpanelService';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
@@ -43,6 +44,10 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'PersonalizedPlanC
 
 const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
   const { state } = useOnboarding();
+
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PersonalizedPlanCard', step: 17, total_steps: 19 });
+  }, []);
 
   const reclaimedBase = computeReclaimedHours(state.dailyMinutes);
   const yearMultiplier = 365 / 90;

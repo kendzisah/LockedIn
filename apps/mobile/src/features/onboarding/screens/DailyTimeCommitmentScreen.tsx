@@ -11,6 +11,7 @@ import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import OptionItem from '../../../design/components/OptionItem';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import { MixpanelService } from '../../../services/MixpanelService';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -38,6 +39,10 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
   const optionsTranslateY = useRef(new Animated.Value(SLIDE)).current;
 
   useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'DailyTimeCommitment', step: 8, total_steps: 19 });
+  }, []);
+
+  useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
 
     Animated.parallel([
@@ -60,6 +65,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
     setSelected(option);
     dispatch({ type: 'SET_DAILY_MINUTES', payload: option });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    MixpanelService.track('Onboarding Answer Submitted', { screen: 'DailyTimeCommitment', answer: option });
 
     advancingRef.current = true;
     setTimeout(() => {

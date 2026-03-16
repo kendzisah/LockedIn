@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, Text } from 'react-native';
+import { AppState, type AppStateStatus, View, StyleSheet, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -21,6 +21,7 @@ import { SupabaseService } from '../services/SupabaseService';
 import { AudioService } from '../services/AudioService';
 import { NotificationService } from '../services/NotificationService';
 import { AppsFlyerService } from '../services/AppsFlyerService';
+import { MixpanelService } from '../services/MixpanelService';
 import Purchases from 'react-native-purchases';
 import { ENV } from '../config/env';
 
@@ -52,6 +53,7 @@ const App: React.FC = () => {
           timeToWaitForATTUserAuthorization: 10,
         });
 
+        await MixpanelService.initialize();
         await AudioService.configure();
         await SupabaseService.initialize();
         await NotificationService.scheduleDailyReminders();
@@ -91,8 +93,19 @@ const App: React.FC = () => {
 
       AppsFlyerService.startSdk();
       AppsFlyerService.logEvent('af_login', {});
+      MixpanelService.track('App Opened', { cold_start: true });
     }
   }, [fontsLoaded, authReady]);
+
+  // Track foreground resumes as warm App Opened events
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') {
+        MixpanelService.track('App Opened', { cold_start: false });
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   if (!fontsLoaded || !authReady) {
     return null;

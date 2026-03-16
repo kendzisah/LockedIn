@@ -14,6 +14,7 @@ import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import { MixpanelService } from '../../../services/MixpanelService';
 
 const LIFE_EXPECTANCY = 80;
 const DEFAULT_AGE = 25;
@@ -37,6 +38,10 @@ const COUNT_DURATION = 800;
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'LossAversionStat'>;
 
 const LossAversionStatScreen: React.FC<Props> = ({ navigation }) => {
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'LossAversionStat', step: 4, total_steps: 19 });
+  }, []);
+
   const { state } = useOnboarding();
   const yearsLost = calcYearsLost(state.phoneUsageHours ?? '', state.userAge);
 

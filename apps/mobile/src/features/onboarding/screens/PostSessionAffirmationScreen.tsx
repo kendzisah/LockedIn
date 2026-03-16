@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
+import { MixpanelService } from '../../../services/MixpanelService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
@@ -22,6 +23,10 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'PostSessionAffirm
 
 const PostSessionAffirmationScreen: React.FC<Props> = ({ navigation }) => {
   const screenOpacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PostSessionAffirmation', step: 15, total_steps: 19 });
+  }, []);
 
   const headlineOpacity = useRef(new Animated.Value(0)).current;
   const headlineScale = useRef(new Animated.Value(0.95)).current;

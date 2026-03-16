@@ -10,6 +10,7 @@ import {
 import LottieView from 'lottie-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
+import { MixpanelService } from '../../../services/MixpanelService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
@@ -44,6 +45,10 @@ const ProductExplainerScreen: React.FC<Props> = ({ navigation }) => {
 
   const lottieRefs = useRef<(LottieView | null)[]>(BULLETS.map(() => null)).current;
   const buttonOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ProductExplainer', step: 12, total_steps: 19 });
+  }, []);
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];

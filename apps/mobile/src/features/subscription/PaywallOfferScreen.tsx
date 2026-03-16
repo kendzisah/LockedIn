@@ -19,6 +19,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
 import { AppsFlyerService } from '../../services/AppsFlyerService';
+import { MixpanelService } from '../../services/MixpanelService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -74,10 +75,11 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
     AppsFlyerService.logEvent('paywall_view', {
       source: 'home',
-      goal: state.mainGoal ?? '',
+      goal: state.primaryGoal ?? '',
       daily_commitment: state.dailyMinutes ?? '',
     });
-  }, [state.mainGoal, state.dailyMinutes]);
+    MixpanelService.track('Paywall Viewed', { source: 'home' });
+  }, [state.primaryGoal, state.dailyMinutes]);
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -131,32 +133,36 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleLockIn = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await showPaywall();
+    MixpanelService.track('Paywall CTA Tapped', { source: 'home' });
+    const subscribed = await showPaywall();
 
-    if (isSubscribed) {
+    if (subscribed) {
+      MixpanelService.track('Subscription Started', { source: 'home' });
       Animated.timing(screenOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => {
         navigation.goBack();
       });
     } else {
+      MixpanelService.track('Paywall Dismissed', { source: 'home' });
       AppsFlyerService.logEvent('paywall_dismiss', {
         source: 'home',
-        goal: state.mainGoal ?? '',
+        goal: state.primaryGoal ?? '',
         daily_commitment: state.dailyMinutes ?? '',
       });
       navigation.goBack();
     }
-  }, [showPaywall, isSubscribed, screenOpacity, navigation, state.mainGoal, state.dailyMinutes]);
+  }, [showPaywall, screenOpacity, navigation, state.primaryGoal, state.dailyMinutes]);
 
   const handleDismiss = useCallback(() => {
+    MixpanelService.track('Paywall Skipped', { source: 'home' });
     AppsFlyerService.logEvent('paywall_dismiss', {
       source: 'home',
-      goal: state.mainGoal ?? '',
+      goal: state.primaryGoal ?? '',
       daily_commitment: state.dailyMinutes ?? '',
     });
     Animated.timing(screenOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
       navigation.goBack();
     });
-  }, [screenOpacity, navigation, state.mainGoal, state.dailyMinutes]);
+  }, [screenOpacity, navigation, state.primaryGoal, state.dailyMinutes]);
 
   const fiveYearHours = projections[projections.length - 1].hours;
 

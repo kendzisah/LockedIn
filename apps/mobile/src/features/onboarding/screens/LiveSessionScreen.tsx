@@ -30,6 +30,7 @@ import { Colors } from '../../../design/colors';
 import { Typography, FontFamily } from '../../../design/typography';
 import { AudioService } from '../../../services/AudioService';
 import { SessionRepository, type OnboardingTrack } from '../../../services/SessionRepository';
+import { MixpanelService } from '../../../services/MixpanelService';
 
 const FALLBACK_SECONDS = 150;
 
@@ -51,6 +52,10 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'LiveSession'>;
 const LiveSessionScreen: React.FC<Props> = ({ navigation }) => {
   const { dispatch } = useOnboarding();
   useKeepAwake();
+
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'LiveSession', step: 14, total_steps: 19 });
+  }, []);
 
   const [totalSeconds, setTotalSeconds] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
@@ -148,6 +153,7 @@ const LiveSessionScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
     if (remaining !== null && remaining <= 0 && !completedRef.current) {
       completedRef.current = true;
+      MixpanelService.track('Onboarding Session Completed', { screen: 'LiveSession', method: 'completed' });
       stopTick();
       LockModeService.endSession();
       AudioService.stop();
@@ -206,6 +212,7 @@ const LiveSessionScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleEndRequest = useCallback(() => {
     if (!confirmEnd) { setConfirmEnd(true); return; }
+    MixpanelService.track('Onboarding Session Completed', { screen: 'LiveSession', method: 'ended_early' });
     completedRef.current = true;
     stopTick();
     setShowResumeModal(false);
@@ -218,6 +225,7 @@ const LiveSessionScreen: React.FC<Props> = ({ navigation }) => {
   }, [confirmEnd, stopTick, screenOpacity, navigation]);
 
   const handleSkipSession = useCallback(() => {
+    MixpanelService.track('Onboarding Session Skipped', { screen: 'LiveSession' });
     completedRef.current = true;
     stopTick();
     AudioService.stop();

@@ -11,6 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { LockModeService } from '../../../services/LockModeService';
+import { MixpanelService } from '../../../services/MixpanelService';
 import { SessionRepository } from '../../../services/SessionRepository';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
@@ -25,6 +26,10 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'EnforceMyFocus'>;
 const EnforceMyFocusScreen: React.FC<Props> = ({ navigation }) => {
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const flashOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'EnforceMyFocus', step: 13, total_steps: 19 });
+  }, []);
 
   const headlineOpacity = useRef(new Animated.Value(0)).current;
   const headlineTranslateY = useRef(new Animated.Value(SLIDE)).current;

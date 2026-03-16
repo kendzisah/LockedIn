@@ -46,6 +46,7 @@ import { SessionRepository, type DayTrack } from '../../services/SessionReposito
 import { TelemetryService } from '../../services/TelemetryService';
 import type { ContentPhase } from '@lockedin/shared-types';
 import { LockModeService } from '../../services/LockModeService';
+import { MixpanelService } from '../../services/MixpanelService';
 import PrimaryButton from '../../design/components/PrimaryButton';
 
 const SESSION_DURATION = 5; // minutes — session duration in DB
@@ -456,6 +457,13 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
         payload: { durationMinutes },
       });
     }
+
+    MixpanelService.track('Session Ended Early', {
+      phase,
+      program_day: programDay,
+      elapsed_seconds: totalSeconds - remaining,
+      total_seconds: totalSeconds,
+    });
 
     TelemetryService.logEvent('session_exited_early', {
       phase,

@@ -15,10 +15,15 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../../design/colors';
 import { Typography } from '../../../design/typography';
+import { MixpanelService } from '../../../services/MixpanelService';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'SplashHook'>;
 
 const SplashHookScreen: React.FC<Props> = ({ navigation }) => {
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'SplashHook', step: 1, total_steps: 19 });
+  }, []);
+
   const [phase, setPhase] = useState<'intro' | 'transition'>('intro');
   const transitioned = useRef(false);
 

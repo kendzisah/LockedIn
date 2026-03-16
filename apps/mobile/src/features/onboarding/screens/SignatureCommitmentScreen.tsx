@@ -16,6 +16,7 @@ import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
 import { AppsFlyerService } from '../../../services/AppsFlyerService';
+import { MixpanelService } from '../../../services/MixpanelService';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -62,6 +63,10 @@ const SignatureCommitmentScreen: React.FC<Props> = ({ navigation }) => {
   const { dispatch } = useOnboarding();
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [hasSigned, setHasSigned] = useState(false);
+
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'SignatureCommitment', step: 19, total_steps: 19 });
+  }, []);
 
   // ── Screen-level fade ──
   const screenOpacity = useRef(new Animated.Value(1)).current;
@@ -272,6 +277,7 @@ const SignatureCommitmentScreen: React.FC<Props> = ({ navigation }) => {
         <TouchableOpacity
           onPress={async () => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            MixpanelService.track('Onboarding Completed', { screen: 'SignatureCommitment', signed: true });
 
             try {
               const sent = await AsyncStorage.getItem(AF_REG_SENT_KEY);

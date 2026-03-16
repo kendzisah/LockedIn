@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { AppsFlyerService } from '../../../services/AppsFlyerService';
+import { MixpanelService } from '../../../services/MixpanelService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -54,6 +55,10 @@ const PaywallPreScreenScreen: React.FC<Props> = ({ navigation }) => {
   const { showPaywall, isSubscribed } = useSubscription();
   const [dismissed, setDismissed] = useState(false);
 
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PaywallPreScreen', step: 18, total_steps: 19 });
+  }, []);
+
   const reclaimedBase = computeReclaimedHours(state.dailyMinutes);
   const yearMultiplier = 365 / 90;
   const projections = [
@@ -76,10 +81,10 @@ const PaywallPreScreenScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
     AppsFlyerService.logEvent('paywall_view', {
       source: 'onboarding',
-      goal: state.mainGoal ?? '',
+      goal: state.primaryGoal ?? '',
       daily_commitment: state.dailyMinutes ?? '',
     });
-  }, [state.mainGoal, state.dailyMinutes]);
+  }, [state.primaryGoal, state.dailyMinutes]);
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -133,30 +138,34 @@ const PaywallPreScreenScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleLockIn = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await showPaywall();
+    MixpanelService.track('Paywall CTA Tapped', { source: 'onboarding' });
+    const subscribed = await showPaywall();
 
-    if (isSubscribed) {
+    if (subscribed) {
+      MixpanelService.track('Subscription Started', { source: 'onboarding' });
       Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
         navigation.navigate('SignatureCommitment');
       });
     } else {
       AppsFlyerService.logEvent('paywall_dismiss', {
         source: 'onboarding',
-        goal: state.mainGoal ?? '',
+        goal: state.primaryGoal ?? '',
         daily_commitment: state.dailyMinutes ?? '',
       });
+      MixpanelService.track('Paywall Dismissed', { source: 'onboarding' });
       setDismissed(true);
     }
-  }, [showPaywall, isSubscribed, screenOpacity, navigation, state.mainGoal, state.dailyMinutes]);
+  }, [showPaywall, screenOpacity, navigation, state.primaryGoal, state.dailyMinutes]);
 
   const handleMaybeLater = useCallback(() => {
+    MixpanelService.track('Paywall Skipped', { source: 'onboarding' });
     AppsFlyerService.logEvent('paywall_dismiss', {
       source: 'onboarding',
-      goal: state.mainGoal ?? '',
+      goal: state.primaryGoal ?? '',
       daily_commitment: state.dailyMinutes ?? '',
     });
     dispatch({ type: 'COMPLETE_ONBOARDING' });
-  }, [dispatch, state.mainGoal, state.dailyMinutes]);
+  }, [dispatch, state.primaryGoal, state.dailyMinutes]);
 
   const fiveYearHours = projections[projections.length - 1].hours;
 

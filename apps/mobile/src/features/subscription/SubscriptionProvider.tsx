@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import Purchases from 'react-native-purchases';
 import RevenueCatUI from 'react-native-purchases-ui';
 import { SubscriptionService } from '../../services/SubscriptionService';
+import { MixpanelService } from '../../services/MixpanelService';
 
 interface SubscriptionContextValue {
   isSubscribed: boolean;
@@ -27,6 +29,15 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (!mounted.current) return;
 
+      // Identify user in Mixpanel with RevenueCat anonymous ID
+      try {
+        const { appUserID } = await Purchases.getCustomerInfo();
+        if (appUserID) {
+          await MixpanelService.identify(appUserID);
+          await MixpanelService.setUserPropertiesOnce({ '$name': appUserID, first_seen: new Date().toISOString() });
+        }
+      } catch {}
+
       removeListener = SubscriptionService.addListener((info) => {
         if (mounted.current) {
           setIsSubscribed(SubscriptionService.hasEntitlement(info));
@@ -48,13 +59,23 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
+  // Keep Mixpanel super properties and user profile in sync with subscription status
+  useEffect(() => {
+    if (isLoading) return;
+    MixpanelService.registerSuperProperties({ is_subscribed: isSubscribed });
+    MixpanelService.setUserProperties({ is_subscribed: isSubscribed });
+  }, [isSubscribed, isLoading]);
+
   const showPaywall = useCallback(async (): Promise<boolean> => {
     try {
+      console.log('[SubscriptionProvider] Presenting RevenueCat paywall...');
       await RevenueCatUI.presentPaywall();
+      console.log('[SubscriptionProvider] Paywall dismissed, checking subscription...');
       const subscribed = await SubscriptionService.checkSubscription();
       if (mounted.current) setIsSubscribed(subscribed);
       return subscribed;
-    } catch {
+    } catch (e) {
+      console.warn('[SubscriptionProvider] showPaywall failed:', e);
       return false;
     }
   }, []);

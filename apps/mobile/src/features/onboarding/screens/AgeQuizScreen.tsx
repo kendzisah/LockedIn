@@ -18,6 +18,7 @@ import * as Haptics from 'expo-haptics';
 
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import { MixpanelService } from '../../../services/MixpanelService';
 
 const MIN_AGE = 13;
 const MAX_AGE = 70;
@@ -34,6 +35,10 @@ const AGE_VALUES = Array.from(
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'AgeQuiz'>;
 
 export const AgeQuizScreen: React.FC<Props> = ({ navigation }) => {
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'AgeQuiz', step: 3, total_steps: 19 });
+  }, []);
+
   const { dispatch } = useOnboarding();
   const [selectedAge, setSelectedAge] = useState(DEFAULT_AGE);
   const lastHapticAge = useRef(DEFAULT_AGE);
@@ -80,6 +85,7 @@ export const AgeQuizScreen: React.FC<Props> = ({ navigation }) => {
     if (advancingRef.current) return;
     advancingRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    MixpanelService.track('Onboarding Answer Submitted', { screen: 'AgeQuiz', answer: String(selectedAge) });
     dispatch({ type: 'SET_USER_AGE', payload: selectedAge });
     Animated.timing(screenOpacity, {
       toValue: 0,

@@ -13,6 +13,7 @@ import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import { AppsFlyerService } from '../../../services/AppsFlyerService';
+import { MixpanelService } from '../../../services/MixpanelService';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily, Typography } from '../../../design/typography';
@@ -45,6 +46,10 @@ const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
   const autoNavTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
+
+  useEffect(() => {
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ControlQuiz', step: 7, total_steps: 19 });
+  }, []);
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -84,6 +89,7 @@ const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
       }
     } catch {}
 
+    MixpanelService.track('Onboarding Answer Submitted', { screen: 'ControlQuiz', answer: [...selectedRef.current].join(', ') });
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 500,

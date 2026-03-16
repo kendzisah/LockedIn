@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { OnboardingState, OnboardingAction } from './types';
+import { MixpanelService } from '../../../services/MixpanelService';
 
 const STORAGE_KEY = '@lockedin/onboarding_complete';
 
@@ -83,9 +84,20 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
       AsyncStorage.setItem(STORAGE_KEY, 'true').catch((e) => {
         console.warn('[OnboardingProvider] Persist failed:', e);
       });
+
+      MixpanelService.setUserProperties({
+        age: state.userAge,
+        primary_goal: state.primaryGoal,
+        daily_commitment: state.dailyMinutes,
+        phone_usage: state.phoneUsageHours,
+        weaknesses: state.selectedWeaknesses.join(', '),
+        screen_time_granted: state.screenTimeStatus === 'granted',
+        notifications_granted: state.notificationsGranted ?? false,
+        demo_completed: state.demoCompleted,
+      });
     }
     prevComplete.current = state.onboardingComplete;
-  }, [state.onboardingComplete]);
+  }, [state.onboardingComplete, state.userAge, state.primaryGoal, state.dailyMinutes, state.phoneUsageHours, state.selectedWeaknesses, state.screenTimeStatus, state.notificationsGranted, state.demoCompleted]);
 
   return (
     <OnboardingContext.Provider value={{ state, dispatch, isHydrated }}>

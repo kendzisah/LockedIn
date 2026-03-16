@@ -25,6 +25,7 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppsFlyerService } from '../../../services/AppsFlyerService';
+import { MixpanelService } from '../../../services/MixpanelService';
 import type {
   SessionState,
   SessionAction,
@@ -297,6 +298,83 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     state.lastUnlockCompletedDate,
   ]);
 
+  // ── Mixpanel: super properties (auto-attached to every event) ──
+  useEffect(() => {
+    if (!isHydrated) return;
+    MixpanelService.registerSuperProperties({
+      program_day: state.maxCompletedDay,
+      streak: state.consecutiveStreak,
+      lifetime_minutes: state.lifetimeTotalMinutes,
+    });
+  }, [isHydrated, state.maxCompletedDay, state.consecutiveStreak, state.lifetimeTotalMinutes]);
+
+  // ── Mixpanel: streak broken detection ──
+  const prevStreak = useRef(state.consecutiveStreak);
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (prevStreak.current > 0 && state.consecutiveStreak === 0 && state.consecutiveStreak < prevStreak.current) {
+      MixpanelService.track('Streak Broken', {
+        previous_streak: prevStreak.current,
+        program_day: state.maxCompletedDay,
+      });
+    }
+    prevStreak.current = state.consecutiveStreak;
+  }, [isHydrated, state.consecutiveStreak, state.maxCompletedDay]);
+
+  // ── Mixpanel: program completed (Day 90) ──
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (state.maxCompletedDay >= 90) {
+      MixpanelService.track('Program Completed', {
+        lifetime_minutes: state.lifetimeTotalMinutes,
+        longest_streak: state.lifetimeLongestStreak,
+      });
+      MixpanelService.setUserProperties({ program_completed: true, program_completed_at: new Date().toISOString() });
+    }
+  }, [isHydrated, state.maxCompletedDay, state.lifetimeTotalMinutes, state.lifetimeLongestStreak]);
+
+  // ── Mixpanel: session completion ──
+  const prevLockInDate = useRef(state.lastLockInCompletedDate);
+  const prevUnlockDate = useRef(state.lastUnlockCompletedDate);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (state.lastLockInCompletedDate && state.lastLockInCompletedDate !== prevLockInDate.current) {
+      MixpanelService.track('Session Completed', {
+        phase: 'lock_in',
+        program_day: state.maxCompletedDay,
+        streak: state.consecutiveStreak,
+        lifetime_minutes: state.lifetimeTotalMinutes,
+      });
+    }
+    prevLockInDate.current = state.lastLockInCompletedDate;
+  }, [isHydrated, state.lastLockInCompletedDate, state.maxCompletedDay, state.consecutiveStreak, state.lifetimeTotalMinutes]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (state.lastUnlockCompletedDate && state.lastUnlockCompletedDate !== prevUnlockDate.current) {
+      MixpanelService.track('Session Completed', {
+        phase: 'unlock',
+        program_day: state.maxCompletedDay,
+        lifetime_minutes: state.lifetimeTotalMinutes,
+      });
+    }
+    prevUnlockDate.current = state.lastUnlockCompletedDate;
+  }, [isHydrated, state.lastUnlockCompletedDate, state.maxCompletedDay, state.lifetimeTotalMinutes]);
+
+  // ── Mixpanel: execution block completion ──
+  const prevExecBlocks = useRef(state.lifetimeExecutionBlocks);
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (state.lifetimeExecutionBlocks > prevExecBlocks.current) {
+      MixpanelService.track('Execution Block Completed', {
+        total_blocks: state.lifetimeExecutionBlocks,
+        total_exec_minutes: state.lifetimeExecutionMinutes,
+      });
+    }
+    prevExecBlocks.current = state.lifetimeExecutionBlocks;
+  }, [isHydrated, state.lifetimeExecutionBlocks, state.lifetimeExecutionMinutes]);
+
   // ── AppsFlyer: first session activation ──
   useEffect(() => {
     if (!isHydrated || state.maxCompletedDay < 1) return;
@@ -332,6 +410,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           AppsFlyerService.logEvent('af_achievement_unlocked', {
             af_description: `streak_${milestone}`,
             af_score: String(milestone),
+          });
+          MixpanelService.track('Streak Milestone', {
+            milestone_days: milestone,
+            current_streak: state.consecutiveStreak,
+            program_day: state.maxCompletedDay,
           });
           sent.push(milestone);
         }
