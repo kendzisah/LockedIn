@@ -2,10 +2,8 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useOnboarding } from '../features/onboarding/state/OnboardingProvider';
-import { useSubscription } from '../features/subscription/SubscriptionProvider';
 import OnboardingNavigator from './OnboardingNavigator';
 import MainNavigator from './MainNavigator';
-import PaywallScreen from '../features/subscription/PaywallScreen';
 import type { RootStackParamList } from '../types/navigation';
 import { Colors } from '../design/colors';
 
@@ -13,10 +11,9 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const RootNavigator: React.FC = () => {
   const { state, isHydrated } = useOnboarding();
-  const { isSubscribed, isLoading: subLoading } = useSubscription();
 
   // ── Loading State ──
-  if (!isHydrated || subLoading) {
+  if (!isHydrated) {
     return <View style={styles.loading} />;
   }
 
@@ -32,12 +29,7 @@ const RootNavigator: React.FC = () => {
     );
   }
 
-  // ── Paywall Gate ──
-  if (!isSubscribed) {
-    return <PaywallScreen />;
-  }
-
-  // ── Main App ──
+  // ── Main App (subscription gating handled per-action in HomeScreen) ──
   return (
     <Stack.Navigator
       initialRouteName="Main"

@@ -1,6 +1,7 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HomeScreen from '../features/home/HomeScreen';
+import PaywallOfferScreen from '../features/subscription/PaywallOfferScreen';
 import SessionScreen from '../features/home/SessionScreen';
 import ExecutionBlockScreen from '../features/home/ExecutionBlockScreen';
 import SessionCompleteScreen from '../features/home/SessionCompleteScreen';
@@ -20,6 +21,11 @@ const MainNavigator: React.FC = () => {
       }}
     >
       <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen
+        name="PaywallOffer"
+        component={PaywallOfferScreen}
+        options={{ animation: 'fade' }}
+      />
       <Stack.Screen
         name="Session"
         component={SessionScreen}

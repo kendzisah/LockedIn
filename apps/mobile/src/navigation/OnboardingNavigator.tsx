@@ -3,21 +3,24 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../types/navigation';
 import { Colors } from '../design/colors';
 
-// Screens
-import ConfrontTruthScreen from '../features/onboarding/screens/ConfrontTruthScreen';
-import SurfacePainScreen from '../features/onboarding/screens/SurfacePainScreen';
-import PhoneUsageRealityScreen from '../features/onboarding/screens/PhoneUsageRealityScreen';
-import TimeDedicationScreen from '../features/onboarding/screens/TimeDedicationScreen';
-import MechanismIntroScreen from '../features/onboarding/screens/MechanismIntroScreen';
-import HabitFormationScreen from '../features/onboarding/screens/HabitFormationScreen';
-import DisciplineVisionScreen from '../features/onboarding/screens/DisciplineVisionScreen';
-import ProjectionScreen from '../features/onboarding/screens/ProjectionScreen';
-import ScreenTimePermissionScreen from '../features/onboarding/screens/ScreenTimePermissionScreen';
-import NotificationPermissionScreen from '../features/onboarding/screens/NotificationPermissionScreen';
-import QuickLockInIntroScreen from '../features/onboarding/screens/QuickLockInIntroScreen';
-import QuickLockInSessionScreen from '../features/onboarding/screens/QuickLockInSessionScreen';
-import QuickLockInCompleteScreen from '../features/onboarding/screens/QuickLockInCompleteScreen';
-import IdentityReinforcementScreen from '../features/onboarding/screens/IdentityReinforcementScreen';
+import SplashHookScreen from '../features/onboarding/screens/SplashHookScreen';
+import PhoneTimeQuizScreen from '../features/onboarding/screens/PhoneTimeQuizScreen';
+import { AgeQuizScreen } from '../features/onboarding/screens/AgeQuizScreen';
+import LossAversionStatScreen from '../features/onboarding/screens/LossAversionStatScreen';
+import TopPerformersFrameScreen from '../features/onboarding/screens/TopPerformersFrameScreen';
+import GoalQuizScreen from '../features/onboarding/screens/GoalQuizScreen';
+import ControlQuizScreen from '../features/onboarding/screens/ControlQuizScreen';
+import DailyTimeCommitmentScreen from '../features/onboarding/screens/DailyTimeCommitmentScreen';
+import CompoundStatScreen from '../features/onboarding/screens/CompoundStatScreen';
+import NinetyDayVisionScreen from '../features/onboarding/screens/NinetyDayVisionScreen';
+import ScreenTimePreFrameScreen from '../features/onboarding/screens/ScreenTimePreFrameScreen';
+import ProductExplainerScreen from '../features/onboarding/screens/ProductExplainerScreen';
+import EnforceMyFocusScreen from '../features/onboarding/screens/EnforceMyFocusScreen';
+import LiveSessionScreen from '../features/onboarding/screens/LiveSessionScreen';
+import PostSessionAffirmationScreen from '../features/onboarding/screens/PostSessionAffirmationScreen';
+import NotificationPreFrameScreen from '../features/onboarding/screens/NotificationPreFrameScreen';
+import PersonalizedPlanCardScreen from '../features/onboarding/screens/PersonalizedPlanCardScreen';
+import PaywallPreScreenScreen from '../features/onboarding/screens/PaywallPreScreenScreen';
 import SignatureCommitmentScreen from '../features/onboarding/screens/SignatureCommitmentScreen';
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
@@ -25,7 +28,7 @@ const Stack = createNativeStackNavigator<OnboardingStackParamList>();
 const OnboardingNavigator: React.FC = () => {
   return (
     <Stack.Navigator
-      initialRouteName="ConfrontTruth"
+      initialRouteName="SplashHook"
       screenOptions={{
         headerShown: false,
         gestureEnabled: false,
@@ -33,77 +36,25 @@ const OnboardingNavigator: React.FC = () => {
         contentStyle: { backgroundColor: Colors.background },
       }}
     >
-      <Stack.Screen name="ConfrontTruth" component={ConfrontTruthScreen} />
-      <Stack.Screen
-        name="SurfacePain"
-        component={SurfacePainScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="PhoneUsageReality"
-        component={PhoneUsageRealityScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="TimeDedication"
-        component={TimeDedicationScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="HabitFormation"
-        component={HabitFormationScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="DisciplineVision"
-        component={DisciplineVisionScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="MechanismIntro"
-        component={MechanismIntroScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="Projection"
-        component={ProjectionScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="ScreenTimePermission"
-        component={ScreenTimePermissionScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="NotificationPermission"
-        component={NotificationPermissionScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="QuickLockInIntro"
-        component={QuickLockInIntroScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="QuickLockInSession"
-        component={QuickLockInSessionScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="QuickLockInComplete"
-        component={QuickLockInCompleteScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="IdentityReinforcement"
-        component={IdentityReinforcementScreen}
-        options={{ animation: 'none' }}
-      />
-      <Stack.Screen
-        name="SignatureCommitment"
-        component={SignatureCommitmentScreen}
-        options={{ animation: 'none' }}
-      />
+      <Stack.Screen name="SplashHook" component={SplashHookScreen} />
+      <Stack.Screen name="PhoneTimeQuiz" component={PhoneTimeQuizScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="AgeQuiz" component={AgeQuizScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="LossAversionStat" component={LossAversionStatScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="TopPerformersFrame" component={TopPerformersFrameScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="GoalQuiz" component={GoalQuizScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="ControlQuiz" component={ControlQuizScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="DailyTimeCommitment" component={DailyTimeCommitmentScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="CompoundStat" component={CompoundStatScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="NinetyDayVision" component={NinetyDayVisionScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="ScreenTimePreFrame" component={ScreenTimePreFrameScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="ProductExplainer" component={ProductExplainerScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="EnforceMyFocus" component={EnforceMyFocusScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="LiveSession" component={LiveSessionScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="PostSessionAffirmation" component={PostSessionAffirmationScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="NotificationPreFrame" component={NotificationPreFrameScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="PersonalizedPlanCard" component={PersonalizedPlanCardScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="PaywallPreScreen" component={PaywallPreScreenScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="SignatureCommitment" component={SignatureCommitmentScreen} options={{ animation: 'none' }} />
     </Stack.Navigator>
   );
 };

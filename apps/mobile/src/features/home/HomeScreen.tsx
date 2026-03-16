@@ -317,7 +317,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   // ── Lock animation complete → start session → navigate ──
   const handleLockAnimationComplete = useCallback(async () => {
     if (!isSubscribed) {
-      await showPaywall();
+      navigation.navigate('PaywallOffer');
       return;
     }
 
@@ -377,7 +377,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
     setShowDurationPicker(false);
 
     if (!isSubscribed) {
-      await showPaywall();
+      navigation.navigate('PaywallOffer');
       return;
     }
 
@@ -430,6 +430,7 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
           <LockButton
             ctaMode={ctaState.mode}
             hint={ctaState.hint}
+            isSubscribed={isSubscribed}
             onAnimationComplete={handleLockAnimationComplete}
           />
         </View>

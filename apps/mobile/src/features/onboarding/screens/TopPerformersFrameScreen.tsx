@@ -15,187 +15,85 @@ import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
 const SLIDE = 25;
+const STAGGER = 80;
 
-type Props = NativeStackScreenProps<OnboardingStackParamList, 'HabitFormation'>;
+type Props = NativeStackScreenProps<OnboardingStackParamList, 'TopPerformersFrame'>;
 
-const HabitFormationScreen: React.FC<Props> = ({ navigation }) => {
+const TopPerformersFrameScreen: React.FC<Props> = ({ navigation }) => {
   const screenOpacity = useRef(new Animated.Value(1)).current;
 
   const titleOpacity = useRef(new Animated.Value(0)).current;
   const titleTranslateY = useRef(new Animated.Value(SLIDE)).current;
-
   const subheadOpacity = useRef(new Animated.Value(0)).current;
   const subheadTranslateY = useRef(new Animated.Value(SLIDE)).current;
-
   const patternOpacity = useRef(new Animated.Value(0)).current;
   const patternTranslateY = useRef(new Animated.Value(SLIDE)).current;
-
   const habitsOpacity = useRef(new Animated.Value(0)).current;
   const habitsTranslateY = useRef(new Animated.Value(SLIDE)).current;
-
   const closingOpacity = useRef(new Animated.Value(0)).current;
-
   const buttonOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
-
-    Animated.parallel([
-      Animated.timing(titleOpacity, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(titleTranslateY, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    timers.push(
-      setTimeout(() => {
+    const animate = (opacity: Animated.Value, translateY: Animated.Value, delay: number) => {
+      timers.push(setTimeout(() => {
         Animated.parallel([
-          Animated.timing(subheadOpacity, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(subheadTranslateY, {
-            toValue: 0,
-            duration: 500,
-            useNativeDriver: true,
-          }),
+          Animated.timing(opacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+          Animated.timing(translateY, { toValue: 0, duration: 500, useNativeDriver: true }),
         ]).start();
-      }, 900),
-    );
+      }, delay));
+    };
 
-    timers.push(
-      setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(patternOpacity, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(patternTranslateY, {
-            toValue: 0,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-        ]).start();
-      }, 1800),
-    );
+    animate(titleOpacity, titleTranslateY, 0);
+    animate(subheadOpacity, subheadTranslateY, STAGGER);
+    animate(patternOpacity, patternTranslateY, STAGGER * 2);
+    animate(habitsOpacity, habitsTranslateY, STAGGER * 3);
 
-    timers.push(
-      setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(habitsOpacity, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(habitsTranslateY, {
-            toValue: 0,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-        ]).start();
-      }, 2800),
-    );
+    timers.push(setTimeout(() => {
+      Animated.timing(closingOpacity, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+    }, STAGGER * 4));
 
-    timers.push(
-      setTimeout(() => {
-        Animated.timing(closingOpacity, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }).start();
-      }, 4000),
-    );
-
-    timers.push(
-      setTimeout(() => {
-        Animated.timing(buttonOpacity, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }).start();
-      }, 5000),
-    );
+    timers.push(setTimeout(() => {
+      Animated.timing(buttonOpacity, { toValue: 1, duration: 500, useNativeDriver: true }).start();
+    }, STAGGER * 5));
 
     return () => timers.forEach(clearTimeout);
-  }, [
-    titleOpacity,
-    titleTranslateY,
-    subheadOpacity,
-    subheadTranslateY,
-    patternOpacity,
-    patternTranslateY,
-    habitsOpacity,
-    habitsTranslateY,
-    closingOpacity,
-    buttonOpacity,
-  ]);
+  }, [titleOpacity, titleTranslateY, subheadOpacity, subheadTranslateY, patternOpacity, patternTranslateY, habitsOpacity, habitsTranslateY, closingOpacity, buttonOpacity]);
 
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer>
-        <ProgressIndicator current={5} total={13} />
+        <ProgressIndicator current={6} total={19} />
 
         <View style={styles.body}>
           <Animated.Text
-            style={[
-              styles.title,
-              {
-                opacity: titleOpacity,
-                transform: [{ translateY: titleTranslateY }],
-              },
-            ]}
+            style={[styles.title, { opacity: titleOpacity, transform: [{ translateY: titleTranslateY }] }]}
           >
             History's top performers didn't drift into success.
           </Animated.Text>
 
           <Animated.Text
-            style={[
-              styles.subhead,
-              {
-                opacity: subheadOpacity,
-                transform: [{ translateY: subheadTranslateY }],
-              },
-            ]}
+            style={[styles.subhead, { opacity: subheadOpacity, transform: [{ translateY: subheadTranslateY }] }]}
           >
             They built controlled mornings.
           </Animated.Text>
 
-          <Animated.View
-            style={{
-              opacity: patternOpacity,
-              transform: [{ translateY: patternTranslateY }],
-            }}
-          >
+          <Animated.View style={{ opacity: patternOpacity, transform: [{ translateY: patternTranslateY }] }}>
             <Text style={styles.bodyText}>
               From CEOs to elite athletes,{'\n'}the pattern is consistent:
             </Text>
           </Animated.View>
 
-          <Animated.View
-            style={{
-              opacity: habitsOpacity,
-              transform: [{ translateY: habitsTranslateY }],
-            }}
-          >
+          <Animated.View style={{ opacity: habitsOpacity, transform: [{ translateY: habitsTranslateY }] }}>
             <Text style={styles.bodyText}>
               They wake up with intention.{'\n'}They decide their focus early.
-              {'\n'}They protect their mental state{'\n'}before the world makes
-              demands.
+              {'\n'}They protect their mental state{'\n'}before the world makes demands.
             </Text>
           </Animated.View>
 
           <Animated.View style={{ opacity: closingOpacity }}>
             <Text style={styles.closing}>
-              A strong morning compounds into a strong day.{'\n'}A strong day
-              compounds into a strong life.
+              A strong morning compounds into a strong day.{'\n'}A strong day compounds into a strong life.
             </Text>
           </Animated.View>
         </View>
@@ -204,12 +102,8 @@ const HabitFormationScreen: React.FC<Props> = ({ navigation }) => {
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              Animated.timing(screenOpacity, {
-                toValue: 0,
-                duration: 500,
-                useNativeDriver: true,
-              }).start(() => {
-                navigation.navigate('DisciplineVision');
+              Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
+                navigation.navigate('GoalQuiz');
               });
             }}
             activeOpacity={0.7}
@@ -275,4 +169,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default HabitFormationScreen;
+export default TopPerformersFrameScreen;

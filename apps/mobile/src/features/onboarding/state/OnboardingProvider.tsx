@@ -5,10 +5,11 @@ import type { OnboardingState, OnboardingAction } from './types';
 const STORAGE_KEY = '@lockedin/onboarding_complete';
 
 const initialState: OnboardingState = {
-  selectedPainPoint: null,
+  selectedWeaknesses: [],
   phoneUsageHours: null,
-  dailyDedication: null,
-  selectedGoals: [],
+  userAge: null,
+  dailyMinutes: null,
+  primaryGoal: null,
   screenTimeStatus: 'not_requested',
   notificationsGranted: null,
   demoCompleted: false,
@@ -20,14 +21,16 @@ function onboardingReducer(
   action: OnboardingAction,
 ): OnboardingState {
   switch (action.type) {
-    case 'SET_PAIN_POINT':
-      return { ...state, selectedPainPoint: action.payload };
+    case 'SET_WEAKNESSES':
+      return { ...state, selectedWeaknesses: action.payload };
     case 'SET_PHONE_USAGE':
       return { ...state, phoneUsageHours: action.payload };
-    case 'SET_DAILY_DEDICATION':
-      return { ...state, dailyDedication: action.payload };
-    case 'SET_GOALS':
-      return { ...state, selectedGoals: action.payload };
+    case 'SET_USER_AGE':
+      return { ...state, userAge: action.payload };
+    case 'SET_DAILY_MINUTES':
+      return { ...state, dailyMinutes: action.payload };
+    case 'SET_PRIMARY_GOAL':
+      return { ...state, primaryGoal: action.payload };
     case 'SET_SCREEN_TIME_STATUS':
       return { ...state, screenTimeStatus: action.payload };
     case 'SET_NOTIFICATIONS_GRANTED':

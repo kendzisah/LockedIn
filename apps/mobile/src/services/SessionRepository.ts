@@ -398,7 +398,7 @@ async function prefetchToday(phase: ContentPhase): Promise<void> {
 
 /**
  * Prefetch onboarding track metadata + pre-load audio into AudioService.
- * Call on QuickLockInIntroScreen mount so audio is ready when session starts.
+ * Call on EnforceMyFocusScreen mount so audio is ready when session starts.
  * Silent on failure.
  */
 async function prefetchOnboardingTrack(): Promise<void> {

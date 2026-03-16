@@ -1,23 +1,28 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 
 /**
- * Onboarding stack screens.
+ * Onboarding stack screens (V2).
+ * AwarenessStatement is a phase within SplashHookScreen, not a separate route.
  */
 export type OnboardingStackParamList = {
-  ConfrontTruth: undefined;
-  SurfacePain: undefined;
-  PhoneUsageReality: undefined;
-  TimeDedication: undefined;
-  HabitFormation: undefined;
-  DisciplineVision: undefined;
-  MechanismIntro: undefined;
-  Projection: undefined;
-  ScreenTimePermission: undefined;
-  NotificationPermission: undefined;
-  QuickLockInIntro: undefined;
-  QuickLockInSession: undefined;
-  QuickLockInComplete: undefined;
-  IdentityReinforcement: undefined;
+  SplashHook: undefined;
+  PhoneTimeQuiz: undefined;
+  AgeQuiz: undefined;
+  LossAversionStat: undefined;
+  TopPerformersFrame: undefined;
+  GoalQuiz: undefined;
+  ControlQuiz: undefined;
+  DailyTimeCommitment: undefined;
+  CompoundStat: undefined;
+  NinetyDayVision: undefined;
+  ScreenTimePreFrame: undefined;
+  ProductExplainer: undefined;
+  EnforceMyFocus: undefined;
+  LiveSession: undefined;
+  PostSessionAffirmation: undefined;
+  NotificationPreFrame: undefined;
+  PersonalizedPlanCard: undefined;
+  PaywallPreScreen: undefined;
   SignatureCommitment: undefined;
 };
 
@@ -26,6 +31,7 @@ export type OnboardingStackParamList = {
  */
 export type MainStackParamList = {
   Home: undefined;
+  PaywallOffer: undefined;
   Session: { phase: 'lock_in' | 'unlock'; programDay: number; resuming?: boolean };
   ExecutionBlock: { durationMinutes: number };
   SessionComplete: {

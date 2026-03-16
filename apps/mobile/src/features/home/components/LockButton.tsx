@@ -35,6 +35,7 @@ import type { CTAMode } from '../../../services/ClockService';
 interface LockButtonProps {
   ctaMode: CTAMode;
   hint?: string;
+  isSubscribed: boolean;
   onAnimationComplete: () => void;
 }
 
@@ -61,10 +62,14 @@ function isTappable(mode: CTAMode): boolean {
   return mode === 'lock_in' || mode === 'unlock';
 }
 
-const LockButton: React.FC<LockButtonProps> = ({ ctaMode, hint, onAnimationComplete }) => {
+const SHAKE_DURATION = 80;
+const SHAKE_MAGNITUDE = 8;
+
+const LockButton: React.FC<LockButtonProps> = ({ ctaMode, hint, isSubscribed, onAnimationComplete }) => {
   const { state, dispatch } = useSession();
   const labelOpacity = useRef(new Animated.Value(1)).current;
   const lottieProgress = useRef(new Animated.Value(OPEN_PROGRESS)).current;
+  const shakeX = useRef(new Animated.Value(0)).current;
 
   const isIdle = state.phase === 'IDLE';
   const isAnimating = state.phase === 'ANIMATING';
@@ -84,6 +89,21 @@ const LockButton: React.FC<LockButtonProps> = ({ ctaMode, hint, onAnimationCompl
   }, [ctaMode, lottieProgress, labelOpacity]);
 
   // ── Tap handler ──
+  const runShake = useCallback(() => {
+    const shakes = Array.from({ length: 4 }, (_, i) => {
+      const dir = i % 2 === 0 ? SHAKE_MAGNITUDE : -SHAKE_MAGNITUDE;
+      return Animated.timing(shakeX, {
+        toValue: dir,
+        duration: SHAKE_DURATION,
+        useNativeDriver: true,
+      });
+    });
+    return Animated.sequence([
+      ...shakes,
+      Animated.timing(shakeX, { toValue: 0, duration: SHAKE_DURATION, useNativeDriver: true }),
+    ]);
+  }, [shakeX]);
+
   const handlePress = useCallback(() => {
     if (!isIdle || !tappable) return;
 
@@ -91,28 +111,49 @@ const LockButton: React.FC<LockButtonProps> = ({ ctaMode, hint, onAnimationCompl
       dispatch({ type: 'SET_ANIMATING' });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
-      // Fade out label
       Animated.timing(labelOpacity, {
         toValue: 0,
         duration: 400,
         useNativeDriver: true,
       }).start();
 
-      // Animate lock from open → closed
       Animated.timing(lottieProgress, {
         toValue: CLOSED_PROGRESS,
         duration: CLOSE_DURATION,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }).start(() => {
-        onAnimationComplete();
+        if (!isSubscribed) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          runShake().start(() => {
+            Animated.timing(lottieProgress, {
+              toValue: OPEN_PROGRESS,
+              duration: 600,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: false,
+            }).start();
+            Animated.timing(labelOpacity, {
+              toValue: 1,
+              duration: 400,
+              useNativeDriver: true,
+            }).start();
+            dispatch({ type: 'RESET_PHASE' });
+            onAnimationComplete();
+          });
+        } else {
+          onAnimationComplete();
+        }
       });
     } else if (ctaMode === 'unlock') {
-      // For unlock, skip the lock animation — go directly
+      if (!isSubscribed) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        runShake().start(() => onAnimationComplete());
+        return;
+      }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       onAnimationComplete();
     }
-  }, [isIdle, tappable, ctaMode, dispatch, labelOpacity, lottieProgress, onAnimationComplete]);
+  }, [isIdle, tappable, ctaMode, dispatch, labelOpacity, lottieProgress, onAnimationComplete, isSubscribed, runShake]);
 
   // ── Label styling based on mode ──
   const labelStyle = [
@@ -126,7 +167,7 @@ const LockButton: React.FC<LockButtonProps> = ({ ctaMode, hint, onAnimationCompl
   return (
     <View style={styles.container} pointerEvents={isAnimating ? 'none' : 'auto'}>
       <TouchableWithoutFeedback onPress={handlePress} disabled={!tappable}>
-        <View style={styles.lottieWrap}>
+        <Animated.View style={[styles.lottieWrap, { transform: [{ translateX: shakeX }] }]}>
           <AnimatedLottieView
             source={require('../../../../assets/lottie/lock_close.json')}
             progress={lottieProgress}
@@ -135,7 +176,7 @@ const LockButton: React.FC<LockButtonProps> = ({ ctaMode, hint, onAnimationCompl
               ctaMode === 'lock_in_done_waiting' && styles.lottieMuted,
             ]}
           />
-        </View>
+        </Animated.View>
       </TouchableWithoutFeedback>
 
       <Animated.Text style={labelStyle}>
