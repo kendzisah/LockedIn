@@ -22,7 +22,7 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'TopPerformersFram
 
 const TopPerformersFrameScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'TopPerformersFrame', step: 5, total_steps: 18 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'TopPerformersFrame', step: 7, total_steps: 17 });
   }, []);
 
   const screenOpacity = useRef(new Animated.Value(1)).current;
@@ -68,7 +68,7 @@ const TopPerformersFrameScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer>
-        <ProgressIndicator current={6} total={19} />
+        <ProgressIndicator current={6} total={17} />
 
         <View style={styles.body}>
           <Animated.Text

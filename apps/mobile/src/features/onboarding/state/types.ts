@@ -13,7 +13,7 @@ export interface OnboardingState {
   selectedWeaknesses: string[];
   phoneUsageHours: string | null;
   userAge: number | null;
-  dailyMinutes: string | null;
+  dailyMinutes: number | null;
   primaryGoal: string | null;
   screenTimeStatus: ScreenTimeStatus;
   notificationsGranted: boolean | null;
@@ -25,7 +25,7 @@ export type OnboardingAction =
   | { type: 'SET_WEAKNESSES'; payload: string[] }
   | { type: 'SET_PHONE_USAGE'; payload: string }
   | { type: 'SET_USER_AGE'; payload: number }
-  | { type: 'SET_DAILY_MINUTES'; payload: string }
+  | { type: 'SET_DAILY_MINUTES'; payload: number }
   | { type: 'SET_PRIMARY_GOAL'; payload: string }
   | { type: 'SET_SCREEN_TIME_STATUS'; payload: ScreenTimeStatus }
   | { type: 'SET_NOTIFICATIONS_GRANTED'; payload: boolean }

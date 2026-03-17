@@ -5,10 +5,12 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
  * AwarenessStatement is a phase within SplashHookScreen, not a separate route.
  */
 export type OnboardingStackParamList = {
+  Definition: undefined;
   SplashHook: undefined;
   PhoneTimeQuiz: undefined;
   AgeQuiz: undefined;
   LossAversionStat: undefined;
+  FixPromise: undefined;
   TopPerformersFrame: undefined;
   GoalQuiz: undefined;
   ControlQuiz: undefined;
@@ -17,9 +19,6 @@ export type OnboardingStackParamList = {
   NinetyDayVision: undefined;
   ScreenTimePreFrame: undefined;
   ProductExplainer: undefined;
-  EnforceMyFocus: undefined;
-  LiveSession: undefined;
-  PostSessionAffirmation: undefined;
   NotificationPreFrame: undefined;
   PersonalizedPlanCard: undefined;
   SignatureCommitment: undefined;

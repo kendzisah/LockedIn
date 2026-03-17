@@ -36,7 +36,7 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'AgeQuiz'>;
 
 export const AgeQuizScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'AgeQuiz', step: 3, total_steps: 18 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'AgeQuiz', step: 4, total_steps: 17 });
   }, []);
 
   const { dispatch } = useOnboarding();
@@ -135,7 +135,7 @@ export const AgeQuizScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer centered={false}>
-      <ProgressIndicator current={4} total={19} />
+      <ProgressIndicator current={4} total={17} />
 
       <View style={styles.content}>
         <View style={styles.headerArea}>

@@ -47,7 +47,7 @@ const ProductExplainerScreen: React.FC<Props> = ({ navigation }) => {
   const buttonOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ProductExplainer', step: 12, total_steps: 18 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ProductExplainer', step: 14, total_steps: 17 });
   }, []);
 
   useEffect(() => {
@@ -95,7 +95,7 @@ const ProductExplainerScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer>
-        <ProgressIndicator current={13} total={19} />
+        <ProgressIndicator current={13} total={17} />
 
         <View style={styles.body}>
           <Animated.Text
@@ -139,7 +139,7 @@ const ProductExplainerScreen: React.FC<Props> = ({ navigation }) => {
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
-                navigation.navigate('EnforceMyFocus');
+                navigation.navigate('NotificationPreFrame');
               });
             }}
             activeOpacity={0.85}

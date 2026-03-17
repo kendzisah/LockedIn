@@ -16,12 +16,11 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
-const STAT_MAP: Record<string, { hours: string; numericTarget: number }> = {
-  '5 minutes':   { hours: '7.5 hours in 90 days',  numericTarget: 7.5 },
-  '10 minutes':  { hours: '15 hours in 90 days',   numericTarget: 15 },
-  '15 minutes':  { hours: '22+ hours in 90 days',  numericTarget: 22 },
-  '20+ minutes': { hours: '30+ hours in 90 days',  numericTarget: 30 },
-};
+function computeStat(dailyMinutes: number | null): { hours: string; numericTarget: number } {
+  const mins = dailyMinutes ?? 60;
+  const totalHours = Math.round((mins * 90) / 60);
+  return { hours: `${totalHours}+ hours in 90 days`, numericTarget: totalHours };
+}
 
 const COUNT_DURATION = 800;
 
@@ -29,7 +28,7 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'CompoundStat'>;
 
 const CompoundStatScreen: React.FC<Props> = ({ navigation }) => {
   const { state } = useOnboarding();
-  const stat = STAT_MAP[state.dailyMinutes ?? '15 minutes'] ?? STAT_MAP['15 minutes'];
+  const stat = computeStat(state.dailyMinutes);
 
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const countAnim = useRef(new Animated.Value(0)).current;
@@ -38,7 +37,7 @@ const CompoundStatScreen: React.FC<Props> = ({ navigation }) => {
   const buttonOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'CompoundStat', step: 9, total_steps: 18 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'CompoundStat', step: 11, total_steps: 17 });
   }, []);
 
   useEffect(() => {
@@ -74,7 +73,7 @@ const CompoundStatScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer>
-        <ProgressIndicator current={10} total={19} />
+        <ProgressIndicator current={10} total={17} />
 
         <View style={styles.body}>
           <Text style={styles.statNumber}>

@@ -25,21 +25,16 @@ import { FontFamily } from '../../../design/typography';
 const CARD_STAGGER = 100;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-function computeReclaimedHours(dailyMinutes: string | null): number {
-  const map: Record<string, number> = {
-    '5 minutes': 7.5,
-    '10 minutes': 15,
-    '15 minutes': 22,
-    '20+ minutes': 30,
-  };
-  return map[dailyMinutes ?? '15 minutes'] ?? 22;
+function computeReclaimedHours(dailyMinutes: number | null, days: number): number {
+  const mins = dailyMinutes ?? 60;
+  return Math.round((mins * days) / 60);
 }
 
 function formatHours(h: number): string {
-  if (h >= 1000) return `${Math.round(h / 100) * 100}+`;
-  if (h >= 100) return `${Math.round(h)}`;
-  if (h % 1 === 0) return `${h}`;
-  return h.toFixed(1);
+  if (h >= 1000) return `${Math.round(h / 100) * 100}h`;
+  if (h >= 100) return `${Math.round(h)}h`;
+  if (h % 1 === 0) return `${h}h`;
+  return `${h.toFixed(1)}h`;
 }
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'PersonalizedPlanCard'>;
@@ -49,7 +44,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
   const { showPaywall } = useSubscription();
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PersonalizedPlanCard', step: 17, total_steps: 18 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PersonalizedPlanCard', step: 16, total_steps: 17 });
     MixpanelService.track('Paywall Viewed', { source: 'onboarding' });
     AppsFlyerService.logEvent('paywall_view', {
       source: 'onboarding',
@@ -58,20 +53,20 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
     });
   }, []);
 
-  const reclaimedBase = computeReclaimedHours(state.dailyMinutes);
-  const yearMultiplier = 365 / 90;
+  const dailyHours = (state.dailyMinutes ?? 60) / 60;
+  const dailyLabel = dailyHours === 1 ? '1 hour' : `${dailyHours} hours`;
 
   const rows = [
     { label: 'Goal', value: state.primaryGoal ?? 'Build discipline', icon: '◎' },
-    { label: 'Daily Session', value: state.dailyMinutes ?? '15 minutes', icon: '◉' },
+    { label: 'Daily Lock In', value: dailyLabel, icon: '◉' },
     { label: 'Focus Area', value: state.selectedWeaknesses[0] ?? 'Consistency', icon: '◈' },
   ];
 
   const projections = [
-    { period: '90 Days', hours: reclaimedBase },
-    { period: '1 Year', hours: Math.round(reclaimedBase * yearMultiplier) },
-    { period: '3 Years', hours: Math.round(reclaimedBase * yearMultiplier * 3) },
-    { period: '5 Years', hours: Math.round(reclaimedBase * yearMultiplier * 5) },
+    { period: '90 Days', hours: computeReclaimedHours(state.dailyMinutes, 90) },
+    { period: '1 Year', hours: computeReclaimedHours(state.dailyMinutes, 365) },
+    { period: '3 Years', hours: computeReclaimedHours(state.dailyMinutes, 365 * 3) },
+    { period: '5 Years', hours: computeReclaimedHours(state.dailyMinutes, 365 * 5) },
   ];
 
   const screenOpacity = useRef(new Animated.Value(1)).current;
@@ -193,7 +188,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
           </View>
 
           <Animated.View style={[styles.projectionSection, { opacity: projectionOpacity }]}>
-            <Text style={styles.projectionTitle}>Focus hours you'll reclaim</Text>
+            <Text style={styles.projectionTitle}>Focus Hours You'll Reclaim</Text>
             {projections.map((p, i) => {
               const maxHours = projections[projections.length - 1].hours;
               const barWidth = projBarAnims[i].interpolate({
@@ -217,7 +212,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
                     </Animated.View>
                   </View>
                   <Text style={[styles.projHours, isLast && styles.projHoursAccent]}>
-                    {formatHours(p.hours)}h
+                    {formatHours(p.hours)}
                   </Text>
                 </View>
               );
@@ -361,13 +356,20 @@ const styles = StyleSheet.create({
 
   projectionSection: { marginBottom: 8 },
   projectionTitle: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 14,
+    color: Colors.accent,
+    letterSpacing: 0.3,
+    marginBottom: 16,
+  },
+  projectionSubtitle: {
     fontFamily: FontFamily.body,
     fontSize: 12,
-    color: Colors.accent,
-    letterSpacing: 0.8,
+    color: Colors.textMuted,
+    letterSpacing: 0.4,
     textTransform: 'uppercase',
-    opacity: 0.7,
     marginBottom: 14,
+    opacity: 0.6,
   },
   projRow: {
     flexDirection: 'row',
@@ -376,13 +378,13 @@ const styles = StyleSheet.create({
   },
   projPeriod: {
     fontFamily: FontFamily.body,
-    fontSize: 12,
+    fontSize: 13,
     color: Colors.textMuted,
-    width: 60,
+    width: 62,
   },
   projBarTrack: {
     flex: 1,
-    height: 20,
+    height: 22,
     backgroundColor: 'rgba(255,255,255,0.04)',
     borderRadius: 6,
     marginHorizontal: 10,
@@ -398,14 +400,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   projHours: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 13,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 16,
     color: Colors.textSecondary,
-    width: 46,
+    width: 54,
     textAlign: 'right',
   },
   projHoursAccent: {
     color: Colors.accent,
+    fontSize: 17,
   },
 
   buttonWrap: { paddingBottom: 32, paddingHorizontal: 4 },

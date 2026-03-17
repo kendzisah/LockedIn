@@ -6,8 +6,9 @@
  *
  * Program-day progression:
  *   - maxCompletedDay tracks how many program days finished (0-90)
- *   - Only Lock In (COMPLETE_SESSION) increments maxCompletedDay
- *   - Unlock (COMPLETE_UNLOCK) adds listening time but does NOT advance the day
+ *   - Only Lock In (COMPLETE_EXECUTION_BLOCK) increments maxCompletedDay
+ *   - Alignment/Unlock add listening time but do NOT advance the day
+ *   - Streak increments via DAILY_GOAL_MET when daily focus goal is hit
  *
  * Lifetime vs current-run:
  *   - lifetimeTotalMinutes / lifetimeLongestStreak / lifetimeRunsCompleted survive restart
@@ -56,6 +57,9 @@ const initialState: SessionState = {
   activeSession: null,
   lastLockInCompletedDate: null,
   lastUnlockCompletedDate: null,
+  dailyFocusedMinutes: 0,
+  dailyFocusDate: null,
+  dailyGoalMetDate: null,
 };
 
 // ─── Reducer ─────────────────────────────────────────────────────
@@ -86,20 +90,20 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         activeSession: p.activeSession,
         lastLockInCompletedDate: p.lastLockInCompletedDate ?? null,
         lastUnlockCompletedDate: p.lastUnlockCompletedDate ?? null,
+        dailyFocusedMinutes: p.dailyFocusedMinutes ?? 0,
+        dailyFocusDate: p.dailyFocusDate ?? null,
+        dailyGoalMetDate: p.dailyGoalMetDate ?? null,
         phase: p.activeSession ? 'ACTIVE' : 'IDLE',
       };
     }
 
     case 'SET_ANIMATING': {
-      // Guard: only from IDLE, and Lock In not completed today
-      const todayKey = getTodayKey();
-      if (state.phase !== 'IDLE' || state.lastLockInCompletedDate === todayKey) return state;
+      if (state.phase !== 'IDLE') return state;
       return { ...state, phase: 'ANIMATING' };
     }
 
     case 'START_SESSION': {
-      // Guard: only from ANIMATING
-      if (state.phase !== 'ANIMATING') return state;
+      if (state.phase !== 'IDLE' && state.phase !== 'ANIMATING') return state;
       const todayKey = getTodayKey();
       return {
         ...state,
@@ -127,66 +131,84 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
     }
 
     case 'COMPLETE_SESSION': {
-      // Guard: only from ACTIVE or COMPLETING
       if (state.phase !== 'ACTIVE' && state.phase !== 'COMPLETING') return state;
 
       const todayKey = getTodayKey();
-      const alreadyCompletedToday = state.lastLockInCompletedDate === todayKey;
-
-      // Advance program day (only if not already completed today)
-      const newMaxDay = alreadyCompletedToday
-        ? state.maxCompletedDay
-        : Math.min(90, state.maxCompletedDay + 1);
-
-      const newStreak = alreadyCompletedToday
-        ? state.consecutiveStreak
-        : computeNewStreak(
-            state.lastSessionDayKey,
-            state.consecutiveStreak,
-            todayKey,
-          );
-
-      const newLifetimeLongest = Math.max(state.lifetimeLongestStreak, newStreak);
       const newLifetimeMinutes = state.lifetimeTotalMinutes + (action.payload.durationMinutes || 0);
 
-      // Session day key: use LOCAL date the session started (for midnight rollover)
-      const sessionDayKey = state.activeSession
-        ? dayKeyFromTimestamp(state.activeSession.startTimestamp)
-        : todayKey;
-
+      const focusBase = state.dailyFocusDate === todayKey ? state.dailyFocusedMinutes : 0;
       return {
         ...state,
         phase: 'IDLE',
         activeSession: null,
-        maxCompletedDay: newMaxDay,
-        lastSessionDayKey: sessionDayKey,
-        consecutiveStreak: newStreak,
         lifetimeTotalMinutes: newLifetimeMinutes,
-        lifetimeLongestStreak: newLifetimeLongest,
         lastLockInCompletedDate: todayKey,
+        dailyFocusedMinutes: focusBase + (action.payload.durationMinutes || 0),
+        dailyFocusDate: todayKey,
       };
     }
 
     case 'COMPLETE_UNLOCK': {
-      // Unlock completion: adds to lifetimeTotalMinutes, marks unlock as done today
-      // Does NOT affect streak or maxCompletedDay (Lock In only)
       const todayKey = getTodayKey();
+      const focusBase = state.dailyFocusDate === todayKey ? state.dailyFocusedMinutes : 0;
       return {
         ...state,
         phase: 'IDLE',
         activeSession: null,
         lifetimeTotalMinutes: state.lifetimeTotalMinutes + (action.payload.durationMinutes || 0),
         lastUnlockCompletedDate: todayKey,
+        dailyFocusedMinutes: focusBase + (action.payload.durationMinutes || 0),
+        dailyFocusDate: todayKey,
       };
     }
 
     case 'COMPLETE_EXECUTION_BLOCK': {
       const mins = action.payload.durationMinutes || 0;
+      const todayKey = getTodayKey();
+      const alreadyAdvancedToday = state.lastLockInCompletedDate === todayKey;
+      const newMaxDay = alreadyAdvancedToday
+        ? state.maxCompletedDay
+        : Math.min(90, state.maxCompletedDay + 1);
+      const focusBase = state.dailyFocusDate === todayKey ? state.dailyFocusedMinutes : 0;
       return {
         ...state,
+        maxCompletedDay: newMaxDay,
+        lastLockInCompletedDate: todayKey,
         lifetimeExecutionBlocks: state.lifetimeExecutionBlocks + 1,
         lifetimeExecutionMinutes: state.lifetimeExecutionMinutes + mins,
         lifetimeTotalMinutes: state.lifetimeTotalMinutes + mins,
+        dailyFocusedMinutes: focusBase + mins,
+        dailyFocusDate: todayKey,
+      };
+    }
+
+    case 'ADD_DAILY_FOCUS': {
+      const todayKey = getTodayKey();
+      const base = state.dailyFocusDate === todayKey ? state.dailyFocusedMinutes : 0;
+      return {
+        ...state,
+        dailyFocusedMinutes: base + action.payload.minutes,
+        dailyFocusDate: todayKey,
+      };
+    }
+
+    case 'DAILY_GOAL_MET': {
+      const todayKey = getTodayKey();
+      if (state.dailyGoalMetDate === todayKey) return state;
+
+      const newStreak = computeNewStreak(
+        state.lastSessionDayKey,
+        state.consecutiveStreak,
+        todayKey,
+      );
+      const newLifetimeLongest = Math.max(state.lifetimeLongestStreak, newStreak);
+
+      return {
+        ...state,
+        consecutiveStreak: newStreak,
+        lifetimeLongestStreak: newLifetimeLongest,
+        lastSessionDayKey: todayKey,
+        dailyGoalMetDate: todayKey,
       };
     }
 
@@ -277,6 +299,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       activeSession: state.activeSession,
       lastLockInCompletedDate: state.lastLockInCompletedDate,
       lastUnlockCompletedDate: state.lastUnlockCompletedDate,
+      dailyFocusedMinutes: state.dailyFocusedMinutes,
+      dailyFocusDate: state.dailyFocusDate,
+      dailyGoalMetDate: state.dailyGoalMetDate,
     };
 
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(persisted)).catch((e) => {
@@ -296,6 +321,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     state.activeSession,
     state.lastLockInCompletedDate,
     state.lastUnlockCompletedDate,
+    state.dailyFocusedMinutes,
+    state.dailyFocusDate,
+    state.dailyGoalMetDate,
   ]);
 
   // ── Mixpanel: super properties (auto-attached to every event) ──
@@ -340,8 +368,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     if (!isHydrated) return;
     if (state.lastLockInCompletedDate && state.lastLockInCompletedDate !== prevLockInDate.current) {
-      MixpanelService.track('Session Completed', {
-        phase: 'lock_in',
+      MixpanelService.track('Alignment Completed', {
         program_day: state.maxCompletedDay,
         streak: state.consecutiveStreak,
         lifetime_minutes: state.lifetimeTotalMinutes,
@@ -353,8 +380,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     if (!isHydrated) return;
     if (state.lastUnlockCompletedDate && state.lastUnlockCompletedDate !== prevUnlockDate.current) {
-      MixpanelService.track('Session Completed', {
-        phase: 'unlock',
+      MixpanelService.track('Reflection Completed', {
         program_day: state.maxCompletedDay,
         lifetime_minutes: state.lifetimeTotalMinutes,
       });
@@ -367,7 +393,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     if (!isHydrated) return;
     if (state.lifetimeExecutionBlocks > prevExecBlocks.current) {
-      MixpanelService.track('Execution Block Completed', {
+      MixpanelService.track('Lock In Completed', {
         total_blocks: state.lifetimeExecutionBlocks,
         total_exec_minutes: state.lifetimeExecutionMinutes,
       });

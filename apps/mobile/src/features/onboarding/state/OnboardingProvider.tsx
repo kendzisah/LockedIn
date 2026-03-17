@@ -4,6 +4,7 @@ import type { OnboardingState, OnboardingAction } from './types';
 import { MixpanelService } from '../../../services/MixpanelService';
 
 const STORAGE_KEY = '@lockedin/onboarding_complete';
+const ONBOARDING_DATA_KEY = '@lockedin/onboarding_data';
 
 const initialState: OnboardingState = {
   selectedWeaknesses: [],
@@ -62,12 +63,30 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isHydrated, setIsHydrated] = useState(false);
   const prevComplete = useRef(state.onboardingComplete);
 
-  // ── Load persisted onboarding flag on mount ──
+  // ── Load persisted onboarding flag + data on mount ──
   useEffect(() => {
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw === 'true') {
+        const [flagRaw, dataRaw] = await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEY),
+          AsyncStorage.getItem(ONBOARDING_DATA_KEY),
+        ]);
+        if (dataRaw) {
+          try {
+            const data = JSON.parse(dataRaw);
+            // Migrate legacy string dailyMinutes to number
+            if (typeof data.dailyMinutes === 'string') {
+              data.dailyMinutes = 60;
+            }
+            if (typeof data.dailyMinutes === 'number') {
+              dispatch({ type: 'SET_DAILY_MINUTES', payload: data.dailyMinutes });
+            }
+            if (typeof data.primaryGoal === 'string') {
+              dispatch({ type: 'SET_PRIMARY_GOAL', payload: data.primaryGoal });
+            }
+          } catch {}
+        }
+        if (flagRaw === 'true') {
           dispatch({ type: 'HYDRATE_ONBOARDING', payload: true });
         }
       } catch (e) {
@@ -85,10 +104,15 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
         console.warn('[OnboardingProvider] Persist failed:', e);
       });
 
+      AsyncStorage.setItem(ONBOARDING_DATA_KEY, JSON.stringify({
+        dailyMinutes: state.dailyMinutes,
+        primaryGoal: state.primaryGoal,
+      })).catch(() => {});
+
       MixpanelService.setUserProperties({
         age: state.userAge,
         primary_goal: state.primaryGoal,
-        daily_commitment: state.dailyMinutes,
+        daily_commitment_minutes: state.dailyMinutes,
         phone_usage: state.phoneUsageHours,
         weaknesses: state.selectedWeaknesses.join(', '),
         screen_time_granted: state.screenTimeStatus === 'granted',

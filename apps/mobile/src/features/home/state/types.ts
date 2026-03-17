@@ -48,6 +48,13 @@ export interface SessionState {
   // ── Date-keyed completion (daily CTA gating) ──
   lastLockInCompletedDate: DayKey | null;   // e.g. "2026-02-20"
   lastUnlockCompletedDate: DayKey | null;   // e.g. "2026-02-20"
+
+  // ── Daily focus tracking ──
+  dailyFocusedMinutes: number;
+  dailyFocusDate: DayKey | null;
+
+  // ── Daily goal ──
+  dailyGoalMetDate: DayKey | null;
 }
 
 /** Subset of state that gets persisted to AsyncStorage */
@@ -74,6 +81,13 @@ export interface PersistedSessionState {
   lastLockInCompletedDate: DayKey | null;
   lastUnlockCompletedDate: DayKey | null;
 
+  // Daily focus tracking
+  dailyFocusedMinutes?: number;
+  dailyFocusDate?: DayKey | null;
+
+  // Daily goal
+  dailyGoalMetDate?: DayKey | null;
+
   // ── Legacy fields (for migration compat) ──
   startDayKey?: DayKey | null;
   completedDayKeys?: DayKey[];
@@ -90,5 +104,7 @@ export type SessionAction =
   | { type: 'COMPLETE_SESSION'; payload: { durationMinutes: number } }
   | { type: 'COMPLETE_UNLOCK'; payload: { durationMinutes: number } }
   | { type: 'COMPLETE_EXECUTION_BLOCK'; payload: { durationMinutes: number } }
+  | { type: 'ADD_DAILY_FOCUS'; payload: { minutes: number } }
+  | { type: 'DAILY_GOAL_MET' }
   | { type: 'RESET_PHASE' }
   | { type: 'RESET_PROGRAM' };

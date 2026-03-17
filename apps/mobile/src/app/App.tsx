@@ -17,6 +17,7 @@ import RootNavigator from '../navigation/RootNavigator';
 import { Colors } from '../design/colors';
 import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SupabaseService } from '../services/SupabaseService';
 import { AudioService } from '../services/AudioService';
 import { NotificationService } from '../services/NotificationService';
@@ -56,7 +57,15 @@ const App: React.FC = () => {
         await MixpanelService.initialize();
         await AudioService.configure();
         await SupabaseService.initialize();
-        await NotificationService.scheduleDailyReminders();
+        let streak = 0;
+        try {
+          const raw = await AsyncStorage.getItem('@lockedin/session_state');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            streak = parsed.consecutiveStreak ?? 0;
+          }
+        } catch { /* use default streak of 0 */ }
+        await NotificationService.scheduleAllDailyNotifications(streak);
       } catch (e: any) {
         console.warn('[App] boot() failed, continuing anyway:', e);
       } finally {

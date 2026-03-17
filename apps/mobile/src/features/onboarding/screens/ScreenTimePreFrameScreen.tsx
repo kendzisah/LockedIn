@@ -39,7 +39,7 @@ const ScreenTimePreFrameScreen: React.FC<Props> = ({ navigation }) => {
   const deniedOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ScreenTimePreFrame', step: 11, total_steps: 18 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ScreenTimePreFrame', step: 13, total_steps: 17 });
   }, []);
 
   useEffect(() => {
@@ -102,7 +102,7 @@ const ScreenTimePreFrameScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer>
-        <ProgressIndicator current={12} total={19} />
+        <ProgressIndicator current={12} total={17} />
 
         <View style={styles.body}>
           <View style={styles.lottieWrap}>

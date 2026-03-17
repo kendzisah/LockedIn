@@ -23,21 +23,16 @@ import { MixpanelService } from '../../services/MixpanelService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-function computeReclaimedHours(dailyMinutes: string | null): number {
-  const map: Record<string, number> = {
-    '5 minutes': 7.5,
-    '10 minutes': 15,
-    '15 minutes': 22,
-    '20+ minutes': 30,
-  };
-  return map[dailyMinutes ?? '15 minutes'] ?? 22;
+function computeReclaimedHours(dailyMinutes: number | null, days: number): number {
+  const mins = dailyMinutes ?? 60;
+  return Math.round((mins * days) / 60);
 }
 
 function formatHours(h: number): string {
-  if (h >= 1000) return `${Math.round(h / 100) * 100}+`;
-  if (h >= 100) return `${Math.round(h)}`;
-  if (h % 1 === 0) return `${h}`;
-  return h.toFixed(1);
+  if (h >= 1000) return `${Math.round(h / 100) * 100}h`;
+  if (h >= 100) return `${Math.round(h)}h`;
+  if (h % 1 === 0) return `${h}h`;
+  return `${h.toFixed(1)}h`;
 }
 
 const BENEFITS = [
@@ -53,12 +48,11 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
   const { state } = useOnboarding();
   const { showPaywall, isSubscribed } = useSubscription();
 
-  const reclaimedBase = computeReclaimedHours(state.dailyMinutes);
-  const yearMultiplier = 365 / 90;
   const projections = [
-    { period: '90 Days', hours: reclaimedBase },
-    { period: '1 Year', hours: Math.round(reclaimedBase * yearMultiplier) },
-    { period: '5 Years', hours: Math.round(reclaimedBase * yearMultiplier * 5) },
+    { period: '90 Days', hours: computeReclaimedHours(state.dailyMinutes, 90) },
+    { period: '1 Year', hours: computeReclaimedHours(state.dailyMinutes, 365) },
+    { period: '3 Years', hours: computeReclaimedHours(state.dailyMinutes, 365 * 3) },
+    { period: '5 Years', hours: computeReclaimedHours(state.dailyMinutes, 365 * 5) },
   ];
 
   const screenOpacity = useRef(new Animated.Value(1)).current;
@@ -176,11 +170,11 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
       <LinearGradient
         colors={[
           'rgba(14,17,22,0.3)',
-          'rgba(14,17,22,0.65)',
-          'rgba(14,17,22,0.92)',
+          'rgba(14,17,22,0.7)',
+          'rgba(14,17,22,0.95)',
           Colors.background,
         ]}
-        locations={[0, 0.3, 0.55, 0.75]}
+        locations={[0, 0.25, 0.45, 0.65]}
         style={StyleSheet.absoluteFill}
       />
 
@@ -198,7 +192,7 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
                 end={{ x: 1, y: 1 }}
                 style={StyleSheet.absoluteFill}
               />
-              <Text style={styles.statValue}>{formatHours(fiveYearHours)}+</Text>
+              <Text style={styles.statValue}>{formatHours(fiveYearHours)}</Text>
               <Text style={styles.statLabel}>hours of focus reclaimed over 5 years</Text>
             </Animated.View>
 
@@ -235,7 +229,7 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
                       </Animated.View>
                     </View>
                     <Text style={[styles.projHours, isLast && styles.projHoursAccent]}>
-                      {formatHours(p.hours)}h
+                      {formatHours(p.hours)}
                     </Text>
                   </View>
                 );
@@ -295,7 +289,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  body: { flex: 1, justifyContent: 'flex-end', paddingBottom: 8 },
+  body: { flex: 1, justifyContent: 'center' },
   headline: {
     fontFamily: FontFamily.headingBold,
     fontSize: 30,
@@ -366,10 +360,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   projHours: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 13,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 16,
     color: Colors.textSecondary,
-    width: 44,
+    width: 54,
     textAlign: 'right',
   },
   projHoursAccent: {

@@ -48,7 +48,7 @@ const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
   selectedRef.current = selected;
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ControlQuiz', step: 7, total_steps: 18 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ControlQuiz', step: 9, total_steps: 17 });
   }, []);
 
   useEffect(() => {
@@ -127,7 +127,7 @@ const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
-        <ProgressIndicator current={7} total={18} />
+        <ProgressIndicator current={8} total={17} />
 
         <View style={styles.body}>
           <Animated.Text

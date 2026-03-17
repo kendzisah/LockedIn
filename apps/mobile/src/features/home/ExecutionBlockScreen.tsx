@@ -33,7 +33,7 @@ export const ACTIVE_EB_KEY = '@lockedin/active_execution_block';
 const HOLD_DURATION = 2000;
 
 const PHASE_TEXTS = [
-  'Deep Focus.',
+  'You are now Locked In.',
   'Stay Locked In.',
   'Execute.',
   'No distractions.',

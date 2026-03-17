@@ -11,6 +11,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import { PermissionService } from '../../../services/PermissionService';
+import { NotificationService } from '../../../services/NotificationService';
 import { MixpanelService } from '../../../services/MixpanelService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
@@ -26,7 +27,7 @@ const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
   const { dispatch } = useOnboarding();
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'NotificationPreFrame', step: 16, total_steps: 18 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'NotificationPreFrame', step: 15, total_steps: 17 });
   }, []);
 
   const screenOpacity = useRef(new Animated.Value(1)).current;
@@ -71,6 +72,7 @@ const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
     const granted = await PermissionService.requestNotificationPermission();
     if (granted) {
       MixpanelService.track('Permission Granted', { screen: 'NotificationPreFrame', permission: 'notifications' });
+      await NotificationService.scheduleAllDailyNotifications(0);
     } else {
       MixpanelService.track('Permission Denied', { screen: 'NotificationPreFrame', permission: 'notifications' });
     }
