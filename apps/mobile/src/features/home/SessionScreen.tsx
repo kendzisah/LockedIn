@@ -387,10 +387,10 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       navigation.replace('SessionComplete', {
         phase: phase === 'lock_in' ? 'lock_in' : 'unlock',
         durationMinutes,
-        streak: phase === 'lock_in' ? state.consecutiveStreak : 0,
+        streak: 0,
       });
     });
-  }, [isComplete, dispatch, phase, timerOpacity, navigation, audioState, totalSeconds, programDay, state.consecutiveStreak]);
+  }, [isComplete, dispatch, phase, timerOpacity, navigation, audioState, totalSeconds, programDay]);
 
   // ── Hold-to-unlock handlers ──
   const handleHoldStart = useCallback(() => {
@@ -479,10 +479,10 @@ const SessionScreen: React.FC<Props> = ({ navigation, route }) => {
       navigation.replace('SessionComplete', {
         phase: phase === 'lock_in' ? 'lock_in' : 'unlock',
         durationMinutes: Math.ceil(totalSeconds / 60),
-        streak: phase === 'lock_in' ? state.consecutiveStreak : 0,
+        streak: 0,
       });
     });
-  }, [dispatch, phase, timerOpacity, navigation, totalSeconds, remaining, programDay, state.consecutiveStreak]);
+  }, [dispatch, phase, timerOpacity, navigation, totalSeconds, remaining, programDay]);
 
   // ── BackHandler: block Android back ──
   useEffect(() => {

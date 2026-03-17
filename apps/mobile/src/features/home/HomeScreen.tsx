@@ -194,12 +194,13 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
     prevFocused.current = dailyFocused;
   }, [isHydrated, dailyFocused, dailyCommitment]);
 
-  // ── Navigate to ProgramComplete if program is done ──
+  // ── Navigate to ProgramComplete once when program finishes ──
   useEffect(() => {
-    if (isHydrated && programComplete) {
+    if (isHydrated && programComplete && !state.programCompleteSeen) {
+      dispatch({ type: 'MARK_PROGRAM_SEEN' });
       navigation.replace('ProgramComplete');
     }
-  }, [isHydrated, programComplete, navigation]);
+  }, [isHydrated, programComplete, state.programCompleteSeen, dispatch, navigation]);
 
   // ── Prefetch day-based audio on mount / CTA change ──
   useEffect(() => {

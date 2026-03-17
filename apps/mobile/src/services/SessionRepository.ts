@@ -397,19 +397,6 @@ async function prefetchToday(phase: ContentPhase): Promise<void> {
 }
 
 /**
- * Prefetch onboarding track metadata + pre-load audio into AudioService.
- * Call on EnforceMyFocusScreen mount so audio is ready when session starts.
- * Silent on failure.
- */
-async function prefetchOnboardingTrack(): Promise<void> {
-  const track = await getOnboardingTrack();
-  if (track) {
-    const { AudioService } = require('./AudioService');
-    await AudioService.load(track.signedAudioUrl);
-  }
-}
-
-/**
  * Get cached day track info (title + core tenet) without network call.
  * Returns null if no track cached for the given day + phase.
  */
@@ -444,7 +431,6 @@ export const SessionRepository = {
   prefetchTrackForDay,
   getCachedDayTrackInfo,
   getOnboardingTrack,
-  prefetchOnboardingTrack,
   prefetchToday,
   clearCache,
 };

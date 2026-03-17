@@ -1,9 +1,8 @@
 /**
- * ProgramCompleteScreen — Shown when user completes all 90 days.
+ * ProgramCompleteScreen — Shown once when user completes all 90 days.
  *
- * Displays lifetime stats and program summary.
- * Offers "Restart Program" (resets current run, preserves lifetime stats)
- * and "Explore More" (placeholder for future content).
+ * Displays lifetime stats, encourages continued consistency,
+ * and returns the user to the normal app flow (no program bar).
  */
 
 import React, { useCallback, useMemo, useRef, useEffect } from 'react';
@@ -17,21 +16,21 @@ import {
   dayKeyDelta,
   getTodayKey,
 } from './engine/SessionEngine';
+import { MixpanelService } from '../../services/MixpanelService';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'ProgramComplete'>;
 
 const ProgramCompleteScreen: React.FC<Props> = ({ navigation }) => {
-  const { state, dispatch } = useSession();
+  const { state } = useSession();
 
-  // ── Animated values ──
   const fadeIn = useRef(new Animated.Value(0)).current;
   const statsSlide = useRef(new Animated.Value(30)).current;
   const statsOpacity = useRef(new Animated.Value(0)).current;
+  const messageOpacity = useRef(new Animated.Value(0)).current;
   const actionsOpacity = useRef(new Animated.Value(0)).current;
 
-  // ── Stats ──
   const calendarDays = useMemo(() => {
     if (!state.programStartDate) return 90;
     return dayKeyDelta(state.programStartDate, getTodayKey()) + 1;
@@ -50,7 +49,15 @@ const ProgramCompleteScreen: React.FC<Props> = ({ navigation }) => {
   const totalHours = Math.floor(state.lifetimeTotalMinutes / 60);
   const totalMinutes = state.lifetimeTotalMinutes % 60;
 
-  // ── Entry animation ──
+  useEffect(() => {
+    MixpanelService.track('Program Completed', {
+      calendar_days: calendarDays,
+      longest_streak: state.lifetimeLongestStreak,
+      total_minutes: state.lifetimeTotalMinutes,
+      commitment_percent: commitment,
+    });
+  }, []);
+
   useEffect(() => {
     Animated.sequence([
       Animated.timing(fadeIn, {
@@ -70,30 +77,26 @@ const ProgramCompleteScreen: React.FC<Props> = ({ navigation }) => {
           useNativeDriver: true,
         }),
       ]),
+      Animated.timing(messageOpacity, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
       Animated.timing(actionsOpacity, {
         toValue: 1,
         duration: 400,
         useNativeDriver: true,
       }),
     ]).start();
-  }, [fadeIn, statsOpacity, statsSlide, actionsOpacity]);
+  }, [fadeIn, statsOpacity, statsSlide, messageOpacity, actionsOpacity]);
 
-  // ── Actions ──
-  const handleRestart = useCallback(() => {
-    dispatch({ type: 'RESET_PROGRAM' });
+  const handleContinue = useCallback(() => {
     navigation.replace('Home');
-  }, [dispatch, navigation]);
-
-  const handleExplore = useCallback(() => {
-    // Placeholder — for now, just restart
-    dispatch({ type: 'RESET_PROGRAM' });
-    navigation.replace('Home');
-  }, [dispatch, navigation]);
+  }, [navigation]);
 
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        {/* Header */}
         <Animated.View style={[styles.headerSection, { opacity: fadeIn }]}>
           <Text style={styles.congratsLabel}>PROGRAM COMPLETE</Text>
           <Text style={styles.headline}>90 Days. Locked In.</Text>
@@ -102,7 +105,6 @@ const ProgramCompleteScreen: React.FC<Props> = ({ navigation }) => {
           </Text>
         </Animated.View>
 
-        {/* Stats Grid */}
         <Animated.View
           style={[
             styles.statsSection,
@@ -117,38 +119,36 @@ const ProgramCompleteScreen: React.FC<Props> = ({ navigation }) => {
             <StatCard label="Calendar Days" value={`${calendarDays}`} />
             <StatCard label="Longest Streak" value={`${state.lifetimeLongestStreak}`} />
             <StatCard
-              label="Total Listening"
+              label="Total Focus Time"
               value={totalHours > 0 ? `${totalHours}h ${totalMinutes}m` : `${totalMinutes}m`}
             />
             <StatCard label="Commitment" value={`${commitment}%`} />
-            <StatCard label="Programs Completed" value={`${state.lifetimeRunsCompleted + 1}`} />
+            <StatCard label="Execution Blocks" value={`${state.lifetimeExecutionBlocks}`} />
           </View>
         </Animated.View>
 
-        {/* Actions */}
+        <Animated.View style={[styles.messageSection, { opacity: messageOpacity }]}>
+          <Text style={styles.messageText}>
+            The program is complete, but the standard remains.
+          </Text>
+          <Text style={styles.messageSubtext}>
+            Keep locking in daily to maintain your streak and track your progress. Consistency is the only metric that matters now.
+          </Text>
+        </Animated.View>
+
         <Animated.View style={[styles.actionsSection, { opacity: actionsOpacity }]}>
           <TouchableOpacity
-            onPress={handleRestart}
+            onPress={handleContinue}
             style={styles.primaryButton}
             activeOpacity={0.9}
           >
-            <Text style={styles.primaryButtonText}>Restart Program</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={handleExplore}
-            style={styles.secondaryButton}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.secondaryButtonText}>Explore More</Text>
+            <Text style={styles.primaryButtonText}>Continue</Text>
           </TouchableOpacity>
         </Animated.View>
       </SafeAreaView>
     </View>
   );
 };
-
-// ── Stat Card Component ──
 
 interface StatCardProps {
   label: string;
@@ -174,7 +174,7 @@ const styles = StyleSheet.create({
   },
   headerSection: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 32,
   },
   congratsLabel: {
     fontFamily: FontFamily.bodyMedium,
@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   statsSection: {
-    marginBottom: 40,
+    marginBottom: 28,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -231,33 +231,43 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
+  messageSection: {
+    alignItems: 'center',
+    marginBottom: 32,
+    paddingHorizontal: 8,
+  },
+  messageText: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 17,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    letterSpacing: -0.2,
+    marginBottom: 8,
+  },
+  messageSubtext: {
+    fontFamily: FontFamily.body,
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   actionsSection: {
     alignItems: 'center',
   },
   primaryButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: 'rgba(255,255,255,0.04)',
     paddingVertical: 16,
-    borderRadius: 6,
+    borderRadius: 28,
     alignItems: 'center',
     width: '100%',
-    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   primaryButtonText: {
-    fontFamily: FontFamily.headingBold,
+    fontFamily: FontFamily.headingSemiBold,
     fontSize: 17,
-    color: Colors.textPrimary,
-    letterSpacing: 0.2,
-  },
-  secondaryButton: {
-    paddingVertical: 14,
-    alignItems: 'center',
-    width: '100%',
-  },
-  secondaryButtonText: {
-    fontFamily: FontFamily.body,
-    fontSize: 15,
-    color: Colors.textMuted,
-    letterSpacing: 0.3,
+    color: 'rgba(255,255,255,0.55)',
+    letterSpacing: 0.5,
   },
 });
 

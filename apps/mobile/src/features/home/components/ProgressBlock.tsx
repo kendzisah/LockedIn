@@ -11,6 +11,7 @@ import { useSession } from '../state/SessionProvider';
 import {
   getDisplayDay,
   getProgressSubtext,
+  isProgramComplete,
 } from '../engine/SessionEngine';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -22,6 +23,7 @@ const ProgressBlock: React.FC = () => {
   const lottieRef = useRef<LottieView>(null);
 
   const hasStreak = state.consecutiveStreak > 0;
+  const programDone = isProgramComplete(state.maxCompletedDay);
 
   const currentDay = useMemo(
     () => getDisplayDay(state.maxCompletedDay, state.lastLockInCompletedDate),
@@ -62,11 +64,13 @@ const ProgressBlock: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {/* Top row: Day X of 90 + Streak badge */}
+      {/* Top row: Day X of 90 (hidden after completion) + Streak badge */}
       <View style={styles.topRow}>
-        <Text style={styles.dayLabel}>
-          Day {currentDay} of 90
-        </Text>
+        {programDone ? (
+          <Text style={styles.dayLabel}>Program Complete</Text>
+        ) : (
+          <Text style={styles.dayLabel}>Day {currentDay} of 90</Text>
+        )}
         <View style={styles.streakBadge}>
           <LottieView
             ref={lottieRef}
@@ -96,15 +100,17 @@ const ProgressBlock: React.FC = () => {
         </View>
       </View>
 
-      {/* Progress bar */}
-      <View style={styles.barTrack}>
-        <Animated.View
-          style={[
-            styles.barFill,
-            { width: barWidthInterpolated },
-          ]}
-        />
-      </View>
+      {/* Progress bar — hidden after program completion */}
+      {!programDone && (
+        <View style={styles.barTrack}>
+          <Animated.View
+            style={[
+              styles.barFill,
+              { width: barWidthInterpolated },
+            ]}
+          />
+        </View>
+      )}
 
       {/* Dynamic subtext */}
       <Text style={styles.subtext}>{subtext}</Text>

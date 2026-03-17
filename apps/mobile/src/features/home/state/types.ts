@@ -55,6 +55,9 @@ export interface SessionState {
 
   // ── Daily goal ──
   dailyGoalMetDate: DayKey | null;
+
+  // ── Program complete flag ──
+  programCompleteSeen: boolean;
 }
 
 /** Subset of state that gets persisted to AsyncStorage */
@@ -88,6 +91,9 @@ export interface PersistedSessionState {
   // Daily goal
   dailyGoalMetDate?: DayKey | null;
 
+  // Program complete
+  programCompleteSeen?: boolean;
+
   // ── Legacy fields (for migration compat) ──
   startDayKey?: DayKey | null;
   completedDayKeys?: DayKey[];
@@ -106,5 +112,5 @@ export type SessionAction =
   | { type: 'COMPLETE_EXECUTION_BLOCK'; payload: { durationMinutes: number } }
   | { type: 'ADD_DAILY_FOCUS'; payload: { minutes: number } }
   | { type: 'DAILY_GOAL_MET' }
-  | { type: 'RESET_PHASE' }
-  | { type: 'RESET_PROGRAM' };
+  | { type: 'MARK_PROGRAM_SEEN' }
+  | { type: 'RESET_PHASE' };

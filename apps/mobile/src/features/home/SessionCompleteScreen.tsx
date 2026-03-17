@@ -35,7 +35,7 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
   const streakOpacity = useRef(new Animated.Value(0)).current;
   const [showStreak, setShowStreak] = useState(false);
 
-  const showStreakCelebration = phase === 'lock_in' && streak > 0;
+  const showStreakCelebration = phase === 'execution_block' && streak > 0;
 
   const navigateHome = useCallback(() => {
     if (dismissed) return;

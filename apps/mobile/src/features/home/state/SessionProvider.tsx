@@ -11,8 +11,8 @@
  *   - Streak increments via DAILY_GOAL_MET when daily focus goal is hit
  *
  * Lifetime vs current-run:
- *   - lifetimeTotalMinutes / lifetimeLongestStreak / lifetimeRunsCompleted survive restart
- *   - maxCompletedDay / consecutiveStreak / programStartDate reset on RESET_PROGRAM
+ *   - lifetimeTotalMinutes / lifetimeLongestStreak / lifetimeRunsCompleted survive across program completion
+ *   - After 90 days, programCompleteSeen flag hides the progress bar
  *
  * HYDRATE handles legacy shapes (startDayKey, completedDayKeys, etc.) for migration.
  */
@@ -60,6 +60,7 @@ const initialState: SessionState = {
   dailyFocusedMinutes: 0,
   dailyFocusDate: null,
   dailyGoalMetDate: null,
+  programCompleteSeen: false,
 };
 
 // ─── Reducer ─────────────────────────────────────────────────────
@@ -93,6 +94,7 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         dailyFocusedMinutes: p.dailyFocusedMinutes ?? 0,
         dailyFocusDate: p.dailyFocusDate ?? null,
         dailyGoalMetDate: p.dailyGoalMetDate ?? null,
+        programCompleteSeen: p.programCompleteSeen ?? false,
         phase: p.activeSession ? 'ACTIVE' : 'IDLE',
       };
     }
@@ -212,26 +214,12 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       };
     }
 
-    case 'RESET_PHASE': {
-      return { ...state, phase: 'IDLE' };
+    case 'MARK_PROGRAM_SEEN': {
+      return { ...state, programCompleteSeen: true };
     }
 
-    case 'RESET_PROGRAM': {
-      // Reset current run, preserve lifetime stats
-      return {
-        ...state,
-        phase: 'IDLE',
-        programStartDate: null,
-        maxCompletedDay: 0,
-        lastSessionDayKey: null,
-        consecutiveStreak: 0,
-        activeSession: null,
-        lastLockInCompletedDate: null,
-        lastUnlockCompletedDate: null,
-        // Lifetime stats survive
-        lifetimeRunsCompleted: state.lifetimeRunsCompleted + 1,
-        // lifetimeTotalMinutes and lifetimeLongestStreak stay
-      };
+    case 'RESET_PHASE': {
+      return { ...state, phase: 'IDLE' };
     }
 
     default:
@@ -302,6 +290,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       dailyFocusedMinutes: state.dailyFocusedMinutes,
       dailyFocusDate: state.dailyFocusDate,
       dailyGoalMetDate: state.dailyGoalMetDate,
+      programCompleteSeen: state.programCompleteSeen,
     };
 
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(persisted)).catch((e) => {

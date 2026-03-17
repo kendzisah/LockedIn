@@ -23,6 +23,8 @@ import * as Haptics from 'expo-haptics';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
 import { useSession } from './state/SessionProvider';
+import { useOnboarding } from '../onboarding/state/OnboardingProvider';
+import { getTodayKey, computeNewStreak } from './engine/SessionEngine';
 import { LockModeService } from '../../services/LockModeService';
 import { NotificationService } from '../../services/NotificationService';
 import { Colors } from '../../design/colors';
@@ -61,7 +63,8 @@ function getPhaseText(elapsed: number, total: number): string {
 
 const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
   const { durationMinutes } = route.params;
-  const { dispatch } = useSession();
+  const { state, dispatch } = useSession();
+  const { state: onboardingState } = useOnboarding();
   useKeepAwake();
 
   const totalSeconds = durationMinutes * 60;
@@ -72,6 +75,21 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
   const timerOpacity = useRef(new Animated.Value(0)).current;
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const completedRef = useRef(false);
+
+  const computeStreakAfterCompletion = useCallback((sessionMinutes: number) => {
+    const todayKey = getTodayKey();
+    const dailyCommitment = onboardingState.dailyMinutes ?? 60;
+    const currentFocused = state.dailyFocusDate === todayKey ? state.dailyFocusedMinutes : 0;
+    const newFocused = currentFocused + sessionMinutes;
+    const goalAlreadyMet = state.dailyGoalMetDate === todayKey;
+
+    if (newFocused >= dailyCommitment && !goalAlreadyMet) {
+      dispatch({ type: 'DAILY_GOAL_MET' });
+      const newStreak = computeNewStreak(state.lastSessionDayKey, state.consecutiveStreak, todayKey);
+      return newStreak;
+    }
+    return 0;
+  }, [state, onboardingState.dailyMinutes, dispatch]);
 
   // Hold-to-unlock
   const [holdProgress, setHoldProgress] = useState(0);
@@ -99,6 +117,8 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
       payload: { durationMinutes },
     });
 
+    const resultStreak = computeStreakAfterCompletion(durationMinutes);
+
     Animated.timing(timerOpacity, {
       toValue: 0,
       duration: 500,
@@ -107,10 +127,10 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
       navigation.replace('SessionComplete', {
         phase: 'execution_block',
         durationMinutes,
-        streak: 0,
+        streak: resultStreak,
       });
     });
-  }, [dispatch, durationMinutes, timerOpacity, navigation]);
+  }, [dispatch, durationMinutes, timerOpacity, navigation, computeStreakAfterCompletion]);
 
   const handleHoldComplete = useCallback(() => {
     if (completedRef.current) return;
@@ -136,6 +156,8 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
       payload: { durationMinutes: actualMinutes },
     });
 
+    const resultStreak = computeStreakAfterCompletion(actualMinutes);
+
     Animated.timing(timerOpacity, {
       toValue: 0,
       duration: 500,
@@ -144,10 +166,10 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
       navigation.replace('SessionComplete', {
         phase: 'execution_block',
         durationMinutes: actualMinutes,
-        streak: 0,
+        streak: resultStreak,
       });
     });
-  }, [dispatch, totalSeconds, timerOpacity, navigation]);
+  }, [dispatch, totalSeconds, timerOpacity, navigation, computeStreakAfterCompletion]);
 
   // Persist execution block info, schedule notification, fade in timer
   useEffect(() => {
