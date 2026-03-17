@@ -14,7 +14,7 @@ const FixPromiseScreen: React.FC<Props> = ({ navigation }) => {
   const screenOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'FixPromise', step: 6, total_steps: 17 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'FixPromise', step: 6, total_steps: 18 });
 
     Animated.timing(textOpacity, {
       toValue: 1,

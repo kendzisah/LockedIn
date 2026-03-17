@@ -19,6 +19,7 @@ import ScreenTimePreFrameScreen from '../features/onboarding/screens/ScreenTimeP
 import ProductExplainerScreen from '../features/onboarding/screens/ProductExplainerScreen';
 import NotificationPreFrameScreen from '../features/onboarding/screens/NotificationPreFrameScreen';
 import PersonalizedPlanCardScreen from '../features/onboarding/screens/PersonalizedPlanCardScreen';
+import EmailCollectionScreen from '../features/onboarding/screens/EmailCollectionScreen';
 import SignatureCommitmentScreen from '../features/onboarding/screens/SignatureCommitmentScreen';
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
@@ -50,6 +51,7 @@ const OnboardingNavigator: React.FC = () => {
       <Stack.Screen name="ProductExplainer" component={ProductExplainerScreen} options={{ animation: 'none' }} />
       <Stack.Screen name="NotificationPreFrame" component={NotificationPreFrameScreen} options={{ animation: 'none' }} />
       <Stack.Screen name="PersonalizedPlanCard" component={PersonalizedPlanCardScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="EmailCollection" component={EmailCollectionScreen} options={{ animation: 'none' }} />
       <Stack.Screen name="SignatureCommitment" component={SignatureCommitmentScreen} options={{ animation: 'none' }} />
     </Stack.Navigator>
   );

@@ -48,7 +48,7 @@ const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
   selectedRef.current = selected;
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ControlQuiz', step: 9, total_steps: 17 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ControlQuiz', step: 9, total_steps: 18 });
   }, []);
 
   useEffect(() => {

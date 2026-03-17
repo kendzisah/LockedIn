@@ -21,6 +21,7 @@ export type OnboardingStackParamList = {
   ProductExplainer: undefined;
   NotificationPreFrame: undefined;
   PersonalizedPlanCard: undefined;
+  EmailCollection: undefined;
   SignatureCommitment: undefined;
 };
 

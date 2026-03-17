@@ -43,6 +43,15 @@ export const AppsFlyerService = {
     });
   },
 
+  setAdditionalData(data: Record<string, string>) {
+    try {
+      sdk?.setAdditionalData(data);
+      console.log('[AppsFlyer] setAdditionalData:', Object.keys(data).join(', '));
+    } catch (e) {
+      console.warn('[AppsFlyer] setAdditionalData failed:', e);
+    }
+  },
+
   logEvent(name: string, values: Record<string, string>) {
     try {
       sdk?.logEvent(

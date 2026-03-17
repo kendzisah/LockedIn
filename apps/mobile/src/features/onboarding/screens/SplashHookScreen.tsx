@@ -21,7 +21,7 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'SplashHook'>;
 
 const SplashHookScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'SplashHook', step: 2, total_steps: 17 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'SplashHook', step: 2, total_steps: 18 });
   }, []);
 
   const [phase, setPhase] = useState<'intro' | 'transition'>('intro');

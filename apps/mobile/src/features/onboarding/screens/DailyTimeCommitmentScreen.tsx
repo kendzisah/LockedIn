@@ -67,7 +67,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
   const knobLayout = useRef({ x: 0, y: 0, w: 0, h: 0 });
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'DailyTimeCommitment', step: 10, total_steps: 17 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'DailyTimeCommitment', step: 10, total_steps: 18 });
   }, []);
 
   useEffect(() => {

@@ -27,7 +27,7 @@ const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
   const { dispatch } = useOnboarding();
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'NotificationPreFrame', step: 15, total_steps: 17 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'NotificationPreFrame', step: 15, total_steps: 18 });
   }, []);
 
   const screenOpacity = useRef(new Animated.Value(1)).current;

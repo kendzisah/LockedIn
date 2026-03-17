@@ -44,7 +44,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
   const { showPaywall } = useSubscription();
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PersonalizedPlanCard', step: 16, total_steps: 17 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PersonalizedPlanCard', step: 16, total_steps: 18 });
     MixpanelService.track('Paywall Viewed', { source: 'onboarding' });
     AppsFlyerService.logEvent('paywall_view', {
       source: 'onboarding',
@@ -229,7 +229,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
               if (subscribed) {
                 MixpanelService.track('Subscription Started', { source: 'onboarding' });
                 Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
-                  navigation.navigate('SignatureCommitment');
+                  navigation.navigate('EmailCollection');
                 });
               } else {
                 AppsFlyerService.logEvent('paywall_dismiss', {

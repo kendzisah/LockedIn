@@ -38,7 +38,7 @@ const NinetyDayVisionScreen: React.FC<Props> = ({ navigation }) => {
   const buttonOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'NinetyDayVision', step: 12, total_steps: 17 });
+    MixpanelService.track('Onboarding Screen Viewed', { screen: 'NinetyDayVision', step: 12, total_steps: 18 });
   }, []);
 
   useEffect(() => {
