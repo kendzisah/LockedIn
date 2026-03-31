@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { MixpanelService } from '../../../services/MixpanelService';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 
 const SLIDE = 25;
 
@@ -31,9 +32,7 @@ const GOALS = [
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'GoalQuiz'>;
 
 const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
-  useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'GoalQuiz', step: 8, total_steps: 18 });
-  }, []);
+  useOnboardingTracking('GoalQuiz');
 
   const { dispatch } = useOnboarding();
   const [selected, setSelected] = useState<string | null>(null);
@@ -90,7 +89,7 @@ const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
-        <ProgressIndicator current={7} total={17} />
+        <ProgressIndicator current={5} total={10} />
 
         <View style={styles.body}>
           <Animated.Text

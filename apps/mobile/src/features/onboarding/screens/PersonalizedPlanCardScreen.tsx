@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
@@ -16,11 +17,14 @@ import { useOnboarding } from '../state/OnboardingProvider';
 import { useSubscription } from '../../subscription/SubscriptionProvider';
 import { MixpanelService } from '../../../services/MixpanelService';
 import { AppsFlyerService } from '../../../services/AppsFlyerService';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+
+const AF_REG_SENT_KEY = '@lockedin/af_reg_sent';
 
 const CARD_STAGGER = 100;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -43,8 +47,9 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
   const { state, dispatch } = useOnboarding();
   const { showPaywall } = useSubscription();
 
+  useOnboardingTracking('PersonalizedPlanCard');
+
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PersonalizedPlanCard', step: 16, total_steps: 18 });
     MixpanelService.track('Paywall Viewed', { source: 'onboarding' });
     AppsFlyerService.logEvent('paywall_view', {
       source: 'onboarding',
@@ -52,6 +57,33 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
       daily_commitment: state.dailyMinutes ?? '',
     });
   }, []);
+
+  /**
+   * Fires completion events (Mixpanel + AppsFlyer) and dispatches COMPLETE_ONBOARDING.
+   * Called by BOTH the subscribe path and the "Maybe Later" path.
+   */
+  const completeOnboarding = useCallback(async (subscribed: boolean) => {
+    // Fire Onboarding Completed (previously only fired on SignatureCommitment)
+    MixpanelService.track('Onboarding Completed', {
+      screen: 'PersonalizedPlanCard',
+      subscribed,
+      goal: state.primaryGoal ?? '',
+      daily_commitment: state.dailyMinutes ?? '',
+    });
+
+    // Fire AppsFlyer registration event (deduplicated)
+    try {
+      const sent = await AsyncStorage.getItem(AF_REG_SENT_KEY);
+      if (!sent) {
+        AppsFlyerService.logEvent('af_complete_registration', {
+          af_registration_method: subscribed ? 'paywall_subscribe' : 'paywall_skip',
+        });
+        await AsyncStorage.setItem(AF_REG_SENT_KEY, '1');
+      }
+    } catch {}
+
+    dispatch({ type: 'COMPLETE_ONBOARDING' });
+  }, [dispatch, state.primaryGoal, state.dailyMinutes]);
 
   const dailyHours = (state.dailyMinutes ?? 60) / 60;
   const dailyLabel = dailyHours === 1 ? '1 hour' : `${dailyHours} hours`;
@@ -156,7 +188,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
 
       <SafeAreaView style={styles.safe}>
         <View style={styles.content}>
-        <ProgressIndicator current={18} total={19} />
+        <ProgressIndicator current={10} total={10} />
 
         <View style={styles.body}>
           <Animated.View style={{ opacity: headlineOpacity, transform: [{ translateY: headlineTranslateY }] }}>
@@ -229,7 +261,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
               if (subscribed) {
                 MixpanelService.track('Subscription Started', { source: 'onboarding' });
                 Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
-                  navigation.navigate('EmailCollection');
+                  completeOnboarding(true);
                 });
               } else {
                 AppsFlyerService.logEvent('paywall_dismiss', {
@@ -278,7 +310,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
                 goal: state.primaryGoal ?? '',
                 daily_commitment: state.dailyMinutes ?? '',
               });
-              dispatch({ type: 'COMPLETE_ONBOARDING' });
+              completeOnboarding(false);
             }}
             activeOpacity={0.7}
             style={styles.skipButton}

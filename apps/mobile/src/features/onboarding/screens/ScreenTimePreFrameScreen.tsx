@@ -16,6 +16,7 @@ import { PermissionService } from '../../../services/PermissionService';
 import { LockModeService } from '../../../services/LockModeService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -38,9 +39,7 @@ const ScreenTimePreFrameScreen: React.FC<Props> = ({ navigation }) => {
   const buttonOpacity = useRef(new Animated.Value(0)).current;
   const deniedOpacity = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ScreenTimePreFrame', step: 13, total_steps: 18 });
-  }, []);
+  useOnboardingTracking('ScreenTimePreFrame');
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -72,7 +71,7 @@ const ScreenTimePreFrameScreen: React.FC<Props> = ({ navigation }) => {
 
   const navigateForward = useCallback(() => {
     Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
-      navigation.navigate('ProductExplainer');
+      navigation.navigate('NotificationPreFrame');
     });
   }, [screenOpacity, navigation]);
 
@@ -102,7 +101,7 @@ const ScreenTimePreFrameScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer>
-        <ProgressIndicator current={12} total={17} />
+        <ProgressIndicator current={8} total={10} />
 
         <View style={styles.body}>
           <View style={styles.lottieWrap}>

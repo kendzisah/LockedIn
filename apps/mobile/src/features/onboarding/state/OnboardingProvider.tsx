@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useReducer, useRef, useSta
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { OnboardingState, OnboardingAction } from './types';
 import { MixpanelService } from '../../../services/MixpanelService';
+import { clearPersistedOnboardingScreen } from '../hooks/useOnboardingTracking';
 
 const STORAGE_KEY = '@lockedin/onboarding_complete';
 const ONBOARDING_DATA_KEY = '@lockedin/onboarding_data';
@@ -16,6 +17,7 @@ const initialState: OnboardingState = {
   notificationsGranted: null,
   demoCompleted: false,
   onboardingComplete: false,
+  currentScreen: null,
 };
 
 function onboardingReducer(
@@ -43,6 +45,10 @@ function onboardingReducer(
       return { ...state, onboardingComplete: true };
     case 'HYDRATE_ONBOARDING':
       return { ...state, onboardingComplete: action.payload };
+    case 'SET_CURRENT_SCREEN':
+      return { ...state, currentScreen: action.payload };
+    case 'HYDRATE_STATE':
+      return { ...state, ...action.payload };
     default:
       return state;
   }
@@ -78,12 +84,18 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
             if (typeof data.dailyMinutes === 'string') {
               data.dailyMinutes = 60;
             }
-            if (typeof data.dailyMinutes === 'number') {
-              dispatch({ type: 'SET_DAILY_MINUTES', payload: data.dailyMinutes });
-            }
-            if (typeof data.primaryGoal === 'string') {
-              dispatch({ type: 'SET_PRIMARY_GOAL', payload: data.primaryGoal });
-            }
+            // Hydrate all persisted onboarding answers in one dispatch
+            dispatch({
+              type: 'HYDRATE_STATE',
+              payload: {
+                ...(typeof data.dailyMinutes === 'number' && { dailyMinutes: data.dailyMinutes }),
+                ...(typeof data.primaryGoal === 'string' && { primaryGoal: data.primaryGoal }),
+                ...(typeof data.phoneUsageHours === 'string' && { phoneUsageHours: data.phoneUsageHours }),
+                ...(typeof data.userAge === 'number' && { userAge: data.userAge }),
+                ...(Array.isArray(data.selectedWeaknesses) && { selectedWeaknesses: data.selectedWeaknesses }),
+                ...(typeof data.currentScreen === 'string' && { currentScreen: data.currentScreen }),
+              },
+            });
           } catch {}
         }
         if (flagRaw === 'true') {
@@ -97,6 +109,19 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
     })();
   }, []);
 
+  // ── Persist quiz answers incrementally so resume works ──
+  useEffect(() => {
+    if (state.onboardingComplete) return; // Don't overwrite after completion
+    AsyncStorage.setItem(ONBOARDING_DATA_KEY, JSON.stringify({
+      dailyMinutes: state.dailyMinutes,
+      primaryGoal: state.primaryGoal,
+      phoneUsageHours: state.phoneUsageHours,
+      userAge: state.userAge,
+      selectedWeaknesses: state.selectedWeaknesses,
+      currentScreen: state.currentScreen,
+    })).catch(() => {});
+  }, [state.dailyMinutes, state.primaryGoal, state.phoneUsageHours, state.userAge, state.selectedWeaknesses, state.currentScreen, state.onboardingComplete]);
+
   // ── Persist when onboardingComplete flips to true ──
   useEffect(() => {
     if (state.onboardingComplete && !prevComplete.current) {
@@ -104,10 +129,8 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
         console.warn('[OnboardingProvider] Persist failed:', e);
       });
 
-      AsyncStorage.setItem(ONBOARDING_DATA_KEY, JSON.stringify({
-        dailyMinutes: state.dailyMinutes,
-        primaryGoal: state.primaryGoal,
-      })).catch(() => {});
+      // Clear resume screen since onboarding is done
+      clearPersistedOnboardingScreen().catch(() => {});
 
       MixpanelService.setUserProperties({
         age: state.userAge,

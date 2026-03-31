@@ -14,6 +14,7 @@ import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import { AppsFlyerService } from '../../../services/AppsFlyerService';
 import { MixpanelService } from '../../../services/MixpanelService';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily, Typography } from '../../../design/typography';
@@ -47,9 +48,7 @@ const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
 
-  useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ControlQuiz', step: 9, total_steps: 18 });
-  }, []);
+  useOnboardingTracking('ControlQuiz');
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -127,7 +126,7 @@ const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
-        <ProgressIndicator current={8} total={17} />
+        <ProgressIndicator current={6} total={10} />
 
         <View style={styles.body}>
           <Animated.Text

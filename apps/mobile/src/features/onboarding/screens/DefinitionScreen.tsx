@@ -9,10 +9,10 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import ScreenContainer from '../../../design/components/ScreenContainer';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
-import { MixpanelService } from '../../../services/MixpanelService';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'Definition'>;
 
@@ -28,9 +28,7 @@ const DefinitionScreen: React.FC<Props> = ({ navigation }) => {
   const defTranslateY = useRef(new Animated.Value(10)).current;
   const tapOpacity = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'Definition', step: 1, total_steps: 18 });
-  }, []);
+  useOnboardingTracking('Definition');
 
   useEffect(() => {
     const seq = Animated.sequence([
@@ -64,7 +62,7 @@ const DefinitionScreen: React.FC<Props> = ({ navigation }) => {
       duration: 400,
       useNativeDriver: true,
     }).start(() => {
-      navigation.navigate('SplashHook');
+      navigation.navigate('PhoneTimeQuiz');
     });
   };
 

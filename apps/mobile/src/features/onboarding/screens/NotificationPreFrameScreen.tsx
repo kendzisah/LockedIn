@@ -15,6 +15,7 @@ import { NotificationService } from '../../../services/NotificationService';
 import { MixpanelService } from '../../../services/MixpanelService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -26,9 +27,7 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'NotificationPreFr
 const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
   const { dispatch } = useOnboarding();
 
-  useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'NotificationPreFrame', step: 15, total_steps: 18 });
-  }, []);
+  useOnboardingTracking('NotificationPreFrame');
 
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const headlineOpacity = useRef(new Animated.Value(0)).current;
@@ -89,7 +88,7 @@ const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer>
-        <ProgressIndicator current={17} total={19} />
+        <ProgressIndicator current={9} total={10} />
 
         <View style={styles.body}>
           <View style={styles.lottieWrap}>

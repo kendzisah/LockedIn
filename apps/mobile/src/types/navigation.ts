@@ -1,28 +1,22 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 
 /**
- * Onboarding stack screens (V2).
- * AwarenessStatement is a phase within SplashHookScreen, not a separate route.
+ * Onboarding stack screens (V2 — streamlined 10-screen flow).
+ *
+ * Cut screens: SplashHook, FixPromise, TopPerformersFrame, CompoundStat,
+ * NinetyDayVision, ProductExplainer, EmailCollection, SignatureCommitment.
  */
 export type OnboardingStackParamList = {
   Definition: undefined;
-  SplashHook: undefined;
   PhoneTimeQuiz: undefined;
   AgeQuiz: undefined;
   LossAversionStat: undefined;
-  FixPromise: undefined;
-  TopPerformersFrame: undefined;
   GoalQuiz: undefined;
   ControlQuiz: undefined;
   DailyTimeCommitment: undefined;
-  CompoundStat: undefined;
-  NinetyDayVision: undefined;
   ScreenTimePreFrame: undefined;
-  ProductExplainer: undefined;
   NotificationPreFrame: undefined;
   PersonalizedPlanCard: undefined;
-  EmailCollection: undefined;
-  SignatureCommitment: undefined;
 };
 
 /**

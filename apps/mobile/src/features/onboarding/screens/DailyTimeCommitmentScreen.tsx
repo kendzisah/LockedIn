@@ -13,6 +13,7 @@ import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import { MixpanelService } from '../../../services/MixpanelService';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -66,9 +67,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
   const knobRef = useRef<View>(null);
   const knobLayout = useRef({ x: 0, y: 0, w: 0, h: 0 });
 
-  useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'DailyTimeCommitment', step: 10, total_steps: 18 });
-  }, []);
+  useOnboardingTracking('DailyTimeCommitment');
 
   useEffect(() => {
     Animated.parallel([
@@ -142,7 +141,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
       duration: 400,
       useNativeDriver: true,
     }).start(() => {
-      navigation.navigate('CompoundStat');
+      navigation.navigate('ScreenTimePreFrame');
     });
   };
 
@@ -245,7 +244,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
-        <ProgressIndicator current={10} total={17} />
+        <ProgressIndicator current={7} total={10} />
 
         <View style={styles.body}>
           <Animated.Text
