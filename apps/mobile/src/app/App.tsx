@@ -10,9 +10,11 @@ import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
 import { InterTight_600SemiBold } from '@expo-google-fonts/inter-tight/600SemiBold';
 import { InterTight_700Bold } from '@expo-google-fonts/inter-tight/700Bold';
 import { InterTight_800ExtraBold } from '@expo-google-fonts/inter-tight/800ExtraBold';
+import { AuthProvider } from '../features/auth/AuthProvider';
 import { OnboardingProvider } from '../features/onboarding/state/OnboardingProvider';
 import { SubscriptionProvider } from '../features/subscription/SubscriptionProvider';
 import { SessionProvider } from '../features/home/state/SessionProvider';
+import { MissionsProvider } from '../features/missions/MissionsProvider';
 import RootNavigator from '../navigation/RootNavigator';
 import { Colors } from '../design/colors';
 import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
@@ -123,16 +125,20 @@ const App: React.FC = () => {
   return (
     <View style={styles.root} onLayout={onLayoutRootView}>
       <SafeAreaProvider>
-        <OnboardingProvider>
-          <SubscriptionProvider>
-            <SessionProvider>
-              <NavigationContainer>
-                <StatusBar style="light" />
-                <RootNavigator />
-              </NavigationContainer>
-            </SessionProvider>
-          </SubscriptionProvider>
-        </OnboardingProvider>
+        <AuthProvider>
+          <OnboardingProvider>
+            <SubscriptionProvider>
+              <SessionProvider>
+                <MissionsProvider>
+                  <NavigationContainer>
+                    <StatusBar style="light" />
+                    <RootNavigator />
+                  </NavigationContainer>
+                </MissionsProvider>
+              </SessionProvider>
+            </SubscriptionProvider>
+          </OnboardingProvider>
+        </AuthProvider>
       </SafeAreaProvider>
     </View>
   );

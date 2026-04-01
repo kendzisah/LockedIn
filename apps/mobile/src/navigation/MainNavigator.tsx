@@ -6,6 +6,11 @@ import SessionScreen from '../features/home/SessionScreen';
 import ExecutionBlockScreen from '../features/home/ExecutionBlockScreen';
 import SessionCompleteScreen from '../features/home/SessionCompleteScreen';
 import ProgramCompleteScreen from '../features/home/ProgramCompleteScreen';
+import SignUpScreen from '../features/auth/screens/SignUpScreen';
+import SignInScreen from '../features/auth/screens/SignInScreen';
+import ProfileScreen from '../features/auth/screens/ProfileScreen';
+import WeeklyReportScreen from '../features/report/screens/WeeklyReportScreen';
+import LeaderboardScreen from '../features/leaderboard/screens/LeaderboardScreen';
 import type { MainStackParamList } from '../types/navigation';
 import { Colors } from '../design/colors';
 
@@ -45,6 +50,31 @@ const MainNavigator: React.FC = () => {
         name="ProgramComplete"
         component={ProgramCompleteScreen}
         options={{ animation: 'none' }}
+      />
+      <Stack.Screen
+        name="SignUp"
+        component={SignUpScreen}
+        options={{ animation: 'fade' }}
+      />
+      <Stack.Screen
+        name="SignIn"
+        component={SignInScreen}
+        options={{ animation: 'fade' }}
+      />
+      <Stack.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{ animation: 'fade' }}
+      />
+      <Stack.Screen
+        name="WeeklyReport"
+        component={WeeklyReportScreen}
+        options={{ animation: 'fade' }}
+      />
+      <Stack.Screen
+        name="Leaderboard"
+        component={LeaderboardScreen}
+        options={{ animation: 'fade' }}
       />
     </Stack.Navigator>
   );

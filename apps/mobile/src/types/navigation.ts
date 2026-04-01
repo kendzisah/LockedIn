@@ -33,6 +33,11 @@ export type MainStackParamList = {
     streak: number;
   };
   ProgramComplete: undefined;
+  SignUp: undefined;
+  SignIn: undefined;
+  Profile: undefined;
+  WeeklyReport: undefined;
+  Leaderboard: undefined;
 };
 
 /**

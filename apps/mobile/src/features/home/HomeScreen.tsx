@@ -37,6 +37,11 @@ import ProgressBlock from './components/ProgressBlock';
 import LockButton from './components/LockButton';
 import StatsRow from './components/StatsRow';
 import IdentityCard from './components/IdentityCard';
+import StreakDisplay from '../streak/components/StreakDisplay';
+import MissionsPanel from '../missions/components/MissionsPanel';
+import TrialChallengeCard from '../trial/components/TrialChallengeCard';
+import GymCheckInCard from '../gym/components/GymCheckInCard';
+import StreakRecoveryModal from '../streak/components/StreakRecoveryModal';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
 import { ClockService, type CTAState } from '../../services/ClockService';
@@ -50,6 +55,8 @@ import { MixpanelService } from '../../services/MixpanelService';
 import { Ionicons } from '@expo/vector-icons';
 import ScrollPicker from './components/ScrollPicker';
 import { ACTIVE_EB_KEY } from './ExecutionBlockScreen';
+import { StreakRecoveryService } from '../../services/StreakRecoveryService';
+import { WeeklyReportService } from '../../services/WeeklyReportService';
 
 const TUTORIAL_STORAGE_KEY = '@lockedin/home_tutorial_shown';
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120] as const;
@@ -82,6 +89,9 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   // Tutorial dialog
   const [showTutorial, setShowTutorial] = useState(false);
   const tutorialChecked = useRef(false);
+
+  // Streak recovery modal
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
 
   // ── Program day ──
   const programDay = useMemo(
@@ -166,6 +176,16 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       if (!val) setShowTutorial(true);
     });
   }, [isHydrated]);
+
+  // ── Weekly report auto-show ──
+  useEffect(() => {
+    if (!isHydrated) return;
+    WeeklyReportService.shouldShowReport().then((shouldShow) => {
+      if (shouldShow) {
+        navigation.navigate('WeeklyReport');
+      }
+    });
+  }, [isHydrated, navigation]);
 
   // ── Notification scheduling ──
   useEffect(() => {
@@ -346,6 +366,16 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
     AsyncStorage.setItem(TUTORIAL_STORAGE_KEY, 'true');
   }, []);
 
+  // ── Streak recovery handlers ──
+  const canRecover = useMemo(
+    () => StreakRecoveryService.canRecover(),
+    [state.consecutiveStreak, tick]
+  );
+
+  const handleStreakRecovery = useCallback(() => {
+    setShowRecoveryModal(true);
+  }, []);
+
   // ── Reset opacity when screen mounts or comes back into focus ──
   useEffect(() => {
     screenOpacity.setValue(1);
@@ -367,61 +397,121 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const alignBtnIcon = isNight ? 'moon-outline' : 'sunny-outline';
   const alignBtnColor = isNight ? '#B0A0FF' : '#FFC857';
 
+  // ── Check for trial and gym features ──
+  const isTrialActive = onboardingState.isTrialActive === true;
+  const primaryGoal = onboardingState.primaryGoal;
+  const showGymCard = primaryGoal === 'Improve my physique';
+
   return (
     <Animated.View style={[styles.root, { opacity: screenOpacity }]}>
       <AnimatedGradient />
 
       <SafeAreaView style={styles.safeArea}>
-        <DayOfWeekRow />
-
-        <View style={styles.progressSection}>
-          <ProgressBlock />
-        </View>
-
-        {/* Daily Focus Tracker */}
-        <View style={styles.focusTracker}>
-          <View style={styles.focusHeader}>
-            <Ionicons name="timer-outline" size={14} color={Colors.accent} />
-            <Text style={styles.focusLabel}>
-              {dailyFocused} of {dailyCommitment} min focused today
-            </Text>
+        {/* Header with Day of Week Row and icons */}
+        <View style={styles.headerRow}>
+          <View style={styles.dayOfWeekContainer}>
+            <DayOfWeekRow />
           </View>
-          <View style={styles.focusBarTrack}>
-            <View style={[styles.focusBarFill, { width: `${focusProgress * 100}%` }]} />
+          {/* Profile and Leaderboard icons */}
+          <View style={styles.headerIcons}>
+            <TouchableOpacity
+              style={styles.headerIcon}
+              onPress={() => navigation.navigate('Profile')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="person-circle-outline" size={28} color={Colors.accent} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIcon}
+              onPress={() => navigation.navigate('Leaderboard')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trophy-outline" size={28} color={Colors.accent} />
+            </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.lockSection}>
-          <LockButton
-            onPress={handleLockPress}
-            onAnimationComplete={handleLockAnimationComplete}
-            animateLock={animateLock}
-          />
-        </View>
-
-        {/* Alignment / Reflection Button */}
-        <TouchableOpacity
-          style={[styles.alignmentButton, alignBtnDone && styles.alignmentButtonDone]}
-          onPress={handleAlignmentPress}
-          activeOpacity={0.7}
-          disabled={alignBtnDone}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          scrollEnabled={true}
         >
-          <Ionicons
-            name={alignBtnIcon as any}
-            size={16}
-            color={alignBtnDone ? Colors.textMuted : alignBtnColor}
-            style={styles.alignmentIcon}
-          />
-          <Text style={[styles.alignmentText, alignBtnDone && styles.alignmentTextDone]}>
-            {alignBtnLabel}
-          </Text>
-        </TouchableOpacity>
+          <View style={styles.progressSection}>
+            <ProgressBlock />
+          </View>
 
-        <StatsRow />
+          {/* Streak Display */}
+          <View style={styles.streakSection}>
+            <StreakDisplay
+              streak={state.consecutiveStreak}
+              onRecovery={canRecover ? handleStreakRecovery : undefined}
+            />
+          </View>
 
-        <View style={styles.identitySection}>
-          <IdentityCard />
-        </View>
+          {/* Daily Focus Tracker */}
+          <View style={styles.focusTracker}>
+            <View style={styles.focusHeader}>
+              <Ionicons name="timer-outline" size={14} color={Colors.accent} />
+              <Text style={styles.focusLabel}>
+                {dailyFocused} of {dailyCommitment} min focused today
+              </Text>
+            </View>
+            <View style={styles.focusBarTrack}>
+              <View style={[styles.focusBarFill, { width: `${focusProgress * 100}%` }]} />
+            </View>
+          </View>
+
+          <View style={styles.lockSection}>
+            <LockButton
+              onPress={handleLockPress}
+              onAnimationComplete={handleLockAnimationComplete}
+              animateLock={animateLock}
+            />
+          </View>
+
+          {/* Alignment / Reflection Button */}
+          <TouchableOpacity
+            style={[styles.alignmentButton, alignBtnDone && styles.alignmentButtonDone]}
+            onPress={handleAlignmentPress}
+            activeOpacity={0.7}
+            disabled={alignBtnDone}
+          >
+            <Ionicons
+              name={alignBtnIcon as any}
+              size={16}
+              color={alignBtnDone ? Colors.textMuted : alignBtnColor}
+              style={styles.alignmentIcon}
+            />
+            <Text style={[styles.alignmentText, alignBtnDone && styles.alignmentTextDone]}>
+              {alignBtnLabel}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Missions Panel */}
+          <View style={styles.missionsSection}>
+            <MissionsPanel />
+          </View>
+
+          {/* Trial Challenge Card (only if trial is active) */}
+          {isTrialActive && (
+            <View style={styles.trialSection}>
+              <TrialChallengeCard />
+            </View>
+          )}
+
+          {/* Gym Check-In Card (only if primary goal is fitness) */}
+          {showGymCard && (
+            <View style={styles.gymSection}>
+              <GymCheckInCard />
+            </View>
+          )}
+
+          <StatsRow />
+
+          <View style={styles.identitySection}>
+            <IdentityCard />
+          </View>
+        </ScrollView>
       </SafeAreaView>
 
       {/* Resume Interstitial Modal */}
@@ -539,6 +629,16 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       </Modal>
 
+      {/* Streak Recovery Modal */}
+      <StreakRecoveryModal
+        visible={showRecoveryModal}
+        onClose={() => setShowRecoveryModal(false)}
+        onRecover={() => {
+          setShowRecoveryModal(false);
+          dispatch({ type: 'RECOVER_STREAK' });
+        }}
+      />
+
       {/* First-Open Tutorial Dialog */}
       <Modal visible={showTutorial} transparent animationType="fade" statusBarTranslucent onRequestClose={handleDismissTutorial}>
         <View style={styles.modalOverlay}>
@@ -621,7 +721,30 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   loading: { flex: 1, backgroundColor: Colors.background },
   safeArea: { flex: 1, paddingHorizontal: 20 },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  dayOfWeekContainer: {
+    flex: 1,
+  },
+  headerIcons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  headerIcon: {
+    padding: 8,
+  },
+  scrollContent: {
+    paddingBottom: 32,
+  },
   progressSection: { marginTop: 8, marginBottom: 4 },
+  streakSection: { marginBottom: 12, paddingHorizontal: 4 },
+  missionsSection: { marginBottom: 12, paddingHorizontal: 4 },
+  trialSection: { marginBottom: 12, paddingHorizontal: 4 },
+  gymSection: { marginBottom: 12, paddingHorizontal: 4 },
   lockSection: {
     flex: 1,
     alignItems: 'center',
