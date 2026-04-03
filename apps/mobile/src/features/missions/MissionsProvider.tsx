@@ -12,6 +12,7 @@ import {
   getCompletedCount,
   calculateTotalXP,
 } from './MissionEngine';
+import { CrewService } from '../leaderboard/CrewService';
 
 // ─── Action types ───────────────────────────────────────
 
@@ -232,6 +233,22 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
 
   const completeMission = (missionId: string) => {
     dispatch({ type: 'COMPLETE_MISSION', payload: missionId });
+
+    (async () => {
+      try {
+        const stats = await CrewService.getWeeklyStats();
+        const updated = { missions_done: stats.missions_done + 1 };
+        await CrewService.updateWeeklyStats(updated);
+        const latest = await CrewService.getWeeklyStats();
+        await CrewService.submitScoreToAllCrews(
+          latest.focus_minutes,
+          latest.missions_done,
+          latest.streak_days,
+        );
+      } catch (e) {
+        console.error('[MissionsProvider] Crew score submission failed:', e);
+      }
+    })();
   };
 
   const generateDailyMissionsAction = (goal: string) => {

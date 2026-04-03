@@ -91,9 +91,9 @@ const TabNavigator: React.FC = () => {
         name="BoardTab"
         component={BoardTab}
         options={{
-          tabBarLabel: 'Board',
+          tabBarLabel: 'Crews',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="trophy" size={size} color={color} />
+            <Ionicons name="people" size={size} color={color} />
           ),
         }}
       />

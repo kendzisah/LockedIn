@@ -21,6 +21,7 @@ import { getCompletionMessage, getStreakCheckpoint } from './engine/CompletionCo
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
 import { getStreakTierInfo, getFlameColorFilters } from '../../design/streakTiers';
+import { CrewService } from '../leaderboard/CrewService';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'SessionComplete'>;
 
@@ -42,6 +43,27 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
   const [showStreak, setShowStreak] = useState(false);
 
   const showStreakCelebration = phase === 'execution_block' && streak > 0;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const stats = await CrewService.getWeeklyStats();
+        const updated = {
+          focus_minutes: stats.focus_minutes + durationMinutes,
+          streak_days: streak,
+        };
+        await CrewService.updateWeeklyStats(updated);
+        const latest = await CrewService.getWeeklyStats();
+        await CrewService.submitScoreToAllCrews(
+          latest.focus_minutes,
+          latest.missions_done,
+          latest.streak_days,
+        );
+      } catch (e) {
+        console.error('[SessionComplete] Score submission failed:', e);
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const navigateHome = useCallback(() => {
     if (dismissed) return;

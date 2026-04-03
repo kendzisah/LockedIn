@@ -12,6 +12,9 @@ import SessionCompleteScreen from '../features/home/SessionCompleteScreen';
 import SignUpScreen from '../features/auth/screens/SignUpScreen';
 import SignInScreen from '../features/auth/screens/SignInScreen';
 import WeeklyReportScreen from '../features/report/screens/WeeklyReportScreen';
+import CrewDetailScreen from '../features/leaderboard/screens/CrewDetailScreen';
+import CreateCrewScreen from '../features/leaderboard/screens/CreateCrewScreen';
+import JoinCrewScreen from '../features/leaderboard/screens/JoinCrewScreen';
 import ScrollPicker from '../features/home/components/ScrollPicker';
 import type { MainStackParamList } from '../types/navigation';
 import { Colors } from '../design/colors';
@@ -79,6 +82,21 @@ const MainNavigator: React.FC = () => {
             name="WeeklyReport"
             component={WeeklyReportScreen}
             options={{ animation: 'fade' }}
+          />
+          <Stack.Screen
+            name="CrewDetail"
+            component={CrewDetailScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="CreateCrew"
+            component={CreateCrewScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="JoinCrew"
+            component={JoinCrewScreen}
+            options={{ animation: 'slide_from_right' }}
           />
         </Stack.Navigator>
 

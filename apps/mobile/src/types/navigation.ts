@@ -50,6 +50,9 @@ export type MainStackParamList = {
   SignUp: undefined;
   SignIn: undefined;
   WeeklyReport: undefined;
+  CrewDetail: { crew_id: string };
+  CreateCrew: undefined;
+  JoinCrew: undefined;
 };
 
 /**

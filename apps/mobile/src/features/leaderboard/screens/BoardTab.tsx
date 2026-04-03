@@ -1,6 +1,6 @@
 import React from 'react';
-import LeaderboardScreen from './LeaderboardScreen';
+import CrewListScreen from './CrewListScreen';
 
-const BoardTab: React.FC = () => <LeaderboardScreen />;
+const BoardTab: React.FC = () => <CrewListScreen />;
 
 export default BoardTab;

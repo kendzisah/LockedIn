@@ -2,8 +2,21 @@
  * ProfileTab — Glassmorphic profile with stats, weekly report, and settings menus.
  */
 
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useCallback, useState, useRef } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Keyboard,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import * as StoreReview from 'expo-store-review';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -19,16 +32,34 @@ import { FontFamily } from '../../../design/typography';
 
 type NavProp = NativeStackNavigationProp<MainStackParamList>;
 
+const FORMSPREE_URL = 'https://formspree.io/f/xwvwngjo';
+
 const ProfileTab: React.FC = () => {
   const navigation = useNavigation<NavProp>();
   const { state } = useSession();
   const { user, signOut } = useAuth();
   const { totalXP } = useMissions();
 
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
+
   const streak = state.consecutiveStreak;
   const tierInfo = useMemo(() => getStreakTierInfo(streak), [streak]);
   const focusHours = Math.round((state.lifetimeTotalMinutes / 60) * 10) / 10;
   const initial = (user?.email?.[0] ?? 'U').toUpperCase();
+
+  const handleFeedback = useCallback(() => setFeedbackVisible(true), []);
+  const handleRate = useCallback(async () => {
+    try {
+      if (await StoreReview.hasAction()) {
+        await StoreReview.requestReview();
+      }
+    } catch {
+      // silently fail if review dialog unavailable
+    }
+  }, []);
+  const handlePremium = useCallback(() => {
+    navigation.navigate('PaywallOffer');
+  }, [navigation]);
 
   return (
     <View style={styles.root}>
@@ -37,7 +68,6 @@ const ProfileTab: React.FC = () => {
         locations={[0, 0.35, 1]}
         style={StyleSheet.absoluteFill}
       />
-      {/* Avatar glow orb */}
       <View style={[styles.avatarGlow, { backgroundColor: `${tierInfo.color}08` }]} />
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -89,15 +119,14 @@ const ProfileTab: React.FC = () => {
           <View style={styles.menuGroup}>
             <MenuItem icon="person-outline" label="Edit Profile" />
             <MenuItem icon="notifications-outline" label="Notifications" />
-            <MenuItem icon="diamond-outline" label="Inner Circle" badge="Premium" isLast />
+            <MenuItem icon="diamond-outline" label="Inner Circle" badge="Premium" isLast onPress={handlePremium} />
           </View>
 
           {/* App section */}
           <Text style={styles.menuSectionLabel}>App</Text>
           <View style={styles.menuGroup}>
-            <MenuItem icon="settings-outline" label="Settings" />
-            <MenuItem icon="chatbubble-outline" label="Send Feedback" />
-            <MenuItem icon="star-outline" label="Rate Locked In" isLast />
+            <MenuItem icon="chatbubble-outline" label="Send Feedback" onPress={handleFeedback} />
+            <MenuItem icon="star-outline" label="Rate Locked In" isLast onPress={handleRate} />
           </View>
 
           <TouchableOpacity style={styles.signOutBtn} onPress={signOut} activeOpacity={0.7}>
@@ -105,9 +134,144 @@ const ProfileTab: React.FC = () => {
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
+
+      <FeedbackModal
+        visible={feedbackVisible}
+        onClose={() => setFeedbackVisible(false)}
+        userEmail={user?.email ?? undefined}
+      />
     </View>
   );
 };
+
+// ─── Feedback Modal ──────────────────────────────────────
+
+interface FeedbackModalProps {
+  visible: boolean;
+  onClose: () => void;
+  userEmail?: string;
+}
+
+const FeedbackModal: React.FC<FeedbackModalProps> = ({ visible, onClose, userEmail }) => {
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const inputRef = useRef<TextInput>(null);
+
+  const canSend = message.trim().length > 0 && !sending;
+
+  const handleSend = async () => {
+    if (!canSend) return;
+    Keyboard.dismiss();
+    setSending(true);
+
+    try {
+      const res = await fetch(FORMSPREE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          message: message.trim(),
+          email: userEmail ?? 'anonymous',
+          _subject: 'Locked In App Feedback',
+        }),
+      });
+
+      if (res.ok) {
+        setSent(true);
+        setTimeout(() => {
+          handleClose();
+        }, 1800);
+      } else {
+        Alert.alert('Error', 'Failed to send feedback. Please try again.');
+      }
+    } catch {
+      Alert.alert('Error', 'Network error. Please check your connection.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleClose = () => {
+    setMessage('');
+    setSent(false);
+    setSending(false);
+    onClose();
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={handleClose}
+    >
+      <Pressable style={fb.overlay} onPress={handleClose}>
+        <Pressable style={fb.card} onPress={(e) => e.stopPropagation()}>
+          {sent ? (
+            <View style={fb.sentContainer}>
+              <View style={fb.sentIconWrap}>
+                <Ionicons name="checkmark-circle" size={36} color={Colors.success} />
+              </View>
+              <Text style={fb.sentTitle}>Thank you!</Text>
+              <Text style={fb.sentSub}>Your feedback helps us improve Locked In.</Text>
+            </View>
+          ) : (
+            <>
+              <View style={fb.heroIcon}>
+                <Ionicons name="chatbubble-ellipses" size={22} color={Colors.accent} />
+              </View>
+
+              <Text style={fb.title}>Send Feedback</Text>
+              <Text style={fb.subtitle}>
+                Tell us what you love, what's broken, or what you'd like to see next.
+              </Text>
+
+              <TextInput
+                ref={inputRef}
+                style={fb.input}
+                value={message}
+                onChangeText={setMessage}
+                placeholder="Your feedback..."
+                placeholderTextColor={Colors.textMuted}
+                multiline
+                textAlignVertical="top"
+                maxLength={2000}
+                autoFocus
+              />
+
+              <View style={fb.charRow}>
+                <Text style={fb.charCount}>{message.length}/2000</Text>
+              </View>
+
+              <TouchableOpacity
+                style={[fb.sendBtn, !canSend && fb.sendBtnDisabled]}
+                onPress={handleSend}
+                disabled={!canSend}
+                activeOpacity={0.85}
+              >
+                {sending ? (
+                  <ActivityIndicator color={Colors.primary} size="small" />
+                ) : (
+                  <View style={fb.sendBtnInner}>
+                    <Ionicons name="send" size={15} color={Colors.primary} />
+                    <Text style={fb.sendBtnText}>Send Feedback</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={handleClose} style={fb.cancelBtn} activeOpacity={0.8}>
+                <Text style={fb.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+};
+
+// ─── Stat Card ───────────────────────────────────────────
 
 interface StatCardProps { value: string; label: string; color: string; icon: keyof typeof Ionicons.glyphMap }
 const StatCard: React.FC<StatCardProps> = ({ value, label, color, icon }) => (
@@ -118,9 +282,21 @@ const StatCard: React.FC<StatCardProps> = ({ value, label, color, icon }) => (
   </View>
 );
 
-interface MenuItemProps { icon: keyof typeof Ionicons.glyphMap; label: string; badge?: string; isLast?: boolean }
-const MenuItem: React.FC<MenuItemProps> = ({ icon, label, badge, isLast }) => (
-  <TouchableOpacity style={[styles.menuItem, isLast && styles.menuItemLast]} activeOpacity={0.7}>
+// ─── Menu Item ───────────────────────────────────────────
+
+interface MenuItemProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  badge?: string;
+  isLast?: boolean;
+  onPress?: () => void;
+}
+const MenuItem: React.FC<MenuItemProps> = ({ icon, label, badge, isLast, onPress }) => (
+  <TouchableOpacity
+    style={[styles.menuItem, isLast && styles.menuItemLast]}
+    activeOpacity={0.7}
+    onPress={onPress}
+  >
     <View style={styles.menuIconWrap}>
       <Ionicons name={icon} size={18} color={Colors.textSecondary} />
     </View>
@@ -133,6 +309,8 @@ const MenuItem: React.FC<MenuItemProps> = ({ icon, label, badge, isLast }) => (
     <Ionicons name="chevron-forward" size={14} color={Colors.textMuted} />
   </TouchableOpacity>
 );
+
+// ─── Styles ──────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
@@ -227,6 +405,129 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,71,87,0.04)',
   },
   signOutText: { fontFamily: FontFamily.headingSemiBold, fontSize: 15, color: Colors.danger },
+});
+
+const fb = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  card: {
+    width: '100%',
+    backgroundColor: 'rgba(18,22,28,0.97)',
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  heroIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,194,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,194,255,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  title: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 20,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    letterSpacing: -0.3,
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontFamily: FontFamily.body,
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  input: {
+    backgroundColor: 'rgba(44,52,64,0.3)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 14,
+    minHeight: 120,
+    maxHeight: 200,
+    fontFamily: FontFamily.body,
+    fontSize: 15,
+    color: Colors.textPrimary,
+    lineHeight: 22,
+  },
+  charRow: {
+    alignItems: 'flex-end',
+    marginTop: 6,
+    marginBottom: 16,
+  },
+  charCount: {
+    fontFamily: FontFamily.body,
+    fontSize: 11,
+    color: Colors.textMuted,
+  },
+  sendBtn: {
+    borderRadius: 14,
+    backgroundColor: 'rgba(58,102,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(58,102,255,0.2)',
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  sendBtnDisabled: {
+    opacity: 0.35,
+    backgroundColor: 'rgba(44,52,64,0.3)',
+    borderColor: 'rgba(255,255,255,0.04)',
+  },
+  sendBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sendBtnText: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 15,
+    color: Colors.primary,
+  },
+  cancelBtn: {
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  cancelText: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 14,
+    color: Colors.textMuted,
+  },
+  sentContainer: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  sentIconWrap: {
+    marginBottom: 14,
+  },
+  sentTitle: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 20,
+    color: Colors.textPrimary,
+    marginBottom: 6,
+  },
+  sentSub: {
+    fontFamily: FontFamily.body,
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
 });
 
 export default ProfileTab;
