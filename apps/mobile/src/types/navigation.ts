@@ -1,43 +1,55 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 
 /**
- * Onboarding stack screens (V2 — streamlined 10-screen flow).
- *
- * Cut screens: SplashHook, FixPromise, TopPerformersFrame, CompoundStat,
- * NinetyDayVision, ProductExplainer, EmailCollection, SignatureCommitment.
+ * Onboarding stack screens.
  */
 export type OnboardingStackParamList = {
   Definition: undefined;
+  SplashHook: undefined;
   PhoneTimeQuiz: undefined;
   AgeQuiz: undefined;
   LossAversionStat: undefined;
   GoalQuiz: undefined;
   ControlQuiz: undefined;
+  FixPromise: undefined;
+  TopPerformersFrame: undefined;
+  CompoundStat: undefined;
+  NinetyDayVision: undefined;
+  ProductExplainer: undefined;
   DailyTimeCommitment: undefined;
+  EmailCollection: undefined;
+  SignatureCommitment: undefined;
   ScreenTimePreFrame: undefined;
   NotificationPreFrame: undefined;
   PersonalizedPlanCard: undefined;
 };
 
 /**
+ * Bottom tab navigator screens.
+ */
+export type TabParamList = {
+  HomeTab: undefined;
+  MissionsTab: undefined;
+  LockInTab: undefined;
+  BoardTab: undefined;
+  ProfileTab: undefined;
+};
+
+/**
  * Main app stack screens.
  */
 export type MainStackParamList = {
-  Home: undefined;
+  Tabs: NavigatorScreenParams<TabParamList> | undefined;
   PaywallOffer: undefined;
-  Session: { phase: 'lock_in' | 'unlock'; programDay: number; resuming?: boolean };
   ExecutionBlock: { durationMinutes: number };
   SessionComplete: {
-    phase: 'lock_in' | 'unlock' | 'execution_block';
+    phase: 'execution_block';
     durationMinutes: number;
     streak: number;
   };
-  ProgramComplete: undefined;
   SignUp: undefined;
   SignIn: undefined;
-  Profile: undefined;
   WeeklyReport: undefined;
-  Leaderboard: undefined;
 };
 
 /**

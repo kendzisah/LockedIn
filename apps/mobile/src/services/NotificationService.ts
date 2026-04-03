@@ -2,10 +2,8 @@
  * NotificationService — Schedules local notifications for LockedIn.
  *
  * Notification categories:
- *   - Daily Alignment (7:00 AM)
  *   - Streak motivator (9:00 AM) — dynamic copy based on streak count
  *   - Lock-In reminders (12 PM, 5 PM, 9 PM) — progressive urgency
- *   - Nightly Reflection (8:00 PM)
  *   - Close-to-goal nudge — one-shot 30 min after session if >= 80% of goal
  *   - Execution block done — one-shot at block end time
  *
@@ -16,12 +14,10 @@
 import * as Notifications from 'expo-notifications';
 
 // ─── Notification IDs ────────────────────────────────────────────
-const ALIGNMENT_ID = 'daily-alignment';
 const STREAK_ID = 'daily-streak';
 const LOCK_IN_NOON_ID = 'lock-in-reminder-noon';
 const LOCK_IN_AFTERNOON_ID = 'lock-in-reminder-afternoon';
 const LOCK_IN_EVENING_ID = 'lock-in-reminder-evening';
-const REFLECT_ID = 'daily-reflect';
 const CLOSE_TO_GOAL_ID = 'close-to-goal-nudge';
 const EXECUTION_BLOCK_DONE_ID = 'execution-block-done';
 
@@ -32,6 +28,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -57,21 +55,6 @@ export class NotificationService {
     try {
       if (!(await hasPermission())) return;
       await this.cancelAll();
-
-      // 7:00 AM — Daily Alignment
-      await Notifications.scheduleNotificationAsync({
-        identifier: ALIGNMENT_ID,
-        content: {
-          title: 'Your Daily Alignment is ready.',
-          body: 'Start your morning with intention. Learn from those who built empires.',
-          sound: 'default',
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour: 7,
-          minute: 0,
-        },
-      });
 
       // 9:00 AM — Streak motivator
       const streakContent = streak > 0
@@ -99,21 +82,6 @@ export class NotificationService {
 
       // Lock-In reminders (12 PM, 5 PM, 9 PM)
       await this.scheduleLockInReminders();
-
-      // 8:00 PM — Nightly Reflection
-      await Notifications.scheduleNotificationAsync({
-        identifier: REFLECT_ID,
-        content: {
-          title: 'Time to reflect.',
-          body: 'Your Nightly Reflection is ready. Close the day with clarity.',
-          sound: 'default',
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour: 20,
-          minute: 0,
-        },
-      });
 
       console.log('[NotificationService] All daily notifications scheduled');
     } catch (err) {

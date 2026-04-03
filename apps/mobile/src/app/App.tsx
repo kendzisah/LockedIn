@@ -15,13 +15,14 @@ import { OnboardingProvider } from '../features/onboarding/state/OnboardingProvi
 import { SubscriptionProvider } from '../features/subscription/SubscriptionProvider';
 import { SessionProvider } from '../features/home/state/SessionProvider';
 import { MissionsProvider } from '../features/missions/MissionsProvider';
+import { useOnboarding } from '../features/onboarding/state/OnboardingProvider';
+import { useSession } from '../features/home/state/SessionProvider';
 import RootNavigator from '../navigation/RootNavigator';
 import { Colors } from '../design/colors';
 import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SupabaseService } from '../services/SupabaseService';
-import { AudioService } from '../services/AudioService';
 import { NotificationService } from '../services/NotificationService';
 import { AppsFlyerService } from '../services/AppsFlyerService';
 import { MixpanelService } from '../services/MixpanelService';
@@ -30,6 +31,25 @@ import { ENV } from '../config/env';
 
 // Keep splash screen visible while fonts + auth load
 SplashScreen.preventAutoHideAsync();
+
+/**
+ * Bridges onboarding + session state into MissionsProvider props so the 3-slot
+ * engine receives the user's goal, weaknesses, onboarding date, and streak.
+ */
+const MissionsBridge: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { state: onboarding } = useOnboarding();
+  const { state: session } = useSession();
+
+  return (
+    <MissionsProvider
+      userGoal={onboarding.primaryGoal ?? undefined}
+      userWeaknesses={onboarding.selectedWeaknesses}
+      streak={session.consecutiveStreak}
+    >
+      {children}
+    </MissionsProvider>
+  );
+};
 
 const App: React.FC = () => {
   const [fontsLoaded] = useFonts({
@@ -57,7 +77,6 @@ const App: React.FC = () => {
         });
 
         await MixpanelService.initialize();
-        await AudioService.configure();
         await SupabaseService.initialize();
         let streak = 0;
         try {
@@ -129,12 +148,12 @@ const App: React.FC = () => {
           <OnboardingProvider>
             <SubscriptionProvider>
               <SessionProvider>
-                <MissionsProvider>
+                <MissionsBridge>
                   <NavigationContainer>
                     <StatusBar style="light" />
                     <RootNavigator />
                   </NavigationContainer>
-                </MissionsProvider>
+                </MissionsBridge>
               </SessionProvider>
             </SubscriptionProvider>
           </OnboardingProvider>

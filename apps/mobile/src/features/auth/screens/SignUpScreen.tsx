@@ -89,7 +89,7 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
     }
 
     // Success - navigate to home
-    navigation.replace('Home');
+    navigation.replace('Tabs');
   };
 
   const handleSignInWithApple = async () => {
@@ -103,11 +103,11 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
     }
 
     // Success - navigate to home
-    navigation.replace('Home');
+    navigation.replace('Tabs');
   };
 
   const handleContinueAsGuest = () => {
-    navigation.replace('Home');
+    navigation.replace('Tabs');
   };
 
   return (

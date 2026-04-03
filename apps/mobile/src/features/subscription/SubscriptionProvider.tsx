@@ -31,10 +31,11 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Identify user in Mixpanel with RevenueCat anonymous ID
       try {
-        const { appUserID } = await Purchases.getCustomerInfo();
-        if (appUserID) {
-          await MixpanelService.identify(appUserID);
-          await MixpanelService.setUserPropertiesOnce({ '$name': appUserID, first_seen: new Date().toISOString() });
+        const customerInfo = await Purchases.getCustomerInfo();
+        const userId = customerInfo.originalAppUserId;
+        if (userId) {
+          await MixpanelService.identify(userId);
+          await MixpanelService.setUserPropertiesOnce({ '$name': userId, first_seen: new Date().toISOString() });
         }
       } catch {}
 

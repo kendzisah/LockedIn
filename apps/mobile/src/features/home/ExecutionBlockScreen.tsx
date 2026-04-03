@@ -145,7 +145,7 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
     const elapsedSeconds = totalSeconds - Math.max(0, Math.ceil((endTimestampRef.current - Date.now()) / 1000));
 
     if (elapsedSeconds < 60) {
-      navigation.replace('Home' as any);
+      navigation.replace('Tabs' as any);
       return;
     }
 

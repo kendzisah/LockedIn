@@ -1,191 +1,248 @@
 /**
  * MissionsProvider.tsx
- * Context provider for daily missions with AsyncStorage persistence
+ * Context provider for the 3-slot daily mission system with AsyncStorage persistence
+ * and cumulative XP tracking.
  */
 
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Mission, getMissionsForGoal, getCompletedCount, calculateTotalXP } from './MissionEngine';
+import {
+  Mission,
+  generateDailyMissions,
+  getCompletedCount,
+  calculateTotalXP,
+} from './MissionEngine';
 
-// Action types
+// ─── Action types ───────────────────────────────────────
+
 type MissionAction =
   | { type: 'HYDRATE'; payload: MissionsState }
   | { type: 'GENERATE_DAILY'; payload: { missions: Mission[]; date: string } }
   | { type: 'COMPLETE_MISSION'; payload: string }
   | { type: 'RESET_DAY' };
 
-// State interface
+// ─── State ──────────────────────────────────────────────
+
 export interface MissionsState {
   missions: Mission[];
-  date: string; // ISO date string
+  date: string;
   completedCount: number;
+  /** XP earned today (resets each day). */
+  dailyXP: number;
+  /** Cumulative lifetime XP (never resets). */
   totalXP: number;
   lockedInToday: boolean;
 }
 
-// Context interface
 interface MissionsContextType extends MissionsState {
   completeMission: (missionId: string) => void;
   generateDailyMissions: (goal: string) => void;
   resetDay: () => void;
 }
 
-// Create context
 const MissionsContext = createContext<MissionsContextType | undefined>(undefined);
 
-// Initial state
 const getInitialState = (): MissionsState => ({
   missions: [],
   date: new Date().toISOString().split('T')[0],
   completedCount: 0,
+  dailyXP: 0,
   totalXP: 0,
   lockedInToday: false,
 });
 
-/**
- * Reducer for missions state management
- */
+// ─── Storage keys ───────────────────────────────────────
+
+const KEY_MISSIONS = '@lockedin/daily_missions';
+const KEY_DATE = '@lockedin/daily_missions_date';
+const KEY_CUMULATIVE_XP = '@lockedin/cumulative_xp';
+
+// ─── Reducer ────────────────────────────────────────────
+
 const missionsReducer = (state: MissionsState, action: MissionAction): MissionsState => {
   switch (action.type) {
-    case 'HYDRATE': {
+    case 'HYDRATE':
       return action.payload;
-    }
 
     case 'GENERATE_DAILY': {
       const completedCount = getCompletedCount(action.payload.missions);
-      const totalXP = calculateTotalXP(action.payload.missions.filter(m => m.completed));
+      const dailyXP = calculateTotalXP(action.payload.missions.filter((m) => m.completed));
       return {
+        ...state,
         missions: action.payload.missions,
         date: action.payload.date,
         completedCount,
-        totalXP,
-        lockedInToday: completedCount === 3,
+        dailyXP,
+        lockedInToday: completedCount === action.payload.missions.length,
       };
     }
 
     case 'COMPLETE_MISSION': {
-      const updatedMissions = state.missions.map(mission =>
-        mission.id === action.payload
-          ? { ...mission, completed: true }
-          : mission
+      const updated = state.missions.map((m) =>
+        m.id === action.payload ? { ...m, completed: true } : m,
       );
-
-      const completedCount = getCompletedCount(updatedMissions);
-      const totalXP = calculateTotalXP(updatedMissions.filter(m => m.completed));
+      const justCompleted = state.missions.find((m) => m.id === action.payload && !m.completed);
+      const xpGained = justCompleted ? justCompleted.xp : 0;
+      const completedCount = getCompletedCount(updated);
+      const dailyXP = calculateTotalXP(updated.filter((m) => m.completed));
 
       return {
         ...state,
-        missions: updatedMissions,
+        missions: updated,
         completedCount,
-        totalXP,
-        lockedInToday: completedCount === 3,
+        dailyXP,
+        totalXP: state.totalXP + xpGained,
+        lockedInToday: completedCount === updated.length,
       };
     }
 
-    case 'RESET_DAY': {
-      const newDate = new Date().toISOString().split('T')[0];
+    case 'RESET_DAY':
       return {
+        ...state,
         missions: [],
-        date: newDate,
+        date: new Date().toISOString().split('T')[0],
         completedCount: 0,
-        totalXP: 0,
+        dailyXP: 0,
         lockedInToday: false,
       };
-    }
 
     default:
       return state;
   }
 };
 
-// Storage keys
-const STORAGE_KEY = '@lockedin/daily_missions';
-const STORAGE_KEY_DATE = '@lockedin/daily_missions_date';
+// ─── Persistence helpers ────────────────────────────────
 
-/**
- * MissionsProvider component
- */
-export const MissionsProvider = ({ children, userGoal }: { children: ReactNode; userGoal: string }) => {
+const persistMissions = async (missions: Mission[], date: string) => {
+  await Promise.all([
+    AsyncStorage.setItem(KEY_MISSIONS, JSON.stringify(missions)),
+    AsyncStorage.setItem(KEY_DATE, date),
+  ]);
+};
+
+const persistCumulativeXP = async (xp: number) => {
+  await AsyncStorage.setItem(KEY_CUMULATIVE_XP, String(xp));
+};
+
+const loadCumulativeXP = async (): Promise<number> => {
+  const raw = await AsyncStorage.getItem(KEY_CUMULATIVE_XP);
+  return raw ? parseInt(raw, 10) || 0 : 0;
+};
+
+// ─── Provider ───────────────────────────────────────────
+
+interface ProviderProps {
+  children: ReactNode;
+  userGoal?: string;
+  userWeaknesses?: string[];
+  onboardingDate?: string;
+  streak?: number;
+}
+
+export const MissionsProvider: React.FC<ProviderProps> = ({
+  children,
+  userGoal = 'Increase discipline & self-control',
+  userWeaknesses = [],
+  onboardingDate,
+  streak = 0,
+}) => {
   const [state, dispatch] = useReducer(missionsReducer, getInitialState());
 
-  // Hydrate from AsyncStorage on mount
   useEffect(() => {
     const hydrate = async () => {
       try {
-        const [storedMissions, storedDate] = await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEY),
-          AsyncStorage.getItem(STORAGE_KEY_DATE),
+        const [storedMissions, storedDate, cumulativeXP] = await Promise.all([
+          AsyncStorage.getItem(KEY_MISSIONS),
+          AsyncStorage.getItem(KEY_DATE),
+          loadCumulativeXP(),
         ]);
 
         const today = new Date().toISOString().split('T')[0];
 
-        // Check if stored missions are for today
         if (storedMissions && storedDate === today) {
           const missions = JSON.parse(storedMissions) as Mission[];
+          const completedCount = getCompletedCount(missions);
+          const dailyXP = calculateTotalXP(missions.filter((m) => m.completed));
+
           dispatch({
             type: 'HYDRATE',
             payload: {
               missions,
               date: today,
-              completedCount: getCompletedCount(missions),
-              totalXP: calculateTotalXP(missions.filter(m => m.completed)),
-              lockedInToday: getCompletedCount(missions) === 3,
+              completedCount,
+              dailyXP,
+              totalXP: cumulativeXP,
+              lockedInToday: completedCount === missions.length,
             },
           });
         } else {
-          // Missions are stale or don't exist, generate new ones
-          const newMissions = getMissionsForGoal(userGoal);
+          const newMissions = generateDailyMissions({
+            goal: userGoal,
+            weaknesses: userWeaknesses,
+            onboardingDate,
+            streak,
+          });
+
           dispatch({
-            type: 'GENERATE_DAILY',
+            type: 'HYDRATE',
             payload: {
               missions: newMissions,
               date: today,
+              completedCount: 0,
+              dailyXP: 0,
+              totalXP: cumulativeXP,
+              lockedInToday: false,
             },
           });
-          // Persist new missions
+
           await persistMissions(newMissions, today);
         }
       } catch (error) {
-        console.error('Failed to hydrate missions:', error);
-        // If hydration fails, generate fresh missions
-        const newMissions = getMissionsForGoal(userGoal);
+        console.error('[MissionsProvider] Hydration failed:', error);
+        const newMissions = generateDailyMissions({
+          goal: userGoal,
+          weaknesses: userWeaknesses,
+          onboardingDate,
+          streak,
+        });
         const today = new Date().toISOString().split('T')[0];
         dispatch({
           type: 'GENERATE_DAILY',
-          payload: {
-            missions: newMissions,
-            date: today,
-          },
+          payload: { missions: newMissions, date: today },
         });
       }
     };
 
     hydrate();
-  }, [userGoal]);
+  }, [userGoal, userWeaknesses, onboardingDate, streak]);
 
-  // Persist missions whenever state changes
+  // Persist missions on change
   useEffect(() => {
     if (state.missions.length > 0) {
-      persistMissions(state.missions, state.date).catch(error =>
-        console.error('Failed to persist missions:', error)
-      );
+      persistMissions(state.missions, state.date).catch(() => {});
     }
   }, [state.missions, state.date]);
+
+  // Persist cumulative XP on change
+  useEffect(() => {
+    if (state.totalXP > 0) {
+      persistCumulativeXP(state.totalXP).catch(() => {});
+    }
+  }, [state.totalXP]);
 
   const completeMission = (missionId: string) => {
     dispatch({ type: 'COMPLETE_MISSION', payload: missionId });
   };
 
-  const generateDailyMissions = (goal: string) => {
-    const newMissions = getMissionsForGoal(goal);
-    const today = new Date().toISOString().split('T')[0];
-    dispatch({
-      type: 'GENERATE_DAILY',
-      payload: {
-        missions: newMissions,
-        date: today,
-      },
+  const generateDailyMissionsAction = (goal: string) => {
+    const newMissions = generateDailyMissions({
+      goal,
+      weaknesses: userWeaknesses,
+      onboardingDate,
+      streak,
     });
+    const today = new Date().toISOString().split('T')[0];
+    dispatch({ type: 'GENERATE_DAILY', payload: { missions: newMissions, date: today } });
   };
 
   const resetDay = () => {
@@ -195,7 +252,7 @@ export const MissionsProvider = ({ children, userGoal }: { children: ReactNode; 
   const contextValue: MissionsContextType = {
     ...state,
     completeMission,
-    generateDailyMissions,
+    generateDailyMissions: generateDailyMissionsAction,
     resetDay,
   };
 
@@ -206,28 +263,10 @@ export const MissionsProvider = ({ children, userGoal }: { children: ReactNode; 
   );
 };
 
-/**
- * Hook to use missions context
- */
 export const useMissions = (): MissionsContextType => {
   const context = useContext(MissionsContext);
   if (!context) {
     throw new Error('useMissions must be used within a MissionsProvider');
   }
   return context;
-};
-
-/**
- * Helper function to persist missions to AsyncStorage
- */
-const persistMissions = async (missions: Mission[], date: string): Promise<void> => {
-  try {
-    await Promise.all([
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(missions)),
-      AsyncStorage.setItem(STORAGE_KEY_DATE, date),
-    ]);
-  } catch (error) {
-    console.error('Failed to persist missions to storage:', error);
-    throw error;
-  }
 };

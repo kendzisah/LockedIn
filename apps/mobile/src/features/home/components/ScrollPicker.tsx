@@ -1,8 +1,5 @@
 /**
- * ScrollPicker — Apple-style drum-roller number picker with haptic feedback.
- *
- * Uses a vertical FlatList with snap-to-interval and a highlight overlay
- * to simulate iOS picker wheel behavior.
+ * ScrollPicker — Glassmorphic drum-roller number picker with haptic feedback.
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
@@ -19,7 +16,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
-const ITEM_HEIGHT = 44;
+const ITEM_HEIGHT = 52;
 const VISIBLE_ITEMS = 5;
 const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
 
@@ -97,13 +94,14 @@ const ScrollPicker: React.FC<ScrollPickerProps> = ({
       }
       const realIndex = index - Math.floor(VISIBLE_ITEMS / 2);
       const isSelected = realIndex === selectedIndex;
+      const distance = Math.abs(realIndex - selectedIndex);
       return (
         <View style={styles.item}>
           <Text
             style={[
               styles.itemText,
               isSelected && styles.itemTextSelected,
-              !isSelected && styles.itemTextDimmed,
+              !isSelected && { opacity: Math.max(0.15, 0.5 - distance * 0.15) },
             ]}
           >
             {formatValue ? formatValue(item) : item.toString()}
@@ -127,8 +125,10 @@ const ScrollPicker: React.FC<ScrollPickerProps> = ({
     <View style={[styles.container, style]}>
       {label && <Text style={styles.label}>{label}</Text>}
       <View style={styles.pickerWrapper}>
-        <View style={styles.highlight} pointerEvents="none" />
+        {/* Highlight band — behind the list */}
+        <View style={styles.highlight} />
         <FlatList
+          nestedScrollEnabled
           ref={flatListRef}
           data={paddedValues}
           keyExtractor={(_, i) => i.toString()}
@@ -160,17 +160,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   label: {
-    fontFamily: FontFamily.body,
-    fontSize: 12,
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 11,
     color: Colors.textMuted,
-    marginBottom: 8,
-    letterSpacing: 0.3,
+    marginBottom: 10,
+    letterSpacing: 1,
     textTransform: 'uppercase',
   },
   pickerWrapper: {
     height: PICKER_HEIGHT,
     overflow: 'hidden',
-    borderRadius: 12,
+    borderRadius: 16,
     position: 'relative',
   },
   flatList: {
@@ -180,29 +180,30 @@ const styles = StyleSheet.create({
   highlight: {
     position: 'absolute',
     top: ITEM_HEIGHT * Math.floor(VISIBLE_ITEMS / 2),
-    left: 0,
-    right: 0,
+    left: 4,
+    right: 4,
     height: ITEM_HEIGHT,
-    backgroundColor: Colors.surface,
-    borderRadius: 8,
+    backgroundColor: 'rgba(58,102,255,0.08)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(58,102,255,0.15)',
   },
   item: {
     height: ITEM_HEIGHT,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 12,
   },
   itemText: {
-    fontFamily: FontFamily.headingBold,
+    fontFamily: FontFamily.heading,
     fontSize: 22,
     color: Colors.textMuted,
     fontVariant: ['tabular-nums'],
   },
   itemTextSelected: {
-    fontSize: 28,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 30,
     color: Colors.textPrimary,
-  },
-  itemTextDimmed: {
-    opacity: 0.4,
   },
 });
 

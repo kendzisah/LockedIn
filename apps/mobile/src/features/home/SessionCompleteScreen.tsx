@@ -6,7 +6,7 @@
  * Auto-navigates to Home after ~4s or on tap.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   StyleSheet,
@@ -20,6 +20,7 @@ import type { MainStackParamList } from '../../types/navigation';
 import { getCompletionMessage, getStreakCheckpoint } from './engine/CompletionCopy';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
+import { getStreakTierInfo, getFlameColorFilters } from '../../design/streakTiers';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'SessionComplete'>;
 
@@ -29,6 +30,11 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
 
   const message = useRef(getCompletionMessage(phase)).current;
   const checkpoint = useRef(getStreakCheckpoint(streak)).current;
+  const tierInfo = useMemo(() => getStreakTierInfo(streak), [streak]);
+  const flameFilters = useMemo(
+    () => getFlameColorFilters(tierInfo.color, tierInfo.colorLight),
+    [tierInfo.color, tierInfo.colorLight],
+  );
 
   // Animation values
   const messageOpacity = useRef(new Animated.Value(0)).current;
@@ -40,7 +46,7 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
   const navigateHome = useCallback(() => {
     if (dismissed) return;
     setDismissed(true);
-    navigation.replace('Home');
+    navigation.replace('Tabs');
   }, [dismissed, navigation]);
 
   useEffect(() => {
@@ -105,8 +111,9 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
               autoPlay
               loop
               style={styles.flameLottie}
+              colorFilters={flameFilters}
             />
-            <Text style={styles.streakNumber}>{streak}</Text>
+            <Text style={[styles.streakNumber, { color: tierInfo.color }]}>{streak}</Text>
             <Text style={styles.streakDetail}>{checkpoint.detail}</Text>
             <Text style={styles.streakHeadline}>{checkpoint.headline}</Text>
             <Text style={styles.streakSub}>{checkpoint.sub}</Text>

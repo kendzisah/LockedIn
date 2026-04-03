@@ -1,9 +1,41 @@
 /**
  * MissionEngine.ts
- * Generates and manages daily missions personalized by user's primary goal
+ *
+ * 3-slot daily mission selection:
+ *   Slot 1 (Core)     — rotates through 10 universal focus-session missions
+ *   Slot 2 (Goal)     — pulled from user's primaryGoal pool (15 missions)
+ *   Slot 3 (Weakness) — pulled from user's selectedWeaknesses pool (8 each)
+ *
+ * Difficulty escalates over time: Easy (week 1-2), Medium (week 3-4), Hard (week 5+).
+ * Streak ≥ 7 adds a 10 % XP bonus.
+ * If Slot 2 and Slot 3 share the same title stem, Slot 3 is re-rolled.
  */
 
-export type MissionType = 'focus_session' | 'workout_check' | 'reflection' | 'no_social' | 'journal' | 'reading' | 'planning' | 'custom';
+import {
+  CORE_MISSIONS,
+  GOAL_MISSIONS,
+  WEAKNESS_MISSIONS,
+  MissionTemplate,
+} from './MissionData';
+
+// ─── Public types ───────────────────────────────────────
+
+export type MissionType =
+  | 'focus_session'
+  | 'workout_check'
+  | 'reflection'
+  | 'no_social'
+  | 'journal'
+  | 'reading'
+  | 'planning'
+  | 'discipline'
+  | 'lifestyle'
+  | 'social'
+  | 'custom';
+
+export type CompletionType = 'auto' | 'self-report' | 'hybrid';
+export type DifficultyTier = 'easy' | 'medium' | 'hard';
+export type MissionSlot = 'core' | 'goal' | 'weakness';
 
 export interface Mission {
   id: string;
@@ -12,236 +44,153 @@ export interface Mission {
   type: MissionType;
   completed: boolean;
   xp: number;
+  slot: MissionSlot;
+  completionType: CompletionType;
+  difficulty: DifficultyTier;
+  timeGate?: string;
+}
+
+// ─── Helpers ────────────────────────────────────────────
+
+const getDayOfYear = (date: Date): number => {
+  const start = new Date(date.getFullYear(), 0, 0);
+  return Math.floor((date.getTime() - start.getTime()) / 86_400_000);
+};
+
+/** Simple deterministic hash for a string → stable integer. */
+const hashStr = (s: string): number => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+};
+
+/** Difficulty based on days since onboarding completed. */
+export const getDifficultyTier = (daysSinceOnboarding: number): DifficultyTier => {
+  if (daysSinceOnboarding < 14) return 'easy';
+  if (daysSinceOnboarding < 28) return 'medium';
+  return 'hard';
+};
+
+/** XP with optional streak bonus (10 % for streak ≥ 7). */
+const applyStreakBonus = (baseXP: number, streak: number): number =>
+  streak >= 7 ? Math.round(baseXP * 1.1) : baseXP;
+
+const buildMission = (
+  template: MissionTemplate,
+  slot: MissionSlot,
+  tier: DifficultyTier,
+  streak: number,
+  dayOfYear: number,
+  index: number,
+): Mission => {
+  const baseXP = template.xp[tier];
+  const desc =
+    slot === 'core' && template.variants
+      ? `${template.description} — ${template.variants[tier]}`
+      : template.description;
+
+  return {
+    id: `mission_${dayOfYear}_${index}`,
+    title: template.title,
+    description: desc,
+    type: template.type,
+    completed: false,
+    xp: applyStreakBonus(baseXP, streak),
+    slot,
+    completionType: template.completionType,
+    difficulty: tier,
+    timeGate: template.timeGate,
+  };
+};
+
+// ─── Selection Logic ────────────────────────────────────
+
+export interface MissionGenerationParams {
+  goal: string;
+  weaknesses: string[];
+  date?: Date;
+  /** ISO date string of when onboarding completed (for difficulty tier). */
+  onboardingDate?: string;
+  /** Current consecutive streak for XP bonus. */
+  streak?: number;
 }
 
 /**
- * Generates a deterministic ID based on day and seed
- * Ensures same missions for same day
+ * Generate 3 daily missions following the slot system from the mission matrix.
+ *
+ * Slot 1 (Core):     index = dayOfYear % 10
+ * Slot 2 (Goal):     index = hash(dayOfYear + goal) % 15
+ * Slot 3 (Weakness): rotate across user weaknesses, then hash picks mission
  */
-const generateMissionId = (dayOfYear: number, index: number): string => {
-  return `mission_${dayOfYear}_${index}`;
-};
+export const generateDailyMissions = (params: MissionGenerationParams): Mission[] => {
+  const {
+    goal,
+    weaknesses,
+    date = new Date(),
+    onboardingDate,
+    streak = 0,
+  } = params;
 
-/**
- * Get the day of year (0-365) for deterministic mission generation
- */
-const getDayOfYear = (date: Date): number => {
-  const start = new Date(date.getFullYear(), 0, 0);
-  const diff = date.getTime() - start.getTime();
-  const oneDay = 1000 * 60 * 60 * 24;
-  return Math.floor(diff / oneDay);
-};
-
-/**
- * Mission definitions for each primary goal
- */
-const MISSION_TEMPLATES = {
-  'Improve my physique': [
-    {
-      title: 'Deep Focus Session',
-      description: 'Complete a 45-minute focused work session without distractions',
-      type: 'focus_session' as const,
-      xp: 25,
-    },
-    {
-      title: 'Workout Check-In',
-      description: 'Log your workout or complete a training session',
-      type: 'workout_check' as const,
-      xp: 30,
-    },
-    {
-      title: 'No Social Media Before Noon',
-      description: 'Avoid social media until after 12 PM',
-      type: 'no_social' as const,
-      xp: 20,
-    },
-  ],
-  'Build a business or side project': [
-    {
-      title: 'Deep Work Session',
-      description: 'Dedicate 60 minutes to your business or side project',
-      type: 'focus_session' as const,
-      xp: 30,
-    },
-    {
-      title: 'Write 3 Daily Priorities',
-      description: 'Document your top 3 goals for your project today',
-      type: 'planning' as const,
-      xp: 15,
-    },
-    {
-      title: 'Review Progress',
-      description: 'Check milestones and assess what you accomplished',
-      type: 'reflection' as const,
-      xp: 20,
-    },
-  ],
-  'Increase discipline & self-control': [
-    {
-      title: 'Morning Focus Ritual',
-      description: 'Start your day with a 30-minute focused work block',
-      type: 'focus_session' as const,
-      xp: 25,
-    },
-    {
-      title: 'No Social Media Today',
-      description: 'Eliminate distracting apps for the entire day',
-      type: 'no_social' as const,
-      xp: 30,
-    },
-    {
-      title: 'Evening Reflection',
-      description: 'Reflect on your self-control victories today',
-      type: 'reflection' as const,
-      xp: 20,
-    },
-  ],
-  'Advance my career': [
-    {
-      title: 'Focused Work Session',
-      description: 'Complete 50 minutes of deep, career-focused work',
-      type: 'focus_session' as const,
-      xp: 25,
-    },
-    {
-      title: 'Industry Reading',
-      description: 'Read an article or chapter relevant to your career',
-      type: 'reading' as const,
-      xp: 15,
-    },
-    {
-      title: 'Plan Your Growth',
-      description: 'Outline one actionable step toward your career goal',
-      type: 'planning' as const,
-      xp: 20,
-    },
-  ],
-  'Study with consistency': [
-    {
-      title: 'Study Session',
-      description: 'Complete a dedicated 45-minute study block',
-      type: 'focus_session' as const,
-      xp: 25,
-    },
-    {
-      title: 'Review Your Notes',
-      description: 'Review and organize today\'s learning',
-      type: 'journal' as const,
-      xp: 15,
-    },
-    {
-      title: 'Stay Distraction-Free',
-      description: 'Keep your study environment clear of interruptions',
-      type: 'no_social' as const,
-      xp: 20,
-    },
-  ],
-  'Reduce distractions': [
-    {
-      title: 'Focus Session',
-      description: 'Complete 45 minutes of distraction-free work',
-      type: 'focus_session' as const,
-      xp: 25,
-    },
-    {
-      title: 'No Social Media',
-      description: 'Avoid all social media apps today',
-      type: 'no_social' as const,
-      xp: 30,
-    },
-    {
-      title: 'End-of-Day Reflection',
-      description: 'Reflect on moments you stayed disciplined',
-      type: 'reflection' as const,
-      xp: 20,
-    },
-  ],
-  'Improve emotional control': [
-    {
-      title: 'Mindful Focus Session',
-      description: 'Complete 30 minutes of focused work with intention',
-      type: 'focus_session' as const,
-      xp: 20,
-    },
-    {
-      title: 'Emotional Check-In',
-      description: 'Journal about your emotional state today',
-      type: 'journal' as const,
-      xp: 20,
-    },
-    {
-      title: 'Reflection & Reset',
-      description: 'Reflect on your emotional triggers and wins',
-      type: 'reflection' as const,
-      xp: 25,
-    },
-  ],
-};
-
-/**
- * Default missions (used if goal not matched)
- */
-const DEFAULT_MISSIONS = [
-  {
-    title: 'Focus Session',
-    description: 'Complete a 45-minute focused work session',
-    type: 'focus_session' as const,
-    xp: 25,
-  },
-  {
-    title: 'Daily Reflection',
-    description: 'Reflect on your progress and wins today',
-    type: 'reflection' as const,
-    xp: 15,
-  },
-  {
-    title: 'No Social Media',
-    description: 'Avoid social media for the day',
-    type: 'no_social' as const,
-    xp: 20,
-  },
-];
-
-/**
- * Generate 3 daily missions personalized by primary goal
- * @param goal - User's primary goal
- * @param date - Date for mission generation (defaults to today)
- * @returns Array of 3 Mission objects
- */
-export const getMissionsForGoal = (goal: string, date: Date = new Date()): Mission[] => {
   const dayOfYear = getDayOfYear(date);
 
-  // Select template based on goal
-  const template = MISSION_TEMPLATES[goal as keyof typeof MISSION_TEMPLATES] || DEFAULT_MISSIONS;
+  const daysSinceOnboarding = onboardingDate
+    ? Math.max(0, Math.floor((date.getTime() - new Date(onboardingDate).getTime()) / 86_400_000))
+    : 0;
+  const tier = getDifficultyTier(daysSinceOnboarding);
 
-  // Generate missions from template
-  return template.map((missionTemplate, index) => ({
-    id: generateMissionId(dayOfYear, index),
-    title: missionTemplate.title,
-    description: missionTemplate.description,
-    type: missionTemplate.type,
-    completed: false,
-    xp: missionTemplate.xp,
-  }));
+  // ── Slot 1: Core ──
+  const coreIndex = dayOfYear % CORE_MISSIONS.length;
+  const coreMission = buildMission(CORE_MISSIONS[coreIndex], 'core', tier, streak, dayOfYear, 0);
+
+  // ── Slot 2: Goal ──
+  const goalPool = GOAL_MISSIONS[goal] ?? GOAL_MISSIONS['Increase discipline & self-control'];
+  const goalIndex = hashStr(`${dayOfYear}_${goal}`) % goalPool.length;
+  const goalMission = buildMission(goalPool[goalIndex], 'goal', tier, streak, dayOfYear, 1);
+
+  // ── Slot 3: Weakness ──
+  let weaknessMission: Mission;
+  const validWeaknesses = weaknesses.filter((w) => WEAKNESS_MISSIONS[w]);
+
+  if (validWeaknesses.length === 0) {
+    // Fallback: pick from default weakness pool
+    const fallbackPool = WEAKNESS_MISSIONS['I lack daily consistency'];
+    const fallbackIndex = hashStr(`${dayOfYear}_weakness`) % fallbackPool.length;
+    weaknessMission = buildMission(fallbackPool[fallbackIndex], 'weakness', tier, streak, dayOfYear, 2);
+  } else {
+    const weaknessPoolKey = validWeaknesses[dayOfYear % validWeaknesses.length];
+    const weaknessPool = WEAKNESS_MISSIONS[weaknessPoolKey];
+    let weaknessIndex = hashStr(`${dayOfYear}_${weaknessPoolKey}`) % weaknessPool.length;
+
+    weaknessMission = buildMission(weaknessPool[weaknessIndex], 'weakness', tier, streak, dayOfYear, 2);
+
+    // Dedup: re-roll if title collides with goal mission (e.g. both "No Social Media" variants)
+    if (weaknessMission.title === goalMission.title) {
+      weaknessIndex = (weaknessIndex + 1) % weaknessPool.length;
+      weaknessMission = buildMission(weaknessPool[weaknessIndex], 'weakness', tier, streak, dayOfYear, 2);
+    }
+  }
+
+  return [coreMission, goalMission, weaknessMission];
 };
 
-/**
- * Get all valid primary goals
- */
-export const getPrimaryGoals = (): string[] => {
-  return Object.keys(MISSION_TEMPLATES);
-};
+// ─── Legacy compat wrapper (used by MissionsProvider before migration) ───
 
-/**
- * Calculate total XP from an array of missions
- */
-export const calculateTotalXP = (missions: Mission[]): number => {
-  return missions.reduce((total, mission) => total + mission.xp, 0);
-};
+export const getMissionsForGoal = (
+  goal: string,
+  date: Date = new Date(),
+): Mission[] =>
+  generateDailyMissions({ goal, weaknesses: [], date });
 
-/**
- * Get count of completed missions
- */
-export const getCompletedCount = (missions: Mission[]): number => {
-  return missions.filter(m => m.completed).length;
-};
+// ─── Utility exports ────────────────────────────────────
+
+export const calculateTotalXP = (missions: Mission[]): number =>
+  missions.reduce((sum, m) => sum + m.xp, 0);
+
+export const getCompletedCount = (missions: Mission[]): number =>
+  missions.filter((m) => m.completed).length;
+
+export const getPrimaryGoals = (): string[] => Object.keys(GOAL_MISSIONS);
+
+export const getWeaknessOptions = (): string[] => Object.keys(WEAKNESS_MISSIONS);

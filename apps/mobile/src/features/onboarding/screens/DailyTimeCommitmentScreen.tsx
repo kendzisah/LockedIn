@@ -151,7 +151,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
 
   // Track dots (background ring)
   const trackDots = useMemo(() => {
-    const dots = [];
+    const dots: React.ReactNode[] = [];
     for (let i = 0; i < DOT_COUNT; i++) {
       const a = (i / DOT_COUNT) * 360;
       const { x, y } = polarXY(a, TRACK_RADIUS);
@@ -170,7 +170,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
 
   // Active arc dots
   const activeDots = useMemo(() => {
-    const dots = [];
+    const dots: React.ReactNode[] = [];
     const sweep = currentAngle - startAngle;
     if (sweep <= 0) return dots;
 

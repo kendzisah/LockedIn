@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getDayOfWeek } from '../../utils/dateUtils';
 
 export interface WeeklyReport {
   weekStartDate: string;
@@ -71,7 +70,7 @@ class WeeklyReportService {
     dailyCommitment: number
   ): WeeklyReport {
     const now = new Date();
-    const dayOfWeek = getDayOfWeek(now);
+    const dayOfWeek = now.getDay();
     const weekStartDate = new Date(now);
     weekStartDate.setDate(now.getDate() - dayOfWeek);
     weekStartDate.setHours(0, 0, 0, 0);

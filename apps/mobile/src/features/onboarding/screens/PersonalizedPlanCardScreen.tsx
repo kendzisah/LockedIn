@@ -54,7 +54,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
     AppsFlyerService.logEvent('paywall_view', {
       source: 'onboarding',
       goal: state.primaryGoal ?? '',
-      daily_commitment: state.dailyMinutes ?? '',
+      daily_commitment: String(state.dailyMinutes ?? ''),
     });
   }, []);
 
@@ -267,7 +267,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
                 AppsFlyerService.logEvent('paywall_dismiss', {
                   source: 'onboarding',
                   goal: state.primaryGoal ?? '',
-                  daily_commitment: state.dailyMinutes ?? '',
+                  daily_commitment: String(state.dailyMinutes ?? ''),
                 });
                 MixpanelService.track('Paywall Dismissed', { source: 'onboarding' });
               }
@@ -308,7 +308,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
               AppsFlyerService.logEvent('paywall_dismiss', {
                 source: 'onboarding',
                 goal: state.primaryGoal ?? '',
-                daily_commitment: state.dailyMinutes ?? '',
+                daily_commitment: String(state.dailyMinutes ?? ''),
               });
               completeOnboarding(false);
             }}

@@ -5,16 +5,14 @@ import {
   ScrollView,
   StyleSheet,
   SafeAreaView,
-  TouchableOpacity,
   ActivityIndicator,
   FlatList,
   ListRenderItem,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 
-import Colors from '../../../constants/Colors';
-import FontFamily from '../../../constants/FontFamily';
+import { Colors } from '../../../design/colors';
+import { FontFamily } from '../../../design/typography';
 import LeaderboardService, {
   LeaderboardEntry,
   UserRankInfo,
@@ -28,8 +26,6 @@ interface UserContextData {
 }
 
 const LeaderboardScreen: React.FC = () => {
-  const navigation = useNavigation();
-
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
   const [userRank, setUserRank] = useState<UserRankInfo | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -175,19 +171,10 @@ const LeaderboardScreen: React.FC = () => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: Colors.background }]}>
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
-        >
-          <MaterialIcons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
-
         <View style={styles.headerTitleContainer}>
           <MaterialIcons name="emoji-events" size={24} color={Colors.accent} />
           <Text style={styles.headerTitle}>Discipline Board</Text>
         </View>
-
-        <View style={{ width: 24 }} />
       </View>
 
       {loading ? (
@@ -237,7 +224,7 @@ const LeaderboardScreen: React.FC = () => {
 
               {leaderboardData.map((entry, index) => (
                 <View key={`${entry.rank}-${index}`}>
-                  {renderLeaderboardEntry({ item: entry, index })}
+                  {renderLeaderboardEntry({ item: entry, index, separators: { highlight: () => {}, unhighlight: () => {}, updateProps: () => {} } })}
                 </View>
               ))}
             </View>

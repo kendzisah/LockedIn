@@ -70,7 +70,7 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
     AppsFlyerService.logEvent('paywall_view', {
       source: 'home',
       goal: state.primaryGoal ?? '',
-      daily_commitment: state.dailyMinutes ?? '',
+      daily_commitment: String(state.dailyMinutes ?? ''),
     });
     MixpanelService.track('Paywall Viewed', { source: 'home' });
   }, [state.primaryGoal, state.dailyMinutes]);
@@ -140,7 +140,7 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
       AppsFlyerService.logEvent('paywall_dismiss', {
         source: 'home',
         goal: state.primaryGoal ?? '',
-        daily_commitment: state.dailyMinutes ?? '',
+        daily_commitment: String(state.dailyMinutes ?? ''),
       });
       navigation.goBack();
     }
@@ -151,7 +151,7 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
     AppsFlyerService.logEvent('paywall_dismiss', {
       source: 'home',
       goal: state.primaryGoal ?? '',
-      daily_commitment: state.dailyMinutes ?? '',
+      daily_commitment: String(state.dailyMinutes ?? ''),
     });
     Animated.timing(screenOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
       navigation.goBack();

@@ -1,18 +1,12 @@
 /**
  * Session state types for the Lock In home screen.
  *
- * Explicit state machine prevents invalid phase transitions.
  * All dates stored as local day keys (YYYY-MM-DD) in user's timezone.
- *
- * Date-keyed completion: lastLockInCompletedDate / lastUnlockCompletedDate
- * prevent midnight bugs and make the AM/PM state machine deterministic.
- *
- * Program-day progression: maxCompletedDay tracks how many program days
- * have been completed (0-90). Only Lock In completion advances the day.
+ * maxCompletedDay tracks total days with at least one execution block.
  */
 
-/** Lock button / session lifecycle phases */
-export type SessionPhase = 'IDLE' | 'ANIMATING' | 'ACTIVE' | 'COMPLETING';
+/** Lock button lifecycle phases */
+export type SessionPhase = 'IDLE' | 'ANIMATING';
 
 /** Timezone-safe local date key: 'YYYY-MM-DD' */
 export type DayKey = string;
@@ -21,33 +15,25 @@ export type DayKey = string;
 export interface SessionState {
   phase: SessionPhase;
 
-  // ── 90-day program (current run) ──
-  programStartDate: DayKey | null;     // when this run started
-  maxCompletedDay: number;             // highest program day completed (0 = none)
+  // ── Program tracking ──
+  programStartDate: DayKey | null;
+  maxCompletedDay: number;
 
-  // ── Streak (Lock In only, current run) ──
+  // ── Streak ──
   lastSessionDayKey: DayKey | null;
   consecutiveStreak: number;
 
-  // ── Lifetime stats (survive restart) ──
+  // ── Lifetime stats ──
   lifetimeTotalMinutes: number;
   lifetimeLongestStreak: number;
-  lifetimeRunsCompleted: number;       // how many 90-day programs finished
+  lifetimeRunsCompleted: number;
 
-  // ── Execution Block stats (survive restart) ──
+  // ── Execution Block stats ──
   lifetimeExecutionBlocks: number;
   lifetimeExecutionMinutes: number;
 
-  // ── Active session (crash-resume) ──
-  activeSession: {
-    startTimestamp: number;
-    expectedEndTimestamp: number;
-    durationMinutes: number;
-  } | null;
-
-  // ── Date-keyed completion (daily CTA gating) ──
-  lastLockInCompletedDate: DayKey | null;   // e.g. "2026-02-20"
-  lastUnlockCompletedDate: DayKey | null;   // e.g. "2026-02-20"
+  // ── Date-keyed completion ──
+  lastLockInCompletedDate: DayKey | null;
 
   // ── Daily focus tracking ──
   dailyFocusedMinutes: number;
@@ -55,46 +41,34 @@ export interface SessionState {
 
   // ── Daily goal ──
   dailyGoalMetDate: DayKey | null;
-
-  // ── Program complete flag ──
-  programCompleteSeen: boolean;
 }
 
 /** Subset of state that gets persisted to AsyncStorage */
 export interface PersistedSessionState {
-  // Current run
   programStartDate: DayKey | null;
   maxCompletedDay: number;
   lastSessionDayKey: DayKey | null;
   consecutiveStreak: number;
 
-  // Lifetime
   lifetimeTotalMinutes: number;
   lifetimeLongestStreak: number;
   lifetimeRunsCompleted: number;
 
-  // Execution Block
   lifetimeExecutionBlocks: number;
   lifetimeExecutionMinutes: number;
 
-  // Active session
-  activeSession: SessionState['activeSession'];
-
-  // Daily gating
-  lastLockInCompletedDate: DayKey | null;
-  lastUnlockCompletedDate: DayKey | null;
-
-  // Daily focus tracking
-  dailyFocusedMinutes?: number;
-  dailyFocusDate?: DayKey | null;
-
-  // Daily goal
-  dailyGoalMetDate?: DayKey | null;
-
-  // Program complete
+  // Legacy fields (kept for migration)
+  activeSession?: { startTimestamp: number; expectedEndTimestamp: number; durationMinutes: number } | null;
+  lastUnlockCompletedDate?: DayKey | null;
   programCompleteSeen?: boolean;
 
-  // ── Legacy fields (for migration compat) ──
+  lastLockInCompletedDate: DayKey | null;
+
+  dailyFocusedMinutes?: number;
+  dailyFocusDate?: DayKey | null;
+  dailyGoalMetDate?: DayKey | null;
+
+  // Legacy migration fields
   startDayKey?: DayKey | null;
   completedDayKeys?: DayKey[];
   longestStreak?: number;
@@ -105,12 +79,7 @@ export interface PersistedSessionState {
 export type SessionAction =
   | { type: 'HYDRATE'; payload: PersistedSessionState }
   | { type: 'SET_ANIMATING' }
-  | { type: 'START_SESSION'; payload: { startTimestamp: number; expectedEndTimestamp: number; durationMinutes: number } }
-  | { type: 'UPDATE_SESSION_END'; payload: { expectedEndTimestamp: number; durationMinutes: number } }
-  | { type: 'COMPLETE_SESSION'; payload: { durationMinutes: number } }
-  | { type: 'COMPLETE_UNLOCK'; payload: { durationMinutes: number } }
   | { type: 'COMPLETE_EXECUTION_BLOCK'; payload: { durationMinutes: number } }
   | { type: 'ADD_DAILY_FOCUS'; payload: { minutes: number } }
   | { type: 'DAILY_GOAL_MET' }
-  | { type: 'MARK_PROGRAM_SEEN' }
   | { type: 'RESET_PHASE' };

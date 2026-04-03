@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import SupabaseService from '../../services/SupabaseService';
+import { SupabaseService } from '../../services/SupabaseService';
 
 export type TierType = 'Bronze' | 'Silver' | 'Gold' | 'Diamond' | 'Locked In Elite';
 
@@ -31,8 +31,9 @@ class LeaderboardService {
 
   private async getSupabaseClient(): Promise<SupabaseClient> {
     if (!this.supabase) {
-      this.supabase = SupabaseService.getClient();
+      this.supabase = SupabaseService.getClient() ?? null;
     }
+    if (!this.supabase) throw new Error('Supabase client not initialized');
     return this.supabase;
   }
 

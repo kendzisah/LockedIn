@@ -93,8 +93,8 @@ async function restore(): Promise<boolean> {
 function addListener(
   callback: (info: CustomerInfo) => void,
 ): () => void {
-  const remove = Purchases.addCustomerInfoUpdateListener(callback);
-  return remove;
+  Purchases.addCustomerInfoUpdateListener(callback);
+  return () => {};
 }
 
 function isInitialized(): boolean {

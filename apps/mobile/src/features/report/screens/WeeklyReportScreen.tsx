@@ -7,32 +7,49 @@ import {
   StyleSheet,
   SafeAreaView,
   Dimensions,
-  LinearGradient,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 
-import Colors from '../../../constants/Colors';
-import FontFamily from '../../../constants/FontFamily';
-import { WeeklyReport } from '../WeeklyReportService';
+import { Colors } from '../../../design/colors';
+import { FontFamily } from '../../../design/typography';
+import WeeklyReportService, { WeeklyReport } from '../WeeklyReportService';
 
 interface WeeklyReportScreenProps {
-  report: WeeklyReport;
-  onDismiss: () => void;
+  report?: WeeklyReport;
+  onDismiss?: () => void;
 }
 
 const { width } = Dimensions.get('window');
 
+const defaultReport: WeeklyReport = {
+  weekStartDate: new Date().toISOString(),
+  daysLockedIn: 0,
+  totalFocusMinutes: 0,
+  missionsCompleted: 0,
+  totalMissions: 21,
+  streakDays: 0,
+  grade: 'F',
+  previousGrade: null,
+  percentile: 0,
+};
+
 const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({
-  report,
+  report = defaultReport,
   onDismiss,
 }) => {
   const navigation = useNavigation();
 
   const handleDismiss = async () => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onDismiss();
+    await WeeklyReportService.markReportAsShown();
+    if (onDismiss) {
+      onDismiss();
+    } else {
+      navigation.goBack();
+    }
   };
 
   const getGradeColor = (): string => {

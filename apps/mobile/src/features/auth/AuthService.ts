@@ -125,7 +125,7 @@ class AuthServiceImpl {
   async signInWithApple(): Promise<AuthResponse> {
     try {
       // Check if Apple authentication is available
-      if (!AppleAuthentication.isAvailable()) {
+      if (!(await AppleAuthentication.isAvailableAsync())) {
         return {
           user: null,
           session: null,
@@ -181,7 +181,7 @@ class AuthServiceImpl {
       // Handle user cancellation
       if (
         err instanceof Error &&
-        err.code === 'ERR_CANCELED'
+        (err as any).code === 'ERR_CANCELED'
       ) {
         return {
           user: null,
