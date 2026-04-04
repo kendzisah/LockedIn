@@ -3,7 +3,7 @@
  * Panel showing all 3 daily missions with completion counter and LOCKED IN badge
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { useMissions } from '../MissionsProvider';
 import { MissionCard } from './MissionCard';
+import { NotificationService } from '../../../services/NotificationService';
 
 interface MissionsPanelProps {
   showScrollView?: boolean;
@@ -21,6 +22,12 @@ interface MissionsPanelProps {
 
 export const MissionsPanel: React.FC<MissionsPanelProps> = ({ showScrollView = false }) => {
   const { missions, completedCount, totalXP, lockedInToday, completeMission } = useMissions();
+
+  useEffect(() => {
+    if (lockedInToday) {
+      void NotificationService.cancelMissionReminder();
+    }
+  }, [lockedInToday]);
 
   const PanelContent = () => (
     <View style={styles.container}>

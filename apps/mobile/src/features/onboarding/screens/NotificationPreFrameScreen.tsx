@@ -10,7 +10,6 @@ import LottieView from 'lottie-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
-import { PermissionService } from '../../../services/PermissionService';
 import { NotificationService } from '../../../services/NotificationService';
 import { MixpanelService } from '../../../services/MixpanelService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
@@ -68,7 +67,7 @@ const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleTurnOn = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const granted = await PermissionService.requestNotificationPermission();
+    const granted = await NotificationService.requestPermission();
     if (granted) {
       MixpanelService.track('Permission Granted', { screen: 'NotificationPreFrame', permission: 'notifications' });
       await NotificationService.scheduleAllDailyNotifications(0);

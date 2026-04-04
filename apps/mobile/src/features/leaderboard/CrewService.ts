@@ -3,6 +3,9 @@ import { SupabaseService } from '../../services/SupabaseService';
 
 const WEEK_STATS_KEY = '@lockedin/crew_week_stats';
 
+/** Persisted flag for notification scheduling (synced from getMyCrews). */
+export const HAS_ACTIVE_CREW_STORAGE_KEY = '@lockedin/has_active_crew';
+
 export interface MyCrewRow {
   crew_id: string;
   name: string;
@@ -117,6 +120,22 @@ async function submitScoreInternal(
 
 export const CrewService = {
   getCurrentWeekKey,
+
+  /**
+   * Updates {@link HAS_ACTIVE_CREW_STORAGE_KEY} from the network.
+   * `hadCrewBefore` reads storage before sync; use for first-crew detection.
+   */
+  async syncHasActiveCrewFlag(): Promise<{ hadCrewBefore: boolean; hasCrewNow: boolean }> {
+    const hadCrewBefore = (await AsyncStorage.getItem(HAS_ACTIVE_CREW_STORAGE_KEY)) === 'true';
+    try {
+      const crews = await CrewService.getMyCrews();
+      const hasCrewNow = crews.length > 0;
+      await AsyncStorage.setItem(HAS_ACTIVE_CREW_STORAGE_KEY, hasCrewNow ? 'true' : 'false');
+      return { hadCrewBefore, hasCrewNow };
+    } catch {
+      return { hadCrewBefore, hasCrewNow: hadCrewBefore };
+    }
+  },
 
   async getMyCrews(): Promise<MyCrewRow[]> {
     try {

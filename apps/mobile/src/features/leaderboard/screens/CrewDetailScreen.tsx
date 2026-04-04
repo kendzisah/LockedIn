@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -16,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../../types/navigation';
 import { CrewService, type CrewDetails, type CrewLeaderboardEntry } from '../CrewService';
+import { NotificationService } from '../../../services/NotificationService';
 import { SupabaseService } from '../../../services/SupabaseService';
 import MemberRow from '../components/MemberRow';
 import InviteCodeCard from '../components/InviteCodeCard';
@@ -80,6 +82,29 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     fetchData().finally(() => setLoading(false));
   }, [fetchData]);
 
+  useEffect(() => {
+    if (!details || !leaderboard.length || !userId) return;
+    const me = leaderboard.find((e) => e.is_current_user);
+    if (!me) return;
+    void AsyncStorage.setItem(
+      '@lockedin/crew_cached_rank',
+      JSON.stringify({
+        crew_name: details.name,
+        rank: me.rank,
+        crew_id,
+      }),
+    );
+  }, [details, leaderboard, crew_id, userId]);
+
+  const refreshNotificationsAfterCrewChange = useCallback(async () => {
+    try {
+      await CrewService.syncHasActiveCrewFlag();
+      await NotificationService.refreshScheduleWithStoredStreak();
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchData();
@@ -117,8 +142,10 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
                     style: 'destructive',
                     onPress: async () => {
                       const ok = await CrewService.deleteCrew(crew_id);
-                      if (ok) navigation.goBack();
-                      else Alert.alert('Error', 'Failed to delete crew.');
+                      if (ok) {
+                        await refreshNotificationsAfterCrewChange();
+                        navigation.goBack();
+                      } else Alert.alert('Error', 'Failed to delete crew.');
                     },
                   },
                 ],
@@ -134,8 +161,10 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
                     style: 'destructive',
                     onPress: async () => {
                       const ok = await CrewService.leaveCrew(crew_id);
-                      if (ok) navigation.goBack();
-                      else Alert.alert('Error', 'Failed to leave crew.');
+                      if (ok) {
+                        await refreshNotificationsAfterCrewChange();
+                        navigation.goBack();
+                      } else Alert.alert('Error', 'Failed to leave crew.');
                     },
                   },
                 ],
@@ -158,21 +187,25 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         { text: 'Cancel', style: 'cancel' },
       ]);
     }
-  }, [isOwner, details, crew_id, navigation]);
+  }, [isOwner, details, crew_id, navigation, refreshNotificationsAfterCrewChange]);
 
   const handleDeleteOrLeave = useCallback(
     async (action: 'delete' | 'leave') => {
       if (action === 'delete') {
         const ok = await CrewService.deleteCrew(crew_id);
-        if (ok) navigation.goBack();
-        else Alert.alert('Error', 'Failed to delete crew.');
+        if (ok) {
+          await refreshNotificationsAfterCrewChange();
+          navigation.goBack();
+        } else Alert.alert('Error', 'Failed to delete crew.');
       } else {
         const ok = await CrewService.leaveCrew(crew_id);
-        if (ok) navigation.goBack();
-        else Alert.alert('Error', 'Failed to leave crew.');
+        if (ok) {
+          await refreshNotificationsAfterCrewChange();
+          navigation.goBack();
+        } else Alert.alert('Error', 'Failed to leave crew.');
       }
     },
-    [crew_id, navigation],
+    [crew_id, navigation, refreshNotificationsAfterCrewChange],
   );
 
   if (loading && !details) {

@@ -2,7 +2,7 @@
  * MissionsTab — The Quest Log with 3-slot mission system and glassmorphic design.
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,6 +13,7 @@ import { useOnboarding } from '../../onboarding/state/OnboardingProvider';
 import GymCheckInCard from '../../gym/components/GymCheckInCard';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import { NotificationService } from '../../../services/NotificationService';
 
 const XP_LEVELS = [
   { name: 'Apprentice', threshold: 0 },
@@ -46,7 +47,14 @@ const LEVEL_COLORS: Record<string, string> = {
 };
 
 const MissionsTab: React.FC = () => {
-  const { missions, completedCount, dailyXP, totalXP, completeMission } = useMissions();
+  const { missions, completedCount, dailyXP, totalXP, completeMission, lockedInToday } =
+    useMissions();
+
+  useEffect(() => {
+    if (lockedInToday) {
+      void NotificationService.cancelMissionReminder();
+    }
+  }, [lockedInToday]);
   const { state: onboardingState } = useOnboarding();
   const showGymCard = onboardingState.primaryGoal === 'Improve my physique';
 

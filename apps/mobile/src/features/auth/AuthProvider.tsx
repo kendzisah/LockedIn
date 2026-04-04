@@ -19,6 +19,7 @@ import React, {
 } from 'react';
 import { type User } from '@supabase/supabase-js';
 import { AuthService, type AuthError } from './AuthService';
+import { NotificationService } from '../../services/NotificationService';
 
 export interface AuthContextType {
   user: User | null;
@@ -152,6 +153,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const response = await AuthService.signOut();
       if (!response.error) {
         setUser(null);
+        try {
+          await NotificationService.cancelAllNotifications();
+        } catch {
+          /* ignore */
+        }
       }
       return response;
     },

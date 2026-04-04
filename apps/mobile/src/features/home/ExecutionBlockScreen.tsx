@@ -116,6 +116,7 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
       type: 'COMPLETE_EXECUTION_BLOCK',
       payload: { durationMinutes },
     });
+    void NotificationService.onSessionCompletedToday();
 
     const resultStreak = computeStreakAfterCompletion(durationMinutes);
 
@@ -155,6 +156,7 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
       type: 'COMPLETE_EXECUTION_BLOCK',
       payload: { durationMinutes: actualMinutes },
     });
+    void NotificationService.onSessionCompletedToday();
 
     const resultStreak = computeStreakAfterCompletion(actualMinutes);
 

@@ -56,7 +56,13 @@ const HomeTab: React.FC = () => {
   const { state, dispatch, isHydrated } = useSession();
   const { state: onboardingState } = useOnboarding();
   const { isSubscribed } = useSubscription();
-  const { completedCount } = useMissions();
+  const { completedCount, lockedInToday } = useMissions();
+
+  useEffect(() => {
+    if (lockedInToday) {
+      void NotificationService.cancelMissionReminder();
+    }
+  }, [lockedInToday]);
 
   const { isAnonymous } = useAuth();
   const [tick, setTick] = useState(0);
@@ -79,6 +85,9 @@ const HomeTab: React.FC = () => {
   }, [state.dailyFocusedMinutes, state.dailyFocusDate, todayKey]);
   const dailyGoalMet = dailyFocused >= dailyCommitment;
 
+  const closeGoalRef = useRef({ dailyFocused, dailyCommitment, dailyGoalMet });
+  closeGoalRef.current = { dailyFocused, dailyCommitment, dailyGoalMet };
+
   useEffect(() => {
     if (dailyGoalMet && state.dailyGoalMetDate !== todayKey) {
       dispatch({ type: 'DAILY_GOAL_MET' });
@@ -87,7 +96,16 @@ const HomeTab: React.FC = () => {
 
   useEffect(() => {
     if (!isHydrated) return;
-    NotificationService.scheduleAllDailyNotifications(state.consecutiveStreak);
+    void NotificationService.scheduleAllDailyNotifications(state.consecutiveStreak);
+  }, [isHydrated, state.consecutiveStreak]);
+
+  // Master scheduler omits close-to-goal; re-arm only when that run happens (streak / hydrate path).
+  useEffect(() => {
+    if (!isHydrated) return;
+    const { dailyFocused: df, dailyCommitment: dc, dailyGoalMet: met } = closeGoalRef.current;
+    if (met) return;
+    if (df < dc * 0.8 || df >= dc) return;
+    void NotificationService.scheduleCloseToGoalNudge(Math.max(1, Math.ceil(dc - df)));
   }, [isHydrated, state.consecutiveStreak]);
 
   useEffect(() => {
@@ -102,7 +120,8 @@ const HomeTab: React.FC = () => {
     const wasBelow = prevFocused.current < dailyCommitment;
     const isCloseNow = dailyFocused >= dailyCommitment * 0.8 && dailyFocused < dailyCommitment;
     if (wasBelow && isCloseNow && dailyFocused > prevFocused.current) {
-      NotificationService.scheduleCloseToGoalNudge();
+      const remaining = Math.max(1, Math.ceil(dailyCommitment - dailyFocused));
+      void NotificationService.scheduleCloseToGoalNudge(remaining);
     }
     prevFocused.current = dailyFocused;
   }, [isHydrated, dailyFocused, dailyCommitment]);

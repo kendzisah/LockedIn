@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus, View, StyleSheet, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
@@ -23,7 +24,9 @@ import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SupabaseService } from '../services/SupabaseService';
-import { NotificationService } from '../services/NotificationService';
+import { NotificationService, type NotificationPayload } from '../services/NotificationService';
+import { rootNavigationRef } from '../navigation/rootNavigationRef';
+import { CrewService } from '../features/leaderboard/CrewService';
 import { AppsFlyerService } from '../services/AppsFlyerService';
 import { MixpanelService } from '../services/MixpanelService';
 import Purchases from 'react-native-purchases';
@@ -78,6 +81,8 @@ const App: React.FC = () => {
 
         await MixpanelService.initialize();
         await SupabaseService.initialize();
+        await NotificationService.touchLastAppOpen();
+        await CrewService.syncHasActiveCrewFlag();
         let streak = 0;
         try {
           const raw = await AsyncStorage.getItem('@lockedin/session_state');
@@ -132,7 +137,40 @@ const App: React.FC = () => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       if (next === 'active') {
         MixpanelService.track('App Opened', { cold_start: false });
+        void NotificationService.touchLastAppOpen();
       }
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as NotificationPayload | undefined;
+      if (!data || typeof data !== 'object' || !data.screen) return;
+      const go = () => {
+        if (!rootNavigationRef.isReady()) return;
+        try {
+          if (data.screen === 'Home') {
+            rootNavigationRef.navigate('Main', {
+              screen: 'Tabs',
+              params: { screen: 'HomeTab' },
+            });
+          } else if (data.screen === 'CrewList') {
+            rootNavigationRef.navigate('Main', {
+              screen: 'Tabs',
+              params: { screen: 'BoardTab' },
+            });
+          } else if (data.screen === 'CrewDetail' && typeof data.crew_id === 'string') {
+            rootNavigationRef.navigate('Main', {
+              screen: 'CrewDetail',
+              params: { crew_id: data.crew_id },
+            });
+          }
+        } catch (e) {
+          console.warn('[App] notification navigation failed:', e);
+        }
+      };
+      requestAnimationFrame(go);
     });
     return () => sub.remove();
   }, []);
@@ -149,7 +187,7 @@ const App: React.FC = () => {
             <SubscriptionProvider>
               <SessionProvider>
                 <MissionsBridge>
-                  <NavigationContainer>
+                  <NavigationContainer ref={rootNavigationRef}>
                     <StatusBar style="light" />
                     <RootNavigator />
                   </NavigationContainer>

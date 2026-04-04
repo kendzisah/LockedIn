@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../../types/navigation';
 import { CrewService } from '../CrewService';
+import { NotificationService } from '../../../services/NotificationService';
 import { useAuth } from '../../auth/AuthProvider';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -39,6 +40,17 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
     setLoading(false);
 
     if (result) {
+      void (async () => {
+        try {
+          const { hadCrewBefore, hasCrewNow } = await CrewService.syncHasActiveCrewFlag();
+          if (hasCrewNow && !hadCrewBefore) {
+            await NotificationService.scheduleFirstCrewNudgeIfNeeded();
+          }
+          await NotificationService.refreshScheduleWithStoredStreak();
+        } catch {
+          /* ignore */
+        }
+      })();
       navigation.replace('CrewDetail', { crew_id: result.crew_id });
     } else {
       setError('Failed to create crew. You may own a maximum of 3 crews.');

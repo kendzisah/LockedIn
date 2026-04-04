@@ -22,6 +22,7 @@ import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
 import { getStreakTierInfo, getFlameColorFilters } from '../../design/streakTiers';
 import { CrewService } from '../leaderboard/CrewService';
+import { NotificationService } from '../../services/NotificationService';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'SessionComplete'>;
 
@@ -43,6 +44,10 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
   const [showStreak, setShowStreak] = useState(false);
 
   const showStreakCelebration = phase === 'execution_block' && streak > 0;
+
+  useEffect(() => {
+    void NotificationService.scheduleStreakMilestoneIfNeeded(streak);
+  }, [streak]);
 
   useEffect(() => {
     (async () => {
