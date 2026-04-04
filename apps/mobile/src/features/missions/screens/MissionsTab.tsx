@@ -71,7 +71,7 @@ const MissionsTab: React.FC = () => {
           {/* Header */}
           <Text style={styles.heading}>Daily Missions</Text>
           <Text style={styles.subheading}>
-            Complete missions to earn XP and level up
+            Complete missions to earn XP and rank up
           </Text>
 
           {/* XP Progress Card */}

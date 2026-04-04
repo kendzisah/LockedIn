@@ -14,7 +14,7 @@ import { useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MixpanelService } from '../../../services/MixpanelService';
 
-const TOTAL_STEPS = 10;
+const TOTAL_STEPS = 11;
 const CURRENT_SCREEN_KEY = '@lockedin/onboarding_current_screen';
 
 export type OnboardingScreenName =
@@ -27,7 +27,8 @@ export type OnboardingScreenName =
   | 'DailyTimeCommitment'
   | 'ScreenTimePreFrame'
   | 'NotificationPreFrame'
-  | 'PersonalizedPlanCard';
+  | 'PersonalizedPlanCard'
+  | 'AccountPrompt';
 
 /**
  * Map screen names to their step number in the new 10-screen flow.
@@ -43,6 +44,7 @@ export const SCREEN_STEP_MAP: Record<OnboardingScreenName, number> = {
   ScreenTimePreFrame: 8,
   NotificationPreFrame: 9,
   PersonalizedPlanCard: 10,
+  AccountPrompt: 11,
 };
 
 /**
@@ -59,6 +61,7 @@ export const ONBOARDING_SCREEN_ORDER: OnboardingScreenName[] = [
   'ScreenTimePreFrame',
   'NotificationPreFrame',
   'PersonalizedPlanCard',
+  'AccountPrompt',
 ];
 
 export function useOnboardingTracking(screen: OnboardingScreenName, step?: number): void {

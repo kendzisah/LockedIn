@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../../types/navigation';
 import { CrewService } from '../CrewService';
+import { useAuth } from '../../auth/AuthProvider';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -21,6 +22,7 @@ type Props = NativeStackScreenProps<MainStackParamList, 'CreateCrew'>;
 const MAX_NAME_LENGTH = 30;
 
 const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
+  const { isAnonymous } = useAuth();
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +44,44 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
       setError('Failed to create crew. You may own a maximum of 3 crews.');
     }
   };
+
+  if (isAnonymous) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10}>
+            <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Create a Crew</Text>
+          <View style={{ width: 24 }} />
+        </View>
+
+        <View style={styles.gateBody}>
+          <View style={styles.gateIcon}>
+            <Ionicons name="people" size={48} color={Colors.textMuted} />
+          </View>
+          <Text style={styles.gateTitle}>Sign up to create a crew</Text>
+          <Text style={styles.gateSub}>
+            Crew owners need an account so your crew stays safe. You can still
+            join crews as a guest.
+          </Text>
+          <TouchableOpacity
+            style={styles.createBtn}
+            onPress={() => navigation.navigate('SignUp')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.createBtnText}>Create Free Account</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={{ marginTop: 14, alignItems: 'center' }}
+          >
+            <Text style={styles.gateBack}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -145,7 +185,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(58,102,255,0.25)',
     borderRadius: 14,
-    paddingVertical: 15,
+    paddingVertical: 16,
+    paddingHorizontal: 48,
     alignItems: 'center',
   },
   createBtnDisabled: {
@@ -162,6 +203,36 @@ const styles = StyleSheet.create({
     color: Colors.danger,
     textAlign: 'center',
     marginTop: 14,
+  },
+  gateBody: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingBottom: 80,
+  },
+  gateIcon: {
+    marginBottom: 20,
+  },
+  gateTitle: {
+    fontFamily: FontFamily.heading,
+    fontSize: 18,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  gateSub: {
+    fontFamily: FontFamily.body,
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 280,
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  gateBack: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 14,
+    color: Colors.textMuted,
   },
 });
 

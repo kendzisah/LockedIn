@@ -5,7 +5,7 @@
  * - user: Current authenticated user (null if anonymous/not logged in)
  * - isAuthenticated: Boolean flag for logged-in users
  * - isAnonymous: Boolean flag for anonymous users
- * - signUp, signIn, signInWithApple, signOut: Auth methods
+ * - signUp, signIn, signInWithApple, linkAccount, linkAppleAccount, signOut: Auth methods
  *
  * On mount, checks current Supabase session and listens for auth changes.
  */
@@ -34,6 +34,11 @@ export interface AuthContextType {
     password: string,
   ) => Promise<{ error: AuthError | null }>;
   signInWithApple: () => Promise<{ error: AuthError | null }>;
+  linkAccount: (
+    email: string,
+    password: string,
+  ) => Promise<{ error: AuthError | null }>;
+  linkAppleAccount: () => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<{ error: AuthError | null }>;
 }
 
@@ -117,6 +122,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     [],
   );
 
+  const linkAccount = useCallback(
+    async (
+      email: string,
+      password: string,
+    ): Promise<{ error: AuthError | null }> => {
+      const response = await AuthService.linkEmailPassword(email, password);
+      if (!response.error && response.user) {
+        setUser(response.user);
+      }
+      return { error: response.error };
+    },
+    [],
+  );
+
+  const linkAppleAccount = useCallback(
+    async (): Promise<{ error: AuthError | null }> => {
+      const response = await AuthService.linkAppleAccount();
+      if (!response.error && response.user) {
+        setUser(response.user);
+      }
+      return { error: response.error };
+    },
+    [],
+  );
+
   const signOut = useCallback(
     async (): Promise<{ error: AuthError | null }> => {
       const response = await AuthService.signOut();
@@ -136,6 +166,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     signUp,
     signIn,
     signInWithApple,
+    linkAccount,
+    linkAppleAccount,
     signOut,
   };
 

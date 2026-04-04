@@ -4,7 +4,8 @@
  * and cumulative XP tracking.
  */
 
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, ReactNode } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Mission,
@@ -13,6 +14,23 @@ import {
   calculateTotalXP,
 } from './MissionEngine';
 import { CrewService } from '../leaderboard/CrewService';
+
+// ─── Local-time helpers ──────────────────────────────────
+
+/** YYYY-MM-DD in the device's local timezone. */
+const getLocalDateString = (d: Date = new Date()): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+/** Milliseconds until the next local midnight (+ 50 ms buffer to avoid edge races). */
+const msUntilLocalMidnight = (): number => {
+  const now = new Date();
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  return midnight.getTime() - now.getTime() + 50;
+};
 
 // ─── Action types ───────────────────────────────────────
 
@@ -45,7 +63,7 @@ const MissionsContext = createContext<MissionsContextType | undefined>(undefined
 
 const getInitialState = (): MissionsState => ({
   missions: [],
-  date: new Date().toISOString().split('T')[0],
+  date: getLocalDateString(),
   completedCount: 0,
   dailyXP: 0,
   totalXP: 0,
@@ -101,7 +119,7 @@ const missionsReducer = (state: MissionsState, action: MissionAction): MissionsS
       return {
         ...state,
         missions: [],
-        date: new Date().toISOString().split('T')[0],
+        date: getLocalDateString(),
         completedCount: 0,
         dailyXP: 0,
         lockedInToday: false,
@@ -148,74 +166,105 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
   streak = 0,
 }) => {
   const [state, dispatch] = useReducer(missionsReducer, getInitialState());
+  const midnightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    const hydrate = async () => {
-      try {
-        const [storedMissions, storedDate, cumulativeXP] = await Promise.all([
-          AsyncStorage.getItem(KEY_MISSIONS),
-          AsyncStorage.getItem(KEY_DATE),
-          loadCumulativeXP(),
-        ]);
+  const hydrate = useCallback(async () => {
+    try {
+      const [storedMissions, storedDate, cumulativeXP] = await Promise.all([
+        AsyncStorage.getItem(KEY_MISSIONS),
+        AsyncStorage.getItem(KEY_DATE),
+        loadCumulativeXP(),
+      ]);
 
-        const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateString();
 
-        if (storedMissions && storedDate === today) {
-          const missions = JSON.parse(storedMissions) as Mission[];
-          const completedCount = getCompletedCount(missions);
-          const dailyXP = calculateTotalXP(missions.filter((m) => m.completed));
+      if (storedMissions && storedDate === today) {
+        const missions = JSON.parse(storedMissions) as Mission[];
+        const completedCount = getCompletedCount(missions);
+        const dailyXP = calculateTotalXP(missions.filter((m) => m.completed));
 
-          dispatch({
-            type: 'HYDRATE',
-            payload: {
-              missions,
-              date: today,
-              completedCount,
-              dailyXP,
-              totalXP: cumulativeXP,
-              lockedInToday: completedCount === missions.length,
-            },
-          });
-        } else {
-          const newMissions = generateDailyMissions({
-            goal: userGoal,
-            weaknesses: userWeaknesses,
-            onboardingDate,
-            streak,
-          });
-
-          dispatch({
-            type: 'HYDRATE',
-            payload: {
-              missions: newMissions,
-              date: today,
-              completedCount: 0,
-              dailyXP: 0,
-              totalXP: cumulativeXP,
-              lockedInToday: false,
-            },
-          });
-
-          await persistMissions(newMissions, today);
-        }
-      } catch (error) {
-        console.error('[MissionsProvider] Hydration failed:', error);
+        dispatch({
+          type: 'HYDRATE',
+          payload: {
+            missions,
+            date: today,
+            completedCount,
+            dailyXP,
+            totalXP: cumulativeXP,
+            lockedInToday: completedCount === missions.length,
+          },
+        });
+      } else {
         const newMissions = generateDailyMissions({
           goal: userGoal,
           weaknesses: userWeaknesses,
           onboardingDate,
           streak,
         });
-        const today = new Date().toISOString().split('T')[0];
+
         dispatch({
-          type: 'GENERATE_DAILY',
-          payload: { missions: newMissions, date: today },
+          type: 'HYDRATE',
+          payload: {
+            missions: newMissions,
+            date: today,
+            completedCount: 0,
+            dailyXP: 0,
+            totalXP: cumulativeXP,
+            lockedInToday: false,
+          },
         });
+
+        await persistMissions(newMissions, today);
+      }
+    } catch (error) {
+      console.error('[MissionsProvider] Hydration failed:', error);
+      const newMissions = generateDailyMissions({
+        goal: userGoal,
+        weaknesses: userWeaknesses,
+        onboardingDate,
+        streak,
+      });
+      const today = getLocalDateString();
+      dispatch({
+        type: 'GENERATE_DAILY',
+        payload: { missions: newMissions, date: today },
+      });
+    }
+  }, [userGoal, userWeaknesses, onboardingDate, streak]);
+
+  // Initial hydration + re-hydrate when user props change
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+
+  // Schedule a timer for local midnight so missions refresh even if the app stays in foreground
+  useEffect(() => {
+    const scheduleMidnight = () => {
+      if (midnightTimer.current) clearTimeout(midnightTimer.current);
+      midnightTimer.current = setTimeout(() => {
+        hydrate();
+        scheduleMidnight();
+      }, msUntilLocalMidnight());
+    };
+    scheduleMidnight();
+    return () => {
+      if (midnightTimer.current) clearTimeout(midnightTimer.current);
+    };
+  }, [hydrate]);
+
+  // Re-hydrate when the app returns to foreground (covers sleep / background > midnight)
+  useEffect(() => {
+    const handleAppState = (next: AppStateStatus) => {
+      if (next === 'active') {
+        const today = getLocalDateString();
+        if (today !== state.date) {
+          hydrate();
+        }
       }
     };
-
-    hydrate();
-  }, [userGoal, userWeaknesses, onboardingDate, streak]);
+    const sub = AppState.addEventListener('change', handleAppState);
+    return () => sub.remove();
+  }, [hydrate, state.date]);
 
   // Persist missions on change
   useEffect(() => {
@@ -258,7 +307,7 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
       onboardingDate,
       streak,
     });
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     dispatch({ type: 'GENERATE_DAILY', payload: { missions: newMissions, date: today } });
   };
 

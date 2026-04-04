@@ -35,9 +35,10 @@ type NavProp = NativeStackNavigationProp<MainStackParamList>;
 const FORMSPREE_URL = 'https://formspree.io/f/xwvwngjo';
 
 const ProfileTab: React.FC = () => {
-  const navigation = useNavigation<NavProp>();
+  const tabNav = useNavigation();
+  const navigation = tabNav.getParent<NavProp>();
   const { state } = useSession();
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAnonymous } = useAuth();
   const { totalXP } = useMissions();
 
   const [feedbackVisible, setFeedbackVisible] = useState(false);
@@ -58,7 +59,10 @@ const ProfileTab: React.FC = () => {
     }
   }, []);
   const handlePremium = useCallback(() => {
-    navigation.navigate('PaywallOffer');
+    navigation?.navigate('PaywallOffer');
+  }, [navigation]);
+  const handleEditProfile = useCallback(() => {
+    navigation?.navigate('EditProfile', { source: 'profile' });
   }, [navigation]);
 
   return (
@@ -90,6 +94,31 @@ const ProfileTab: React.FC = () => {
             )}
           </View>
 
+          {/* Guest banner */}
+          {isAnonymous && (
+            <View style={styles.guestCard}>
+              <View style={styles.guestBadge}>
+                <Text style={styles.guestBadgeText}>Guest Account</Text>
+              </View>
+              <Text style={styles.guestMsg}>
+                Create an account to keep your progress forever
+              </Text>
+              <TouchableOpacity
+                style={styles.guestSignUpBtn}
+                onPress={() => navigation?.navigate('SignUp')}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.guestSignUpText}>Sign Up</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => navigation?.navigate('SignIn')}
+                style={{ marginTop: 8, alignItems: 'center' }}
+              >
+                <Text style={styles.guestSignInText}>Sign In</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Stats grid 2x2 */}
           <View style={styles.statsGrid}>
             <StatCard value={`${streak}`} label="Streak" color={Colors.primary} icon="flame" />
@@ -101,7 +130,7 @@ const ProfileTab: React.FC = () => {
           {/* Weekly Report Card */}
           <TouchableOpacity
             style={styles.reportCard}
-            onPress={() => navigation.navigate('WeeklyReport')}
+            onPress={() => navigation?.navigate('WeeklyReport')}
             activeOpacity={0.85}
           >
             <View style={styles.reportLeft}>
@@ -117,7 +146,9 @@ const ProfileTab: React.FC = () => {
           {/* Account section */}
           <Text style={styles.menuSectionLabel}>Account</Text>
           <View style={styles.menuGroup}>
-            <MenuItem icon="person-outline" label="Edit Profile" />
+            {!isAnonymous && (
+              <MenuItem icon="person-outline" label="Edit Profile" onPress={handleEditProfile} />
+            )}
             <MenuItem icon="notifications-outline" label="Notifications" />
             <MenuItem icon="diamond-outline" label="Inner Circle" badge="Premium" isLast onPress={handlePremium} />
           </View>
@@ -319,9 +350,9 @@ const styles = StyleSheet.create({
     width: 200, height: 200, borderRadius: 100,
   },
   safeArea: { flex: 1 },
-  scroll: { paddingHorizontal: 20, paddingBottom: 40 },
+  scroll: { paddingHorizontal: 20, paddingBottom: 120 },
 
-  avatarSection: { alignItems: 'center', marginTop: 16, marginBottom: 28 },
+  avatarSection: { alignItems: 'center', marginTop: 16, marginBottom: 12 },
   avatarRing: {
     width: 88, height: 88, borderRadius: 44,
     borderWidth: 2, justifyContent: 'center', alignItems: 'center', marginBottom: 14,
@@ -399,6 +430,35 @@ const styles = StyleSheet.create({
   },
   menuBadgeText: { fontFamily: FontFamily.bodyMedium, fontSize: 10, color: Colors.primary },
 
+  guestCard: {
+    backgroundColor: 'rgba(44,52,64,0.4)',
+    borderRadius: 14, padding: 16, marginBottom: 20,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)',
+  },
+  guestBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(21,26,33,0.6)', borderRadius: 6,
+    paddingHorizontal: 8, paddingVertical: 4,
+  },
+  guestBadgeText: {
+    fontFamily: FontFamily.headingSemiBold, fontSize: 11, color: '#FFC857',
+  },
+  guestMsg: {
+    fontFamily: FontFamily.body, fontSize: 14,
+    color: Colors.textSecondary, marginTop: 8,
+  },
+  guestSignUpBtn: {
+    marginTop: 12, width: '100%' as any,
+    backgroundColor: 'rgba(58,102,255,0.12)',
+    borderWidth: 1, borderColor: 'rgba(58,102,255,0.25)',
+    borderRadius: 12, paddingVertical: 12, alignItems: 'center',
+  },
+  guestSignUpText: {
+    fontFamily: FontFamily.headingSemiBold, fontSize: 15, color: Colors.primary,
+  },
+  guestSignInText: {
+    fontFamily: FontFamily.bodyMedium, fontSize: 13, color: Colors.accent,
+  },
   signOutBtn: {
     alignItems: 'center', paddingVertical: 14,
     borderWidth: 1, borderColor: 'rgba(255,71,87,0.15)', borderRadius: 12,

@@ -5,6 +5,8 @@
  * - signUpWithEmail: Create new account
  * - signInWithEmail: Sign in with email/password
  * - signInWithApple: Apple Sign-In via expo-apple-authentication
+ * - linkEmailPassword: Attach email/password to current session (e.g. anonymous → permanent)
+ * - linkAppleAccount: Same Apple flow as signInWithApple; links when an anonymous session is active
  * - signOut: Sign out and return to anonymous mode
  * - getCurrentUser: Get current user session
  * - onAuthStateChange: Listen for auth state changes
@@ -197,6 +199,60 @@ class AuthServiceImpl {
         error: { message },
       };
     }
+  }
+
+  /**
+   * Link email and password to the current user (e.g. convert anonymous → permanent).
+   * UUID stays the same; updateUser does not return a new session.
+   */
+  async linkEmailPassword(
+    email: string,
+    password: string,
+  ): Promise<AuthResponse> {
+    try {
+      const client = SupabaseService.getClient();
+      if (!client) {
+        return {
+          user: null,
+          session: null,
+          error: { message: 'Supabase client not initialized' },
+        };
+      }
+
+      const { data, error } = await client.auth.updateUser({
+        email,
+        password,
+      });
+
+      if (error) {
+        return {
+          user: null,
+          session: null,
+          error: { message: error.message, code: error.code },
+        };
+      }
+
+      return {
+        user: data.user,
+        session: null,
+        error: null,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return {
+        user: null,
+        session: null,
+        error: { message },
+      };
+    }
+  }
+
+  /**
+   * Link Apple identity to the current session (same flow as signInWithApple;
+   * with an active anonymous session, Supabase links the Apple identity).
+   */
+  async linkAppleAccount(): Promise<AuthResponse> {
+    return this.signInWithApple();
   }
 
   /**

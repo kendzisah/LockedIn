@@ -16,6 +16,7 @@ import DailyTimeCommitmentScreen from '../features/onboarding/screens/DailyTimeC
 import ScreenTimePreFrameScreen from '../features/onboarding/screens/ScreenTimePreFrameScreen';
 import NotificationPreFrameScreen from '../features/onboarding/screens/NotificationPreFrameScreen';
 import PersonalizedPlanCardScreen from '../features/onboarding/screens/PersonalizedPlanCardScreen';
+import AccountPromptScreen from '../features/onboarding/screens/AccountPromptScreen';
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
 
@@ -57,6 +58,7 @@ const OnboardingNavigator: React.FC = () => {
       <Stack.Screen name="ScreenTimePreFrame" component={ScreenTimePreFrameScreen} options={{ animation: 'none' }} />
       <Stack.Screen name="NotificationPreFrame" component={NotificationPreFrameScreen} options={{ animation: 'none' }} />
       <Stack.Screen name="PersonalizedPlanCard" component={PersonalizedPlanCardScreen} options={{ animation: 'none' }} />
+      <Stack.Screen name="AccountPrompt" component={AccountPromptScreen} options={{ animation: 'fade' }} />
     </Stack.Navigator>
   );
 };

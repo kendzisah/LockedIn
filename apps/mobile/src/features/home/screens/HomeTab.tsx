@@ -37,8 +37,12 @@ import StreakBar from '../components/StreakBar';
 import CompactMissions from '../components/CompactMissions';
 import StreakAtRiskBanner from '../components/StreakAtRiskBanner';
 import { StreakRecoveryModal } from '../../streak/components/StreakRecoveryModal';
+import { useAuth } from '../../auth/AuthProvider';
+import SignUpNudgeSheet from '../../auth/components/SignUpNudgeSheet';
 
 type NavProp = NativeStackNavigationProp<MainStackParamList>;
+
+const PENDING_SIGNUP_KEY = '@lockedin/pending_signup';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -54,9 +58,11 @@ const HomeTab: React.FC = () => {
   const { isSubscribed } = useSubscription();
   const { completedCount } = useMissions();
 
+  const { isAnonymous } = useAuth();
   const [tick, setTick] = useState(0);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [canRecover, setCanRecover] = useState(false);
+  const [showSignUpNudge, setShowSignUpNudge] = useState(false);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
@@ -133,8 +139,28 @@ const HomeTab: React.FC = () => {
   }, [isHydrated, navigation]);
 
   useEffect(() => {
+    if (!isHydrated) return;
+    (async () => {
+      try {
+        const pending = await AsyncStorage.getItem(PENDING_SIGNUP_KEY);
+        if (pending === 'true') {
+          await AsyncStorage.removeItem(PENDING_SIGNUP_KEY);
+          navigation.navigate('SignUp');
+        }
+      } catch {}
+    })();
+  }, [isHydrated, navigation]);
+
+  useEffect(() => {
     StreakRecoveryService.canRecover().then(setCanRecover);
   }, [state.consecutiveStreak, tick]);
+
+  useEffect(() => {
+    if (!isHydrated || !isAnonymous || state.consecutiveStreak < 3) return;
+    AsyncStorage.getItem('@lockedin/signup_nudge_streak3_shown').then((v) => {
+      if (!v) setShowSignUpNudge(true);
+    });
+  }, [isHydrated, isAnonymous, state.consecutiveStreak]);
 
   const streak = state.consecutiveStreak;
   const tierInfo = useMemo(() => getStreakTierInfo(streak), [streak]);
@@ -193,6 +219,11 @@ const HomeTab: React.FC = () => {
           setShowRecoveryModal(false);
           dispatch({ type: 'RESET_PHASE' });
         }}
+      />
+      <SignUpNudgeSheet
+        visible={showSignUpNudge}
+        streak={state.consecutiveStreak}
+        onDismiss={() => setShowSignUpNudge(false)}
       />
     </View>
   );

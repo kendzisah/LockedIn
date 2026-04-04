@@ -22,6 +22,7 @@ export type OnboardingStackParamList = {
   ScreenTimePreFrame: undefined;
   NotificationPreFrame: undefined;
   PersonalizedPlanCard: undefined;
+  AccountPrompt: undefined;
 };
 
 /**
@@ -49,6 +50,7 @@ export type MainStackParamList = {
   };
   SignUp: undefined;
   SignIn: undefined;
+  EditProfile: { source: 'signup' | 'profile' };
   WeeklyReport: undefined;
   CrewDetail: { crew_id: string };
   CreateCrew: undefined;

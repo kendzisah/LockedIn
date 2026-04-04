@@ -44,7 +44,7 @@ function formatHours(h: number): string {
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'PersonalizedPlanCard'>;
 
 const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
-  const { state, dispatch } = useOnboarding();
+  const { state } = useOnboarding();
   const { showPaywall } = useSubscription();
 
   useOnboardingTracking('PersonalizedPlanCard');
@@ -59,10 +59,10 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
   }, []);
 
   /**
-   * Fires completion events (Mixpanel + AppsFlyer) and dispatches COMPLETE_ONBOARDING.
+   * Fires completion events (Mixpanel + AppsFlyer), then opens the account prompt.
    * Called by BOTH the subscribe path and the "Maybe Later" path.
    */
-  const completeOnboarding = useCallback(async (subscribed: boolean) => {
+  const continueToAccountPrompt = useCallback(async (subscribed: boolean) => {
     // Fire Onboarding Completed (previously only fired on SignatureCommitment)
     MixpanelService.track('Onboarding Completed', {
       screen: 'PersonalizedPlanCard',
@@ -82,8 +82,8 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
       }
     } catch {}
 
-    dispatch({ type: 'COMPLETE_ONBOARDING' });
-  }, [dispatch, state.primaryGoal, state.dailyMinutes]);
+    navigation.navigate('AccountPrompt');
+  }, [navigation, state.primaryGoal, state.dailyMinutes]);
 
   const dailyHours = (state.dailyMinutes ?? 60) / 60;
   const dailyLabel = dailyHours === 1 ? '1 hour' : `${dailyHours} hours`;
@@ -261,7 +261,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
               if (subscribed) {
                 MixpanelService.track('Subscription Started', { source: 'onboarding' });
                 Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
-                  completeOnboarding(true);
+                  continueToAccountPrompt(true);
                 });
               } else {
                 AppsFlyerService.logEvent('paywall_dismiss', {
@@ -310,7 +310,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
                 goal: state.primaryGoal ?? '',
                 daily_commitment: String(state.dailyMinutes ?? ''),
               });
-              completeOnboarding(false);
+              continueToAccountPrompt(false);
             }}
             activeOpacity={0.7}
             style={styles.skipButton}

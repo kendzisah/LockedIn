@@ -40,7 +40,7 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const { signUp, signInWithApple } = useAuth();
+  const { signUp, signInWithApple, linkAccount, linkAppleAccount, isAnonymous } = useAuth();
 
   const validateForm = (): boolean => {
     setError('');
@@ -80,7 +80,9 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
     }
 
     setIsLoading(true);
-    const { error: authError } = await signUp(email, password);
+    const { error: authError } = isAnonymous
+      ? await linkAccount(email, password)
+      : await signUp(email, password);
     setIsLoading(false);
 
     if (authError) {
@@ -88,13 +90,14 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
       return;
     }
 
-    // Success - navigate to home
-    navigation.replace('Tabs');
+    navigation.replace('EditProfile', { source: 'signup' });
   };
 
   const handleSignInWithApple = async () => {
     setIsLoading(true);
-    const { error: authError } = await signInWithApple();
+    const { error: authError } = isAnonymous
+      ? await linkAppleAccount()
+      : await signInWithApple();
     setIsLoading(false);
 
     if (authError) {
@@ -102,8 +105,7 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
       return;
     }
 
-    // Success - navigate to home
-    navigation.replace('Tabs');
+    navigation.replace('EditProfile', { source: 'signup' });
   };
 
   const handleContinueAsGuest = () => {

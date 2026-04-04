@@ -11,6 +11,7 @@ import ExecutionBlockScreen from '../features/home/ExecutionBlockScreen';
 import SessionCompleteScreen from '../features/home/SessionCompleteScreen';
 import SignUpScreen from '../features/auth/screens/SignUpScreen';
 import SignInScreen from '../features/auth/screens/SignInScreen';
+import EditProfileScreen from '../features/auth/screens/EditProfileScreen';
 import WeeklyReportScreen from '../features/report/screens/WeeklyReportScreen';
 import CrewDetailScreen from '../features/leaderboard/screens/CrewDetailScreen';
 import CreateCrewScreen from '../features/leaderboard/screens/CreateCrewScreen';
@@ -77,6 +78,11 @@ const MainNavigator: React.FC = () => {
             name="SignIn"
             component={SignInScreen}
             options={{ animation: 'fade' }}
+          />
+          <Stack.Screen
+            name="EditProfile"
+            component={EditProfileScreen}
+            options={{ animation: 'slide_from_right' }}
           />
           <Stack.Screen
             name="WeeklyReport"
