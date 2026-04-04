@@ -56,6 +56,8 @@ export interface MissionsState {
 interface MissionsContextType extends MissionsState {
   completeMission: (missionId: string) => void;
   generateDailyMissions: (goal: string) => void;
+  /** Regenerate today's 3 missions (optional overrides for immediate post-settings update). */
+  regenerateTodaysMissions: (override?: { goal?: string; weaknesses?: string[] }) => void;
   resetDay: () => void;
 }
 
@@ -311,6 +313,20 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
     dispatch({ type: 'GENERATE_DAILY', payload: { missions: newMissions, date: today } });
   };
 
+  const regenerateTodaysMissions = useCallback(
+    (override?: { goal?: string; weaknesses?: string[] }) => {
+      const newMissions = generateDailyMissions({
+        goal: override?.goal ?? userGoal,
+        weaknesses: override?.weaknesses ?? userWeaknesses,
+        onboardingDate,
+        streak,
+      });
+      const today = getLocalDateString();
+      dispatch({ type: 'GENERATE_DAILY', payload: { missions: newMissions, date: today } });
+    },
+    [userGoal, userWeaknesses, onboardingDate, streak],
+  );
+
   const resetDay = () => {
     dispatch({ type: 'RESET_DAY' });
   };
@@ -319,6 +335,7 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
     ...state,
     completeMission,
     generateDailyMissions: generateDailyMissionsAction,
+    regenerateTodaysMissions,
     resetDay,
   };
 

@@ -7,6 +7,9 @@ import { ScreenshotCarousel } from '@/components/ui/screenshot-carousel';
 const APP_STORE_URL =
   'https://apps.apple.com/us/app/locked-in-mental-conditioning/id6759698565';
 
+const PRIVACY_POLICY_URL = 'https://locked-in.co/privacy';
+const TERMS_URL = 'https://locked-in.co/terms';
+
 const screenshots = [
   { src: '/screenshots/01-program-complete.png', alt: '90 Days. Locked In.' },
   { src: '/screenshots/03-prime-mind.png', alt: 'Prime Your Mind Daily' },
@@ -49,10 +52,20 @@ export default function HomePage() {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <span>&copy; {new Date().getFullYear()} Flock Technologies Inc.</span>
           <div className="flex gap-4">
-            <a href="/privacy" className="hover:text-foreground transition-colors">
+            <a
+              href={PRIVACY_POLICY_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground transition-colors"
+            >
               Privacy Policy
             </a>
-            <a href="/terms" className="hover:text-foreground transition-colors">
+            <a
+              href={TERMS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground transition-colors"
+            >
               Terms of Service
             </a>
           </div>

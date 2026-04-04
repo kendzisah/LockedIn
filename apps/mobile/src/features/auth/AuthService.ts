@@ -59,9 +59,40 @@ class AuthServiceImpl {
         };
       }
 
+      let user = data.user;
+      let session = data.session;
+
+      // When email confirmation is off, Supabase usually returns a session here.
+      // If not, sign in immediately so the user lands in the app with the same account.
+      if (user && !session) {
+        const signInRes = await client.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (signInRes.error) {
+          const needsConfirm =
+            signInRes.error.code === 'email_not_confirmed' ||
+            /not\s+confirmed|confirm\s+your\s+email/i.test(
+              signInRes.error.message ?? '',
+            );
+          return {
+            user,
+            session: null,
+            error: {
+              message: needsConfirm
+                ? 'Confirm your email to finish signing in, then try again.'
+                : signInRes.error.message,
+              code: signInRes.error.code,
+            },
+          };
+        }
+        user = signInRes.data.user;
+        session = signInRes.data.session;
+      }
+
       return {
-        user: data.user,
-        session: data.session,
+        user,
+        session,
         error: null,
       };
     } catch (err) {
@@ -232,9 +263,13 @@ class AuthServiceImpl {
         };
       }
 
+      // Same auth user id as before (anonymous → permanent); refresh session + user from client.
+      const { data: userData } = await client.auth.getUser();
+      const { data: sessionData } = await client.auth.getSession();
+
       return {
-        user: data.user,
-        session: null,
+        user: userData.user ?? data.user,
+        session: sessionData.session,
         error: null,
       };
     } catch (err) {

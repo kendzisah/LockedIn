@@ -45,6 +45,10 @@ const KEY_LAST_APP_OPEN = '@lockedin/last_app_open';
 const KEY_CREW_CACHED_RANK = '@lockedin/crew_cached_rank';
 const KEY_HAS_ACTIVE_CREW = '@lockedin/has_active_crew';
 const KEY_NOTIF_PERMISSION = '@lockedin/notif_permission_granted';
+export const KEY_NOTIF_USER_DISABLED = '@lockedin/notif_user_disabled';
+const KEY_REMINDER_TIME = '@lockedin/reminder_time';
+const KEY_NOTIF_STREAK_ALERTS = '@lockedin/notif_streak_alerts';
+const KEY_NOTIF_CREW_UPDATES = '@lockedin/notif_crew_updates';
 
 const STREAK_MILESTONES = [3, 7, 14, 30, 60, 90, 180, 365] as const;
 
@@ -111,6 +115,63 @@ async function cancelMasterBatch(): Promise<void> {
   for (const id of MASTER_BATCH_IDS) {
     await cancelById(id);
   }
+}
+
+async function readNotifUserDisabled(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(KEY_NOTIF_USER_DISABLED)) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+async function readStreakAlertsEnabled(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(KEY_NOTIF_STREAK_ALERTS)) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+async function readCrewNotifEnabled(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(KEY_NOTIF_CREW_UPDATES)) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+/** 24h HH:mm for daily morning reminder; default 09:00 */
+export async function readReminderTimeHHmm(): Promise<{ hour: number; minute: number }> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_REMINDER_TIME);
+    if (raw && /^\d{1,2}:\d{2}$/.test(raw)) {
+      const [h, m] = raw.split(':').map((x) => parseInt(x, 10));
+      if (h >= 0 && h < 24 && m >= 0 && m < 60) return { hour: h, minute: m };
+    }
+  } catch {
+    /* default */
+  }
+  return { hour: 9, minute: 0 };
+}
+
+export function formatReminderHHmmAs12h(hhmm: { hour: number; minute: number }): string {
+  const h24 = hhmm.hour;
+  const m = hhmm.minute;
+  const period = h24 >= 12 ? 'PM' : 'AM';
+  let h12 = h24 % 12;
+  if (h12 === 0) h12 = 12;
+  const mm = String(m).padStart(2, '0');
+  return `${h12}:${mm} ${period}`;
+}
+
+export async function persistReminderTimeHHmm(hour: number, minute: number): Promise<void> {
+  const h = Math.max(0, Math.min(23, hour));
+  const min = Math.max(0, Math.min(59, minute));
+  await AsyncStorage.setItem(
+    KEY_REMINDER_TIME,
+    `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`,
+  );
 }
 
 async function readSessionLastLockInDate(): Promise<string | null> {
@@ -277,6 +338,8 @@ export class NotificationService {
    */
   static async scheduleAllDailyNotifications(streak: number): Promise<void> {
     try {
+      if (await readNotifUserDisabled()) return;
+
       await ensureAndroidChannel();
       const { status } = await Notifications.getPermissionsAsync();
       if (status !== 'granted') return;
@@ -288,8 +351,11 @@ export class NotificationService {
       const sessionToday = lastLock === todayKey;
       const missionDone = await readMissionCompletionCount();
       const hasCrew = await readHasActiveCrew();
+      const streakAlertsOn = await readStreakAlertsEnabled();
+      const crewNotifOn = await readCrewNotifEnabled();
+      const { hour: morningHour, minute: morningMinute } = await readReminderTimeHHmm();
 
-      // a. Morning 9 AM
+      // a. Morning lock-in (time from settings)
       const morn = morningCopy(streak);
       await Notifications.scheduleNotificationAsync({
         identifier: ID_MORNING,
@@ -305,8 +371,8 @@ export class NotificationService {
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour: 9,
-          minute: 0,
+          hour: morningHour,
+          minute: morningMinute,
         },
       });
 
@@ -334,7 +400,7 @@ export class NotificationService {
       }
 
       // c. Streak protect 5 PM — no session today and streak > 0
-      if (!sessionToday && streak > 0) {
+      if (streakAlertsOn && !sessionToday && streak > 0) {
         const sp = streakProtectCopy(streak);
         await Notifications.scheduleNotificationAsync({
           identifier: ID_STREAK_PROTECT,
@@ -384,7 +450,7 @@ export class NotificationService {
       }
 
       // e. Crew weekly — Sunday 6 PM
-      if (hasCrew) {
+      if (hasCrew && crewNotifOn) {
         const { crew_name, rank, crew_id } = await readCrewCachedRank();
         await Notifications.scheduleNotificationAsync({
           identifier: ID_CREW_WEEKLY,
@@ -460,6 +526,7 @@ export class NotificationService {
 
   static async scheduleCloseToGoalNudge(remainingMinutes: number): Promise<void> {
     try {
+      if (await readNotifUserDisabled()) return;
       await ensureAndroidChannel();
       const { status } = await Notifications.getPermissionsAsync();
       if (status !== 'granted') return;
@@ -495,6 +562,8 @@ export class NotificationService {
   /** Refresh weekly crew recap (e.g. after first join). */
   static async scheduleCrewReminder(): Promise<void> {
     try {
+      if (await readNotifUserDisabled()) return;
+      if (!(await readCrewNotifEnabled())) return;
       await ensureAndroidChannel();
       const { status } = await Notifications.getPermissionsAsync();
       if (status !== 'granted') return;
@@ -534,6 +603,8 @@ export class NotificationService {
   /** One-time 24h after first crew; call only when user had no crew before join/create. */
   static async scheduleFirstCrewNudgeIfNeeded(): Promise<void> {
     try {
+      if (await readNotifUserDisabled()) return;
+      if (!(await readCrewNotifEnabled())) return;
       const sent = await AsyncStorage.getItem(KEY_CREW_FIRST_NUDGE);
       if (sent === 'true') return;
       const { status } = await Notifications.getPermissionsAsync();
@@ -585,6 +656,7 @@ export class NotificationService {
 
   static async scheduleExecutionBlockDone(endDate: Date): Promise<void> {
     try {
+      if (await readNotifUserDisabled()) return;
       await ensureAndroidChannel();
       const { status } = await Notifications.getPermissionsAsync();
       if (status !== 'granted') return;
@@ -615,6 +687,7 @@ export class NotificationService {
 
   static async scheduleStreakMilestoneIfNeeded(streak: number): Promise<void> {
     try {
+      if (await readNotifUserDisabled()) return;
       if (!(STREAK_MILESTONES as readonly number[]).includes(streak)) return;
       const { status } = await Notifications.getPermissionsAsync();
       if (status !== 'granted') return;
@@ -693,6 +766,40 @@ export class NotificationService {
       await AsyncStorage.setItem(KEY_MILESTONE_SENT, JSON.stringify(sent));
     } catch (err) {
       console.warn('[NotificationService] scheduleStreakMilestoneIfNeeded failed:', err);
+    }
+  }
+
+  /** User turned master push off/on in Settings (persists + reschedules). */
+  static async setPushMasterEnabled(enabled: boolean, streak: number): Promise<void> {
+    try {
+      if (enabled) {
+        await AsyncStorage.removeItem(KEY_NOTIF_USER_DISABLED);
+        const ok = await this.requestPermission();
+        if (ok) await this.scheduleAllDailyNotifications(streak);
+      } else {
+        await AsyncStorage.setItem(KEY_NOTIF_USER_DISABLED, 'true');
+        await this.cancelAllNotifications();
+      }
+    } catch (e) {
+      console.warn('[NotificationService] setPushMasterEnabled failed:', e);
+    }
+  }
+
+  static async setStreakAlertsPreference(enabled: boolean, streak: number): Promise<void> {
+    try {
+      await AsyncStorage.setItem(KEY_NOTIF_STREAK_ALERTS, enabled ? 'true' : 'false');
+      await this.scheduleAllDailyNotifications(streak);
+    } catch (e) {
+      console.warn('[NotificationService] setStreakAlertsPreference failed:', e);
+    }
+  }
+
+  static async setCrewNotifPreference(enabled: boolean, streak: number): Promise<void> {
+    try {
+      await AsyncStorage.setItem(KEY_NOTIF_CREW_UPDATES, enabled ? 'true' : 'false');
+      await this.scheduleAllDailyNotifications(streak);
+    } catch (e) {
+      console.warn('[NotificationService] setCrewNotifPreference failed:', e);
     }
   }
 }

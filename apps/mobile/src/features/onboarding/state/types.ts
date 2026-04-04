@@ -35,4 +35,5 @@ export type OnboardingAction =
   | { type: 'COMPLETE_ONBOARDING' }
   | { type: 'HYDRATE_ONBOARDING'; payload: boolean }
   | { type: 'SET_CURRENT_SCREEN'; payload: string }
-  | { type: 'HYDRATE_STATE'; payload: Partial<OnboardingState> };
+  | { type: 'HYDRATE_STATE'; payload: Partial<OnboardingState> }
+  | { type: 'FULL_RESET' };

@@ -82,4 +82,5 @@ export type SessionAction =
   | { type: 'COMPLETE_EXECUTION_BLOCK'; payload: { durationMinutes: number } }
   | { type: 'ADD_DAILY_FOCUS'; payload: { minutes: number } }
   | { type: 'DAILY_GOAL_MET' }
-  | { type: 'RESET_PHASE' };
+  | { type: 'RESET_PHASE' }
+  | { type: 'FULL_RESET' };

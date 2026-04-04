@@ -96,7 +96,9 @@ export default function SupportPage() {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <a
-          href="/privacy"
+          href="https://locked-in.co/privacy"
+          target="_blank"
+          rel="noopener noreferrer"
           className="block rounded-lg border border-border bg-surface px-5 py-4 transition-colors hover:border-accent"
         >
           <h3 className="text-sm font-medium text-text-primary mb-1">Privacy Policy</h3>

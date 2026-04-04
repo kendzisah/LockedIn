@@ -147,6 +147,12 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return { ...state, phase: 'IDLE' };
     }
 
+    case 'FULL_RESET': {
+      return {
+        ...initialState,
+      };
+    }
+
     default:
       return state;
   }

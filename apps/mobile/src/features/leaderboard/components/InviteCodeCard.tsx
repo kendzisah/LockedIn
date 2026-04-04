@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import { IOS_APP_STORE_PAGE_URL } from '../../settings/settingsConstants';
 
 let Clipboard: { setStringAsync: (s: string) => Promise<boolean> } | null = null;
 try {
@@ -49,7 +50,7 @@ const InviteCodeCard: React.FC<InviteCodeCardProps> = ({
 
   const handleShare = () => {
     Share.share({
-      message: `Join my crew "${crewName}" on Locked In! 🔒\n\nMy invite code: ${inviteCode}\n\nDownload Locked In and enter the code to compete with me.`,
+      message: `Join my crew "${crewName}" on Locked In! 🔒\n\nMy invite code: ${inviteCode}\n\nDownload the app and enter the code to compete with me:\n${IOS_APP_STORE_PAGE_URL}`,
     });
   };
 

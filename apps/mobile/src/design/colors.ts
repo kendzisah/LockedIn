@@ -34,6 +34,8 @@ export const Colors = {
   success: '#00D68F',
   /** Danger / destructive actions */
   danger: '#FF4757',
+  /** Warning / upgrade prompts */
+  warning: '#FFC857',
 
   // ─── Lock In Active Mode ───
   /** Near-black immersive background when session is running */

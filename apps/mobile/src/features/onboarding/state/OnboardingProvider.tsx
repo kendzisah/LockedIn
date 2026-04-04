@@ -49,6 +49,8 @@ function onboardingReducer(
       return { ...state, currentScreen: action.payload };
     case 'HYDRATE_STATE':
       return { ...state, ...action.payload };
+    case 'FULL_RESET':
+      return { ...initialState, onboardingComplete: false };
     default:
       return state;
   }
@@ -121,6 +123,38 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
       currentScreen: state.currentScreen,
     })).catch(() => {});
   }, [state.dailyMinutes, state.primaryGoal, state.phoneUsageHours, state.userAge, state.selectedWeaknesses, state.currentScreen, state.onboardingComplete]);
+
+  // ── After onboarding: keep goal / commitment / weaknesses in sync with AsyncStorage ──
+  useEffect(() => {
+    if (!isHydrated || !state.onboardingComplete) return;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(ONBOARDING_DATA_KEY);
+        const prev = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+        await AsyncStorage.setItem(
+          ONBOARDING_DATA_KEY,
+          JSON.stringify({
+            ...prev,
+            dailyMinutes: state.dailyMinutes,
+            primaryGoal: state.primaryGoal,
+            selectedWeaknesses: state.selectedWeaknesses,
+            phoneUsageHours: state.phoneUsageHours,
+            userAge: state.userAge,
+          }),
+        );
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [
+    isHydrated,
+    state.onboardingComplete,
+    state.dailyMinutes,
+    state.primaryGoal,
+    state.selectedWeaknesses,
+    state.phoneUsageHours,
+    state.userAge,
+  ]);
 
   // ── Persist when onboardingComplete flips to true ──
   useEffect(() => {
