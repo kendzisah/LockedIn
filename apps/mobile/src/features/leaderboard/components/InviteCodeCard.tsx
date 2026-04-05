@@ -56,28 +56,37 @@ const InviteCodeCard: React.FC<InviteCodeCardProps> = ({
 
   return (
     <View style={styles.card}>
-      <Text style={styles.code} numberOfLines={1} adjustsFontSizeToFit>
-        {spacedCode}
-      </Text>
-      <View style={styles.actions}>
-        <TouchableOpacity
-          onPress={handleCopy}
-          hitSlop={8}
-          accessibilityLabel="Copy invite code"
-        >
-          <Ionicons
-            name={copied ? 'checkmark' : 'copy-outline'}
-            size={20}
-            color={copied ? Colors.success : Colors.textSecondary}
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={handleShare}
-          hitSlop={8}
-          accessibilityLabel="Share invite"
-        >
-          <Ionicons name="share-outline" size={20} color={Colors.textSecondary} />
-        </TouchableOpacity>
+      <View style={styles.cardGlow} />
+      <View style={styles.labelRow}>
+        <Ionicons name="key-outline" size={12} color={Colors.textMuted} />
+        <Text style={styles.label}>Invite Code</Text>
+      </View>
+      <View style={styles.codeRow}>
+        <Text style={styles.code} numberOfLines={1} adjustsFontSizeToFit>
+          {spacedCode}
+        </Text>
+        <View style={styles.actions}>
+          <TouchableOpacity
+            onPress={handleCopy}
+            hitSlop={8}
+            accessibilityLabel="Copy invite code"
+            style={[styles.actionBtn, copied && styles.actionBtnSuccess]}
+          >
+            <Ionicons
+              name={copied ? 'checkmark' : 'copy-outline'}
+              size={16}
+              color={copied ? Colors.success : Colors.textSecondary}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleShare}
+            hitSlop={8}
+            accessibilityLabel="Share invite"
+            style={styles.actionBtn}
+          >
+            <Ionicons name="share-outline" size={16} color={Colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -85,20 +94,45 @@ const InviteCodeCard: React.FC<InviteCodeCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(21,26,33,0.72)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    overflow: 'hidden',
+  },
+  cardGlow: {
+    position: 'absolute',
+    top: -20,
+    right: -10,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(0,194,255,0.05)',
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 6,
+  },
+  label: {
+    fontFamily: FontFamily.body,
+    fontSize: 11,
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  codeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(21,26,33,0.6)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
     gap: 12,
   },
   code: {
     flex: 1,
-    fontFamily: FontFamily.heading,
+    fontFamily: FontFamily.headingBold,
     fontSize: 20,
     color: Colors.accent,
     letterSpacing: 4,
@@ -106,7 +140,21 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+  },
+  actionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionBtnSuccess: {
+    backgroundColor: 'rgba(0,214,143,0.08)',
+    borderColor: 'rgba(0,214,143,0.2)',
   },
 });
 

@@ -21,10 +21,12 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import AppleAuthButton from '../components/AppleAuthButton';
 import { useAuth } from '../AuthProvider';
 import type { MainStackParamList } from '../../../types/navigation';
 
@@ -40,9 +42,11 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [resetSending, setResetSending] = useState(false);
   const sweepAnim = useRef(new Animated.Value(0)).current;
+  const authBusy = useRef(false);
 
-  const { signIn, signInWithApple } = useAuth();
+  const { signIn, signInWithApple, resetPasswordForEmail } = useAuth();
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -83,39 +87,75 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ navigation }) => {
   };
 
   const handleSignIn = async () => {
+    if (authBusy.current || isLoading) return;
     if (!validateForm()) {
       return;
     }
 
+    authBusy.current = true;
     setIsLoading(true);
-    const { error: authError } = await signIn(email, password);
-    setIsLoading(false);
+    try {
+      const { error: authError } = await signIn(email, password);
 
-    if (authError) {
-      setError(authError.message);
-      return;
+      if (authError) {
+        setError(authError.message);
+        return;
+      }
+
+      navigation.replace('Tabs');
+    } finally {
+      setIsLoading(false);
+      authBusy.current = false;
     }
-
-    navigation.replace('Tabs');
   };
 
   const handleSignInWithApple = async () => {
-    setIsLoading(true);
-    const { error: authError } = await signInWithApple();
-    setIsLoading(false);
+    if (authBusy.current || isLoading) return;
 
-    if (authError) {
-      setError(authError.message);
+    authBusy.current = true;
+    setIsLoading(true);
+    try {
+      const { error: authError } = await signInWithApple();
+
+      if (authError) {
+        setError(authError.message);
+        return;
+      }
+
+      navigation.replace('Tabs');
+    } finally {
+      setIsLoading(false);
+      authBusy.current = false;
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (resetSending || isLoading) return;
+
+    setError('');
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setError('Enter your email address to reset your password');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmed)) {
+      setError('Enter a valid email address');
       return;
     }
 
-    navigation.replace('Tabs');
-  };
+    setResetSending(true);
+    const { error: resetError } = await resetPasswordForEmail(trimmed);
+    setResetSending(false);
 
-  const handleForgotPassword = () => {
+    if (resetError) {
+      Alert.alert('Couldn’t send reset email', resetError.message);
+      return;
+    }
+
     Alert.alert(
-      'Reset Password',
-      'Password reset is not yet available. Please contact support if you need help.',
+      'Check your email',
+      'If an account exists for that address, we sent a link to reset your password.',
       [{ text: 'OK' }],
     );
   };
@@ -175,7 +215,7 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ navigation }) => {
                   placeholderTextColor={Colors.textMuted}
                   value={email}
                   onChangeText={setEmail}
-                  editable={!isLoading}
+                  editable={!isLoading && !resetSending}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoComplete="email"
@@ -190,19 +230,21 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ navigation }) => {
                   placeholderTextColor={Colors.textMuted}
                   value={password}
                   onChangeText={setPassword}
-                  editable={!isLoading}
+                  editable={!isLoading && !resetSending}
                   secureTextEntry
                   autoCapitalize="none"
                 />
               </View>
 
               <TouchableOpacity
-                onPress={handleForgotPassword}
-                disabled={isLoading}
+                onPress={() => void handleForgotPassword()}
+                disabled={isLoading || resetSending}
                 hitSlop={8}
                 style={styles.forgotWrap}
               >
-                <Text style={styles.forgotLink}>Forgot password?</Text>
+                <Text style={[styles.forgotLink, resetSending && styles.forgotLinkMuted]}>
+                  {resetSending ? 'Sending…' : 'Forgot password?'}
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -251,18 +293,11 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ navigation }) => {
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.appleGlass}
-                onPress={handleSignInWithApple}
+              <AppleAuthButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                onPress={() => void handleSignInWithApple()}
                 disabled={isLoading}
-                activeOpacity={0.85}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color={Colors.textPrimary} />
-                ) : (
-                  <Text style={styles.appleGlassText}>Sign in with Apple</Text>
-                )}
-              </TouchableOpacity>
+              />
             </View>
 
             <View style={styles.signUpLinkRow}>
@@ -421,6 +456,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.accent,
   },
+  forgotLinkMuted: {
+    color: Colors.textMuted,
+  },
   actions: {
     gap: 12,
     marginBottom: 20,
@@ -456,22 +494,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     width: 120,
-  },
-  appleGlass: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 54,
-  },
-  appleGlassText: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 16,
-    color: Colors.textPrimary,
-    letterSpacing: 0.2,
   },
   signUpLinkRow: {
     flexDirection: 'row',

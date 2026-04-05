@@ -19,7 +19,10 @@ import React, {
 } from 'react';
 import { type User } from '@supabase/supabase-js';
 import { AuthService, type AuthError } from './AuthService';
+import { CrewService } from '../leaderboard/CrewService';
 import { NotificationService } from '../../services/NotificationService';
+import { clearAllLockedInStorage } from '../../services/lockedInStorage';
+import { emitLogoutCleanup } from '../../services/logoutCleanupBus';
 
 export interface AuthContextType {
   user: User | null;
@@ -41,6 +44,7 @@ export interface AuthContextType {
   ) => Promise<{ error: AuthError | null }>;
   linkAppleAccount: () => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<{ error: AuthError | null }>;
+  resetPasswordForEmail: (email: string) => Promise<{ error: AuthError | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -90,8 +94,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       password: string,
     ): Promise<{ error: AuthError | null }> => {
       const response = await AuthService.signUpWithEmail(email, password);
-      if (!response.error && response.user) {
-        setUser(response.user);
+      if (!response.error) {
+        const { user: fresh } = await AuthService.getCurrentUser();
+        setUser(fresh ?? response.user ?? null);
       }
       return { error: response.error };
     },
@@ -129,8 +134,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       password: string,
     ): Promise<{ error: AuthError | null }> => {
       const response = await AuthService.linkEmailPassword(email, password);
-      if (!response.error && response.user) {
-        setUser(response.user);
+      if (!response.error) {
+        const { user: fresh } = await AuthService.getCurrentUser();
+        setUser(fresh ?? response.user ?? null);
       }
       return { error: response.error };
     },
@@ -152,14 +158,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     async (): Promise<{ error: AuthError | null }> => {
       const response = await AuthService.signOut();
       if (!response.error) {
-        setUser(null);
+        try {
+          await clearAllLockedInStorage();
+        } catch {
+          /* ignore */
+        }
+        emitLogoutCleanup();
+        try {
+          await CrewService.syncHasActiveCrewFlag();
+        } catch {
+          /* ignore */
+        }
         try {
           await NotificationService.cancelAllNotifications();
         } catch {
           /* ignore */
         }
+        const { user: nextUser } = await AuthService.getCurrentUser();
+        setUser(nextUser);
       }
       return response;
+    },
+    [],
+  );
+
+  const resetPasswordForEmail = useCallback(
+    async (email: string): Promise<{ error: AuthError | null }> => {
+      return AuthService.resetPasswordForEmail(email);
     },
     [],
   );
@@ -175,6 +200,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     linkAccount,
     linkAppleAccount,
     signOut,
+    resetPasswordForEmail,
   };
 
   return (

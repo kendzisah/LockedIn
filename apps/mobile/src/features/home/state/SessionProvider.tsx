@@ -22,6 +22,7 @@ import React, {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppsFlyerService } from '../../../services/AppsFlyerService';
 import { MixpanelService } from '../../../services/MixpanelService';
+import { subscribeLogoutCleanup } from '../../../services/logoutCleanupBus';
 import type {
   SessionState,
   SessionAction,
@@ -195,6 +196,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setIsHydrated(true);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    return subscribeLogoutCleanup(() => {
+      dispatch({ type: 'FULL_RESET' });
+    });
   }, []);
 
   // Persist to AsyncStorage on every state change (skip first render)

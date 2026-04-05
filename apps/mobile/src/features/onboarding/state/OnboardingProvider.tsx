@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { OnboardingState, OnboardingAction } from './types';
 import { MixpanelService } from '../../../services/MixpanelService';
 import { clearPersistedOnboardingScreen } from '../hooks/useOnboardingTracking';
+import { subscribeLogoutCleanup } from '../../../services/logoutCleanupBus';
 
 const STORAGE_KEY = '@lockedin/onboarding_complete';
 const ONBOARDING_DATA_KEY = '@lockedin/onboarding_data';
@@ -109,6 +110,12 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsHydrated(true);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    return subscribeLogoutCleanup(() => {
+      dispatch({ type: 'FULL_RESET' });
+    });
   }, []);
 
   // ── Persist quiz answers incrementally so resume works ──

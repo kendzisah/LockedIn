@@ -22,8 +22,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import AppleAuthButton from '../components/AppleAuthButton';
 import { useAuth } from '../AuthProvider';
 import type { MainStackParamList } from '../../../types/navigation';
 
@@ -39,10 +41,12 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [authErrorCode, setAuthErrorCode] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(false);
   const sweepAnim = useRef(new Animated.Value(0)).current;
+  const authBusy = useRef(false);
 
-  const { signUp, signInWithApple, linkAccount, linkAppleAccount, isAnonymous } = useAuth();
+  const { signUp, signInWithApple } = useAuth();
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -62,6 +66,7 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
 
   const validateForm = (): boolean => {
     setError('');
+    setAuthErrorCode(undefined);
 
     if (!email.trim()) {
       setError('Email is required');
@@ -93,37 +98,48 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
   };
 
   const handleSignUp = async () => {
+    if (authBusy.current || isLoading) return;
     if (!validateForm()) {
       return;
     }
 
+    authBusy.current = true;
     setIsLoading(true);
-    const { error: authError } = isAnonymous
-      ? await linkAccount(email, password)
-      : await signUp(email, password);
-    setIsLoading(false);
+    try {
+      const { error: authError } = await signUp(email, password);
 
-    if (authError) {
-      setError(authError.message);
-      return;
+      if (authError) {
+        setError(authError.message);
+        setAuthErrorCode(authError.code);
+        return;
+      }
+
+      navigation.replace('EditProfile', { source: 'signup' });
+    } finally {
+      setIsLoading(false);
+      authBusy.current = false;
     }
-
-    navigation.replace('EditProfile', { source: 'signup' });
   };
 
   const handleSignInWithApple = async () => {
+    if (authBusy.current || isLoading) return;
+
+    authBusy.current = true;
     setIsLoading(true);
-    const { error: authError } = isAnonymous
-      ? await linkAppleAccount()
-      : await signInWithApple();
-    setIsLoading(false);
+    try {
+      const { error: authError } = await signInWithApple();
 
-    if (authError) {
-      setError(authError.message);
-      return;
+      if (authError) {
+        setError(authError.message);
+        setAuthErrorCode(authError.code);
+        return;
+      }
+
+      navigation.replace('EditProfile', { source: 'signup' });
+    } finally {
+      setIsLoading(false);
+      authBusy.current = false;
     }
-
-    navigation.replace('EditProfile', { source: 'signup' });
   };
 
   const handleContinueAsGuest = () => {
@@ -168,6 +184,15 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
             {error ? (
               <View style={styles.errorGlass}>
                 <Text style={styles.errorText}>{error}</Text>
+                {authErrorCode === 'email_already_registered' ? (
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('SignIn')}
+                    hitSlop={8}
+                    style={styles.errorAction}
+                  >
+                    <Text style={styles.errorActionText}>Go to Sign In</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ) : null}
 
@@ -262,18 +287,11 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.appleGlass}
-                onPress={handleSignInWithApple}
+              <AppleAuthButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
+                onPress={() => void handleSignInWithApple()}
                 disabled={isLoading}
-                activeOpacity={0.85}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color={Colors.textPrimary} />
-                ) : (
-                  <Text style={styles.appleGlassText}>Sign up with Apple</Text>
-                )}
-              </TouchableOpacity>
+              />
             </View>
 
             <View style={styles.signInLinkRow}>
@@ -378,6 +396,15 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: Colors.danger,
   },
+  errorAction: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+  },
+  errorActionText: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 14,
+    color: Colors.accent,
+  },
   formCard: {
     backgroundColor: 'rgba(21,26,33,0.72)',
     borderRadius: 18,
@@ -458,22 +485,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     width: 120,
-  },
-  appleGlass: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 54,
-  },
-  appleGlassText: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 16,
-    color: Colors.textPrimary,
-    letterSpacing: 0.2,
   },
   signInLinkRow: {
     flexDirection: 'row',

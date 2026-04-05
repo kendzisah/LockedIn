@@ -151,13 +151,17 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
 
   const handleSelect = useCallback((minutes: number) => {
     onClose();
-    if (!isSubscribed) {
-      navigation.navigate('PaywallOffer');
-      return;
-    }
-    MixpanelService.track('Lock In Started', { duration_minutes: minutes });
-    LockModeService.beginSession();
-    navigation.navigate('ExecutionBlock', { durationMinutes: minutes });
+    // Defer navigation to the next frame so the Modal unmounts cleanly
+    // before the Stack navigator processes the navigate action.
+    requestAnimationFrame(() => {
+      if (!isSubscribed) {
+        navigation.navigate('PaywallOffer');
+        return;
+      }
+      MixpanelService.track('Lock In Started', { duration_minutes: minutes });
+      LockModeService.beginSession();
+      navigation.navigate('ExecutionBlock', { durationMinutes: minutes });
+    });
   }, [isSubscribed, navigation, onClose]);
 
   const formatDuration = (mins: number): { value: string; label: string } =>
@@ -173,8 +177,9 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <Pressable style={dp.overlay} onPress={onClose}>
-        <Pressable style={dp.card} onPress={(e) => e.stopPropagation()}>
+      <View style={dp.overlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+        <View style={dp.card}>
           {/* Hero icon */}
           <View style={dp.heroIcon}>
             <Ionicons name="lock-closed" size={24} color={Colors.primary} />
@@ -289,8 +294,8 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
               </TouchableOpacity>
             </View>
           )}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 };
@@ -311,6 +316,8 @@ const dp = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.07)',
     overflow: 'hidden',
+    zIndex: 1,
+    elevation: 8,
   },
   heroIcon: {
     width: 52,

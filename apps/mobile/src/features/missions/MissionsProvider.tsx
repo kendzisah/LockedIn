@@ -14,6 +14,7 @@ import {
   calculateTotalXP,
 } from './MissionEngine';
 import { CrewService } from '../leaderboard/CrewService';
+import { subscribeLogoutCleanup } from '../../services/logoutCleanupBus';
 
 // ─── Local-time helpers ──────────────────────────────────
 
@@ -38,7 +39,8 @@ type MissionAction =
   | { type: 'HYDRATE'; payload: MissionsState }
   | { type: 'GENERATE_DAILY'; payload: { missions: Mission[]; date: string } }
   | { type: 'COMPLETE_MISSION'; payload: string }
-  | { type: 'RESET_DAY' };
+  | { type: 'RESET_DAY' }
+  | { type: 'FULL_LOGOUT_RESET' };
 
 // ─── State ──────────────────────────────────────────────
 
@@ -126,6 +128,9 @@ const missionsReducer = (state: MissionsState, action: MissionAction): MissionsS
         dailyXP: 0,
         lockedInToday: false,
       };
+
+    case 'FULL_LOGOUT_RESET':
+      return getInitialState();
 
     default:
       return state;
@@ -239,6 +244,13 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
     hydrate();
   }, [hydrate]);
 
+  useEffect(() => {
+    return subscribeLogoutCleanup(() => {
+      dispatch({ type: 'FULL_LOGOUT_RESET' });
+      void hydrate();
+    });
+  }, [hydrate]);
+
   // Schedule a timer for local midnight so missions refresh even if the app stays in foreground
   useEffect(() => {
     const scheduleMidnight = () => {
@@ -283,6 +295,7 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
   }, [state.totalXP]);
 
   const completeMission = (missionId: string) => {
+    const mission = state.missions.find((m) => m.id === missionId);
     dispatch({ type: 'COMPLETE_MISSION', payload: missionId });
 
     (async () => {
@@ -291,11 +304,18 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
         const updated = { missions_done: stats.missions_done + 1 };
         await CrewService.updateWeeklyStats(updated);
         const latest = await CrewService.getWeeklyStats();
-        await CrewService.submitScoreToAllCrews(
+
+        // Server-side validation of time gate + score upsert
+        const result = await CrewService.completeMissionServerSide(
+          mission?.timeGate,
           latest.focus_minutes,
           latest.missions_done,
           latest.streak_days,
         );
+
+        if (!result.success && result.error === 'time_gate_locked') {
+          console.warn('[MissionsProvider] Server rejected: time gate not yet unlocked');
+        }
       } catch (e) {
         console.error('[MissionsProvider] Crew score submission failed:', e);
       }

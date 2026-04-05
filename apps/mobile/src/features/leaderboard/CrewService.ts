@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SupabaseService } from '../../services/SupabaseService';
+import { ENV } from '../../config/env';
 
 const WEEK_STATS_KEY = '@lockedin/crew_week_stats';
 
@@ -535,6 +536,59 @@ export const CrewService = {
       await AsyncStorage.setItem(WEEK_STATS_KEY, JSON.stringify(next));
     } catch (error) {
       console.error('[CrewService] updateWeeklyStats failed:', error);
+    }
+  },
+
+  /**
+   * Submit a mission completion through the server-side Edge Function.
+   * The server validates the time gate against its own clock and upserts crew_scores.
+   * Falls back to client-side upsert if the Edge Function is unreachable.
+   */
+  async completeMissionServerSide(
+    timeGate: string | undefined,
+    focusMinutes: number,
+    missionsDone: number,
+    streakDays: number,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const client = SupabaseService.getClient();
+      if (!client) return { success: false, error: 'Client not initialized' };
+
+      const { data: { session } } = await client.auth.getSession();
+      if (!session?.access_token) return { success: false, error: 'No session' };
+
+      const utcOffsetMinutes = new Date().getTimezoneOffset() * -1;
+
+      const res = await fetch(`${ENV.SUPABASE_URL}/functions/v1/complete-mission`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          timeGate,
+          utcOffsetMinutes,
+          focusMinutes,
+          missionsDone,
+          streakDays,
+        }),
+      });
+
+      if (res.status === 403) {
+        const body = await res.json();
+        return { success: false, error: body.error ?? 'time_gate_locked' };
+      }
+
+      if (!res.ok) {
+        throw new Error(`Edge function returned ${res.status}`);
+      }
+
+      return { success: true };
+    } catch (err) {
+      console.warn('[CrewService] Edge function failed, falling back to client upsert:', err);
+      // Fallback: submit directly (no time-gate enforcement, but keeps scores working)
+      await CrewService.submitScoreToAllCrews(focusMinutes, missionsDone, streakDays);
+      return { success: true };
     }
   },
 };

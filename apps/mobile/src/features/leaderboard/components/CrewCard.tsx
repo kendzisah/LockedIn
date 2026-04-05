@@ -14,7 +14,7 @@ export type CrewCardProps = {
   onPress: () => void;
 };
 
-const GOLD = '#FFC857';
+const RANK_GOLD = '#FFD700';
 
 const CrewCard: React.FC<CrewCardProps> = ({
   crewName,
@@ -27,6 +27,7 @@ const CrewCard: React.FC<CrewCardProps> = ({
 }) => {
   const fillPct =
     topScore > 0 ? Math.min(100, Math.max(0, (myScore / topScore) * 100)) : 0;
+  const isFirst = myRank === 1;
 
   return (
     <TouchableOpacity
@@ -35,35 +36,47 @@ const CrewCard: React.FC<CrewCardProps> = ({
       activeOpacity={0.85}
       accessibilityRole="button"
     >
-      <View style={styles.row1}>
-        <Text style={styles.crewName} numberOfLines={1}>
-          {crewName}
-        </Text>
-        <View style={styles.memberMeta}>
-          <Ionicons name="people-outline" size={14} color={Colors.textSecondary} />
-          <Text style={styles.memberCount}>
-            {memberCount}/{maxMembers}
+      <View style={styles.cardGlow} />
+
+      <View style={styles.topRow}>
+        <View style={styles.nameCol}>
+          <Text style={styles.crewName} numberOfLines={1}>
+            {crewName}
           </Text>
+          <View style={styles.memberBadge}>
+            <Ionicons name="people-outline" size={12} color={Colors.textMuted} />
+            <Text style={styles.memberCount}>
+              {memberCount}/{maxMembers}
+            </Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+      </View>
+
+      <View style={styles.statsRow}>
+        <View style={styles.statBlock}>
+          <Text style={[styles.statValue, isFirst && styles.statValueGold]}>
+            {myRank != null ? `#${myRank}` : '—'}
+          </Text>
+          <Text style={styles.statLabel}>Rank</Text>
+        </View>
+        <View style={styles.statDivider} />
+        <View style={styles.statBlock}>
+          <Text style={styles.statValue}>{myScore}</Text>
+          <Text style={styles.statLabel}>Score</Text>
         </View>
       </View>
 
-      <Text
-        style={[
-          styles.rankLine,
-          myRank === 1 && styles.rankLineGold,
-        ]}
-        numberOfLines={1}
-      >
-        {myRank != null
-          ? `Your rank: #${myRank}`
-          : 'No activity this week'}
-      </Text>
-
-      <View style={styles.scoreAboveRow}>
-        <Text style={styles.scoreAbove}>{myScore}</Text>
-      </View>
       <View style={styles.track}>
         <View style={[styles.fill, { width: `${fillPct}%` }]} />
+        {fillPct > 0 && (
+          <View
+            style={[
+              styles.fillGlow,
+              { width: `${fillPct}%` },
+            ]}
+          />
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -71,55 +84,80 @@ const CrewCard: React.FC<CrewCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: 'rgba(21,26,33,0.6)',
-    borderRadius: 14,
+    backgroundColor: 'rgba(21,26,33,0.5)',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: 'rgba(255,255,255,0.04)',
     padding: 16,
+    overflow: 'hidden',
   },
-  row1: {
+  cardGlow: {
+    position: 'absolute',
+    top: -30,
+    right: -20,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(58,102,255,0.05)',
+  },
+  topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
-  crewName: {
+  nameCol: {
     flex: 1,
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 16,
-    color: Colors.textPrimary,
+    gap: 6,
   },
-  memberMeta: {
+  crewName: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 17,
+    color: Colors.textPrimary,
+    letterSpacing: -0.2,
+  },
+  memberBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
   memberCount: {
     fontFamily: FontFamily.body,
-    fontSize: 13,
-    color: Colors.textSecondary,
+    fontSize: 12,
+    color: Colors.textMuted,
   },
-  rankLine: {
-    marginTop: 8,
-    fontFamily: FontFamily.bodyMedium,
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  rankLineGold: {
-    color: GOLD,
-  },
-  scoreAboveRow: {
-    marginTop: 12,
+  statsRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 14,
+    marginBottom: 14,
+    gap: 16,
   },
-  scoreAbove: {
-    fontFamily: FontFamily.body,
-    fontSize: 13,
+  statBlock: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValue: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 20,
     color: Colors.textPrimary,
+    letterSpacing: -0.3,
+  },
+  statValueGold: {
+    color: RANK_GOLD,
+  },
+  statLabel: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
   track: {
-    marginTop: 4,
     height: 6,
     borderRadius: 3,
     backgroundColor: 'rgba(44,52,64,0.5)',
@@ -129,6 +167,17 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 3,
     backgroundColor: Colors.primary,
+  },
+  fillGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    height: '100%',
+    borderRadius: 3,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
   },
 });
 

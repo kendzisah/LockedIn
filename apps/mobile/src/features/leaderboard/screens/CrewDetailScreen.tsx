@@ -7,12 +7,13 @@ import {
   FlatList,
   Platform,
   RefreshControl,
-  SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../../types/navigation';
@@ -111,84 +112,6 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     setRefreshing(false);
   }, [fetchData]);
 
-  const handleMore = useCallback(() => {
-    const options: string[] = ['Share Invite Code'];
-    if (isOwner) {
-      options.push('Delete Crew');
-    } else {
-      options.push('Leave Crew');
-    }
-    options.push('Cancel');
-
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          destructiveButtonIndex: 1,
-          cancelButtonIndex: options.length - 1,
-        },
-        async (idx) => {
-          if (idx === 0 && details) {
-            // Share is handled by InviteCodeCard, but we can re-trigger share
-          } else if (idx === 1) {
-            if (isOwner) {
-              Alert.alert(
-                'Delete Crew',
-                `Are you sure you want to delete "${details?.name}"? This cannot be undone.`,
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: async () => {
-                      const ok = await CrewService.deleteCrew(crew_id);
-                      if (ok) {
-                        await refreshNotificationsAfterCrewChange();
-                        navigation.goBack();
-                      } else Alert.alert('Error', 'Failed to delete crew.');
-                    },
-                  },
-                ],
-              );
-            } else {
-              Alert.alert(
-                'Leave Crew',
-                `Are you sure you want to leave "${details?.name}"?`,
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Leave',
-                    style: 'destructive',
-                    onPress: async () => {
-                      const ok = await CrewService.leaveCrew(crew_id);
-                      if (ok) {
-                        await refreshNotificationsAfterCrewChange();
-                        navigation.goBack();
-                      } else Alert.alert('Error', 'Failed to leave crew.');
-                    },
-                  },
-                ],
-              );
-            }
-          }
-        },
-      );
-    } else {
-      // Android fallback
-      const actions = isOwner
-        ? [
-            { text: 'Delete Crew', onPress: () => handleDeleteOrLeave('delete') },
-          ]
-        : [
-            { text: 'Leave Crew', onPress: () => handleDeleteOrLeave('leave') },
-          ];
-      Alert.alert(details?.name ?? 'Options', undefined, [
-        ...actions,
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
-  }, [isOwner, details, crew_id, navigation, refreshNotificationsAfterCrewChange]);
-
   const handleDeleteOrLeave = useCallback(
     async (action: 'delete' | 'leave') => {
       if (action === 'delete') {
@@ -208,156 +131,327 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     [crew_id, navigation, refreshNotificationsAfterCrewChange],
   );
 
+  const handleMore = useCallback(() => {
+    const options: string[] = ['Share Invite Code'];
+    if (isOwner) {
+      options.push('Delete Crew');
+    } else {
+      options.push('Leave Crew');
+    }
+    options.push('Cancel');
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          destructiveButtonIndex: 1,
+          cancelButtonIndex: options.length - 1,
+        },
+        async (idx) => {
+          if (idx === 0 && details) {
+            // Share handled by InviteCodeCard
+          } else if (idx === 1) {
+            if (isOwner) {
+              Alert.alert(
+                'Delete Crew',
+                `Are you sure you want to delete "${details?.name}"? This cannot be undone.`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: () => handleDeleteOrLeave('delete'),
+                  },
+                ],
+              );
+            } else {
+              Alert.alert(
+                'Leave Crew',
+                `Are you sure you want to leave "${details?.name}"?`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Leave',
+                    style: 'destructive',
+                    onPress: () => handleDeleteOrLeave('leave'),
+                  },
+                ],
+              );
+            }
+          }
+        },
+      );
+    } else {
+      const actions = isOwner
+        ? [{ text: 'Delete Crew', onPress: () => handleDeleteOrLeave('delete') }]
+        : [{ text: 'Leave Crew', onPress: () => handleDeleteOrLeave('leave') }];
+      Alert.alert(details?.name ?? 'Options', undefined, [
+        ...actions,
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  }, [isOwner, details, handleDeleteOrLeave]);
+
   if (loading && !details) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.root}>
+        <LinearGradient
+          colors={['#0E1116', '#111922', '#0E1116']}
+          locations={[0, 0.5, 1]}
+          style={StyleSheet.absoluteFill}
+        />
         <View style={styles.center}>
           <ActivityIndicator color={Colors.primary} />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10}>
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {details?.name ?? ''}
-        </Text>
-        <TouchableOpacity onPress={handleMore} hitSlop={10}>
-          <Ionicons name="ellipsis-vertical" size={22} color={Colors.textSecondary} />
-        </TouchableOpacity>
-      </View>
+    <View style={styles.root}>
+      <LinearGradient
+        colors={['#0E1116', '#111922', '#0E1116']}
+        locations={[0, 0.5, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.glowOrb} />
+      <View style={styles.glowOrb2} />
 
-      {/* Week selector */}
-      <View style={styles.weekSelector}>
-        <TouchableOpacity
-          onPress={() => setWeekOffset((o) => o - 1)}
-          hitSlop={10}
-        >
-          <Ionicons name="chevron-back" size={22} color={Colors.textSecondary} />
-        </TouchableOpacity>
-        <Text style={styles.weekLabel}>
-          {formatWeekLabel(selectedWeekKey, currentWeekKey)}
-        </Text>
-        <TouchableOpacity
-          onPress={() => setWeekOffset((o) => Math.min(o + 1, 0))}
-          hitSlop={10}
-          disabled={isCurrentWeek}
-        >
-          <Ionicons
-            name="chevron-forward"
-            size={22}
-            color={isCurrentWeek ? Colors.surface : Colors.textSecondary}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* Leaderboard */}
-      {leaderboard.length === 0 ? (
-        <View style={styles.emptyWeek}>
-          <Text style={styles.emptyWeekText}>No activity this week</Text>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {details?.name ?? ''}
+            </Text>
+            {details && (
+              <View style={styles.headerMeta}>
+                <Ionicons name="people-outline" size={12} color={Colors.textMuted} />
+                <Text style={styles.headerMetaText}>
+                  {details.member_count ?? 0} members
+                </Text>
+              </View>
+            )}
+          </View>
+          <TouchableOpacity onPress={handleMore} hitSlop={10} style={styles.moreBtn}>
+            <Ionicons name="ellipsis-horizontal" size={20} color={Colors.textSecondary} />
+          </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          data={leaderboard}
-          keyExtractor={(item) => item.user_id}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item, index }) => (
-            <MemberRow
-              rank={item.rank}
-              username={item.username}
-              focusMinutes={item.focus_minutes}
-              missionsDone={item.missions_done}
-              streakDays={item.streak_days}
-              totalScore={item.total_score}
-              isCurrentUser={item.is_current_user}
-              isLast={index === leaderboard.length - 1}
-            />
-          )}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor={Colors.primary}
-            />
-          }
-        />
-      )}
 
-      {/* Invite code footer */}
-      {details && (
-        <View style={styles.footer}>
-          <InviteCodeCard
-            inviteCode={details.invite_code}
-            crewName={details.name}
-          />
+        {/* Week selector */}
+        <View style={styles.weekSelector}>
+          <TouchableOpacity
+            onPress={() => setWeekOffset((o) => o - 1)}
+            hitSlop={10}
+            style={styles.weekArrow}
+          >
+            <Ionicons name="chevron-back" size={18} color={Colors.textSecondary} />
+          </TouchableOpacity>
+          <View style={styles.weekCenter}>
+            <Text style={styles.weekLabel}>
+              {formatWeekLabel(selectedWeekKey, currentWeekKey)}
+            </Text>
+            {isCurrentWeek && (
+              <View style={styles.liveDot} />
+            )}
+          </View>
+          <TouchableOpacity
+            onPress={() => setWeekOffset((o) => Math.min(o + 1, 0))}
+            hitSlop={10}
+            disabled={isCurrentWeek}
+            style={styles.weekArrow}
+          >
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={isCurrentWeek ? Colors.surface : Colors.textSecondary}
+            />
+          </TouchableOpacity>
         </View>
-      )}
-    </SafeAreaView>
+
+        {/* Leaderboard */}
+        {leaderboard.length === 0 ? (
+          <View style={styles.emptyWeek}>
+            <Ionicons name="stats-chart-outline" size={40} color={Colors.textMuted} style={{ opacity: 0.5 }} />
+            <Text style={styles.emptyWeekTitle}>No activity yet</Text>
+            <Text style={styles.emptyWeekText}>Start a focus session to get on the board</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={leaderboard}
+            keyExtractor={(item) => item.user_id}
+            contentContainerStyle={styles.listContent}
+            renderItem={({ item, index }) => (
+              <MemberRow
+                rank={item.rank}
+                username={item.username}
+                focusMinutes={item.focus_minutes}
+                missionsDone={item.missions_done}
+                streakDays={item.streak_days}
+                totalScore={item.total_score}
+                isCurrentUser={item.is_current_user}
+                isLast={index === leaderboard.length - 1}
+              />
+            )}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor={Colors.primary}
+              />
+            }
+          />
+        )}
+
+        {/* Invite code footer */}
+        {details && (
+          <View style={styles.footer}>
+            <InviteCodeCard
+              inviteCode={details.invite_code}
+              crewName={details.name}
+            />
+          </View>
+        )}
+      </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  safe: {
+    flex: 1,
   },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  glowOrb: {
+    position: 'absolute',
+    top: 60,
+    right: -80,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(58,102,255,0.06)',
+  },
+  glowOrb2: {
+    position: 'absolute',
+    bottom: 100,
+    left: -60,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(0,194,255,0.04)',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 12,
+    paddingBottom: 16,
     gap: 12,
   },
-  headerTitle: {
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCenter: {
     flex: 1,
-    fontFamily: FontFamily.heading,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontFamily: FontFamily.headingSemiBold,
     fontSize: 18,
     color: Colors.textPrimary,
-    textAlign: 'center',
+    letterSpacing: -0.2,
+  },
+  headerMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  headerMetaText: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.textMuted,
+  },
+  moreBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   weekSelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-    paddingVertical: 12,
-    marginHorizontal: 16,
-    backgroundColor: 'rgba(21,26,33,0.6)',
+    justifyContent: 'space-between',
+    marginHorizontal: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(21,26,33,0.5)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-    marginBottom: 8,
+    borderColor: 'rgba(255,255,255,0.04)',
+    marginBottom: 12,
+  },
+  weekArrow: {
+    padding: 4,
+  },
+  weekCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   weekLabel: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 14,
     color: Colors.textPrimary,
-    minWidth: 140,
-    textAlign: 'center',
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.success,
   },
   emptyWeek: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 8,
+    paddingBottom: 80,
+  },
+  emptyWeekTitle: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 16,
+    color: Colors.textSecondary,
+    marginTop: 4,
   },
   emptyWeekText: {
     fontFamily: FontFamily.body,
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: Colors.textMuted,
   },
   listContent: {
+    paddingHorizontal: 20,
     paddingBottom: 120,
   },
   footer: {
@@ -368,8 +462,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(14,17,22,0.95)',
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.04)',
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingHorizontal: 20,
+    paddingTop: 10,
     paddingBottom: 34,
   },
 });
