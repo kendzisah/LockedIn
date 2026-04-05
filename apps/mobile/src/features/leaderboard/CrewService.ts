@@ -410,6 +410,24 @@ export const CrewService = {
     }
   },
 
+  async kickMember(crewId: string, targetUserId: string): Promise<boolean> {
+    try {
+      const client = SupabaseService.getClient();
+      if (!client) return false;
+
+      const { error } = await client.rpc('kick_crew_member', {
+        target_crew_id: crewId,
+        target_user_id: targetUserId,
+      });
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error('[CrewService] kickMember failed:', error);
+      return false;
+    }
+  },
+
   async deleteCrew(crewId: string): Promise<boolean> {
     try {
       const client = SupabaseService.getClient();

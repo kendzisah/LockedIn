@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -13,6 +13,7 @@ export type MemberRowProps = {
   totalScore: number;
   isCurrentUser: boolean;
   isLast?: boolean;
+  onRemove?: () => void;
 };
 
 const RANK_GOLD = '#FFD700';
@@ -42,6 +43,7 @@ const MemberRow: React.FC<MemberRowProps> = ({
   totalScore,
   isCurrentUser,
   isLast,
+  onRemove,
 }) => {
   const initial = username.trim().charAt(0).toUpperCase() || '?';
   const rColor = rankColor(rank);
@@ -90,10 +92,22 @@ const MemberRow: React.FC<MemberRowProps> = ({
         </View>
       </View>
 
-      {/* Score */}
-      <View style={styles.scoreCol}>
-        <Text style={[styles.score, isCurrentUser && styles.scoreCurrent]}>{totalScore}</Text>
-        <Text style={styles.scoreLabel}>pts</Text>
+      {/* Score + optional remove */}
+      <View style={styles.rightCol}>
+        <View style={styles.scoreCol}>
+          <Text style={[styles.score, isCurrentUser && styles.scoreCurrent]}>{totalScore}</Text>
+          <Text style={styles.scoreLabel}>pts</Text>
+        </View>
+        {onRemove && (
+          <TouchableOpacity
+            onPress={onRemove}
+            hitSlop={8}
+            style={styles.removeBtn}
+            accessibilityLabel={`Remove ${username}`}
+          >
+            <Ionicons name="close-circle" size={18} color={Colors.danger} />
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -178,9 +192,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.textMuted,
   },
+  rightCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginLeft: 8,
+  },
   scoreCol: {
     alignItems: 'flex-end',
-    marginLeft: 8,
   },
   score: {
     fontFamily: FontFamily.headingBold,
@@ -196,6 +215,10 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Colors.textMuted,
     marginTop: 1,
+  },
+  removeBtn: {
+    padding: 4,
+    opacity: 0.7,
   },
 });
 

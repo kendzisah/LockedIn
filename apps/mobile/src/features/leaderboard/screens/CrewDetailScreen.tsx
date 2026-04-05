@@ -131,6 +131,31 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     [crew_id, navigation, refreshNotificationsAfterCrewChange],
   );
 
+  const handleKickMember = useCallback(
+    (targetUserId: string, username: string) => {
+      Alert.alert(
+        'Remove Member',
+        `Remove ${username} from this crew? Their scores will be deleted.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: async () => {
+              const ok = await CrewService.kickMember(crew_id, targetUserId);
+              if (ok) {
+                await fetchData();
+              } else {
+                Alert.alert('Error', 'Failed to remove member.');
+              }
+            },
+          },
+        ],
+      );
+    },
+    [crew_id, fetchData],
+  );
+
   const handleMore = useCallback(() => {
     const options: string[] = ['Share Invite Code'];
     if (isOwner) {
@@ -294,6 +319,11 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
                 totalScore={item.total_score}
                 isCurrentUser={item.is_current_user}
                 isLast={index === leaderboard.length - 1}
+                onRemove={
+                  isOwner && !item.is_current_user
+                    ? () => handleKickMember(item.user_id, item.username)
+                    : undefined
+                }
               />
             )}
             refreshControl={
