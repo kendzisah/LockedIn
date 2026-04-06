@@ -21,7 +21,7 @@ import type { MainStackParamList } from '../types/navigation';
 import { Colors } from '../design/colors';
 import { FontFamily } from '../design/typography';
 import { useSubscription } from '../features/subscription/SubscriptionProvider';
-import { MixpanelService } from '../services/MixpanelService';
+import { Analytics } from '../services/AnalyticsService';
 import { LockModeService } from '../services/LockModeService';
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -158,7 +158,7 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
         navigation.navigate('PaywallOffer');
         return;
       }
-      MixpanelService.track('Lock In Started', { duration_minutes: minutes });
+      Analytics.track('Lock In Started', { duration_minutes: minutes });
       LockModeService.beginSession();
       navigation.navigate('ExecutionBlock', { durationMinutes: minutes });
     });

@@ -67,10 +67,10 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
 
   useEffect(() => {
     Analytics.track('Paywall Shown', { source: 'lock_in' });
-    Analytics.trackAF('paywall_view', {
+    Analytics.trackAF('af_content_view', {
+      af_content_type: 'paywall',
+      af_content_id: 'paywall_lock_in',
       source: 'home',
-      goal: state.primaryGoal ?? '',
-      daily_commitment: String(state.dailyMinutes ?? ''),
     });
     Analytics.timeEvent('Paywall Dismissed');
   }, [state.primaryGoal, state.dailyMinutes]);
@@ -132,17 +132,11 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
 
     if (subscribed) {
       Analytics.track('Subscription Started', { source: 'lock_in' });
-      Analytics.trackAF('af_subscribe', { af_currency: 'USD', af_content_id: 'paywall_lock_in' });
+      Analytics.trackAF('af_subscribe', { af_revenue: '0', af_currency: 'USD', af_content_id: 'paywall_lock_in' });
       Animated.timing(screenOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => {
         navigation.goBack();
       });
     } else {
-      Analytics.track('Paywall Dismissed', { source: 'lock_in' });
-      Analytics.trackAF('paywall_dismiss', {
-        source: 'home',
-        goal: state.primaryGoal ?? '',
-        daily_commitment: String(state.dailyMinutes ?? ''),
-      });
       navigation.goBack();
     }
   }, [showPaywall, screenOpacity, navigation, state.primaryGoal, state.dailyMinutes]);

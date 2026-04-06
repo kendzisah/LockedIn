@@ -17,7 +17,6 @@ import { AppsFlyerService } from './AppsFlyerService';
 
 const APP_VERSION = Constants.expoConfig?.version ?? 'unknown';
 const HAS_ACTIVE_CREW_KEY = '@lockedin/has_active_crew';
-const WEEK_STATS_KEY = '@lockedin/crew_week_stats';
 
 // ── Mutable context updated by providers ──
 
@@ -44,20 +43,8 @@ function getDefaultProperties(): Record<string, unknown> {
 export const Analytics = {
   // ── Context setters (called by providers) ──
 
-  setAnonymous(val: boolean) {
-    _isAnonymous = val;
-  },
-
-  setSubscribed(val: boolean) {
-    _isSubscribed = val;
-  },
-
   setStreakDays(val: number) {
     _streakDays = val;
-  },
-
-  setCrewCount(val: number) {
-    _crewCount = val;
   },
 
   /**
@@ -69,21 +56,6 @@ export const Analytics = {
       // We only store a boolean flag; estimate count as 0 or 1.
       // Exact count is set when CrewService.getMyCrews() runs.
       _crewCount = raw === 'true' ? 1 : 0;
-    } catch {}
-  },
-
-  /**
-   * Hydrate streak days from weekly stats (call on boot).
-   */
-  async hydrateStreakDays(): Promise<void> {
-    try {
-      const raw = await AsyncStorage.getItem(WEEK_STATS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (typeof parsed.streak_days === 'number') {
-          _streakDays = parsed.streak_days;
-        }
-      }
     } catch {}
   },
 
@@ -125,6 +97,13 @@ export const Analytics = {
    */
   async setUserPropertiesOnce(props: Record<string, unknown>): Promise<void> {
     await MixpanelService.setUserPropertiesOnce(props);
+  },
+
+  /**
+   * Register super properties that are auto-attached to every Mixpanel event.
+   */
+  registerSuperProperties(props: Record<string, unknown>): void {
+    MixpanelService.registerSuperProperties(props);
   },
 
   /**

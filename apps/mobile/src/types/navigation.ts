@@ -5,20 +5,12 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
  */
 export type OnboardingStackParamList = {
   Definition: undefined;
-  SplashHook: undefined;
   PhoneTimeQuiz: undefined;
   AgeQuiz: undefined;
   LossAversionStat: undefined;
   GoalQuiz: undefined;
   ControlQuiz: undefined;
-  FixPromise: undefined;
-  TopPerformersFrame: undefined;
-  CompoundStat: undefined;
-  NinetyDayVision: undefined;
-  ProductExplainer: undefined;
   DailyTimeCommitment: undefined;
-  EmailCollection: undefined;
-  SignatureCommitment: undefined;
   ScreenTimePreFrame: undefined;
   NotificationPreFrame: undefined;
   PersonalizedPlanCard: undefined;

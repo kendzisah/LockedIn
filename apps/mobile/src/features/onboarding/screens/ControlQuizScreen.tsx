@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
@@ -19,7 +18,6 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily, Typography } from '../../../design/typography';
 
-const AF_LEAD_SENT_KEY = '@lockedin/af_lead_sent';
 const SLIDE = 30;
 
 const WEAKNESSES = [
@@ -79,14 +77,6 @@ const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
 
     dispatch({ type: 'SET_WEAKNESSES', payload: [...sel] });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    try {
-      const sent = await AsyncStorage.getItem(AF_LEAD_SENT_KEY);
-      if (!sent) {
-        Analytics.trackAF('lead', { af_content: 'control_quiz' });
-        await AsyncStorage.setItem(AF_LEAD_SENT_KEY, '1');
-      }
-    } catch {}
 
     Analytics.track('Onboarding Answer Submitted', { screen: 'ControlQuiz', answer: [...selectedRef.current].join(', ') });
     Animated.timing(screenOpacity, {

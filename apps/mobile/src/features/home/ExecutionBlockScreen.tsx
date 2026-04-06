@@ -178,12 +178,6 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
 
     const resultStreak = computeStreakAfterCompletion(actualMinutes);
 
-    Analytics.track('Session Completed', {
-      type: 'execution_block',
-      duration_minutes: actualMinutes,
-      streak_day: resultStreak || state.consecutiveStreak,
-    });
-
     Animated.timing(timerOpacity, {
       toValue: 0,
       duration: 500,

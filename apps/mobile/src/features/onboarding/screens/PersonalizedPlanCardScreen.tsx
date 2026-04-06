@@ -51,10 +51,10 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
 
   useEffect(() => {
     Analytics.track('Paywall Viewed', { source: 'onboarding' });
-    Analytics.trackAF('paywall_view', {
+    Analytics.trackAF('af_content_view', {
+      af_content_type: 'paywall',
+      af_content_id: 'paywall_onboarding',
       source: 'onboarding',
-      goal: state.primaryGoal ?? '',
-      daily_commitment: String(state.dailyMinutes ?? ''),
     });
   }, []);
 
@@ -260,6 +260,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
               const subscribed = await showPaywall();
               if (subscribed) {
                 Analytics.track('Subscription Started', { source: 'onboarding' });
+                Analytics.trackAF('af_subscribe', { af_revenue: '0', af_currency: 'USD', af_content_id: 'paywall_onboarding' });
                 Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
                   continueToAccountPrompt(true);
                 });

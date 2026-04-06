@@ -21,7 +21,6 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Analytics } from '../../../services/AnalyticsService';
-import { MixpanelService } from '../../../services/MixpanelService';
 import { subscribeLogoutCleanup } from '../../../services/logoutCleanupBus';
 import type {
   SessionState,
@@ -252,7 +251,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     if (!isHydrated) return;
     Analytics.setStreakDays(state.consecutiveStreak);
-    MixpanelService.registerSuperProperties({
+    Analytics.registerSuperProperties({
       streak: state.consecutiveStreak,
       lifetime_minutes: state.lifetimeTotalMinutes,
     });
