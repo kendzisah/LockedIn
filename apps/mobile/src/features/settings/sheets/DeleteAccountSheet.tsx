@@ -12,6 +12,7 @@ import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { SupabaseService } from '../../../services/SupabaseService';
 import { clearAllLockedInStorage } from '../../../services/lockedInStorage';
+import { Analytics } from '../../../services/AnalyticsService';
 
 interface Props {
   visible: boolean;
@@ -42,6 +43,7 @@ const DeleteAccountSheet: React.FC<Props> = ({ visible, onClose, onDeleted }) =>
       if (!client) throw new Error('Not connected');
       const { error } = await client.rpc('delete_own_account');
       if (error) throw error;
+      Analytics.track('Account Deleted');
       await clearAllLockedInStorage();
       onClose();
       onDeleted();

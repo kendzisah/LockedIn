@@ -15,8 +15,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Purchases from 'react-native-purchases';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
-import { MixpanelService } from '../../../services/MixpanelService';
-import { AppsFlyerService } from '../../../services/AppsFlyerService';
+import { Analytics } from '../../../services/AnalyticsService';
+
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
@@ -33,7 +33,7 @@ const EmailCollectionScreen: React.FC<Props> = ({ navigation }) => {
   const isValid = EMAIL_REGEX.test(email.trim());
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'EmailCollection', step: 17, total_steps: 18 });
+    Analytics.track('Onboarding Screen Viewed', { screen: 'EmailCollection', step: 17, total_steps: 18 });
   }, []);
 
   const screenOpacity = useRef(new Animated.Value(1)).current;
@@ -87,12 +87,12 @@ const EmailCollectionScreen: React.FC<Props> = ({ navigation }) => {
       Purchases.setEmail(trimmed);
 
       // Mixpanel — user profile property (reserved $email)
-      await MixpanelService.setUserProperties({ $email: trimmed });
+      await Analytics.setUserProperties({ $email: trimmed });
 
       // AppsFlyer — additional data for attribution
-      AppsFlyerService.setAdditionalData({ email: trimmed });
+      Analytics.trackAF('email_collected', { email: trimmed });
 
-      MixpanelService.track('Email Collected', { source: 'onboarding' });
+      Analytics.track('Email Collected', { source: 'onboarding' });
     } catch (e) {
       console.warn('[EmailCollection] Failed to sync email:', e);
     }
@@ -101,7 +101,7 @@ const EmailCollectionScreen: React.FC<Props> = ({ navigation }) => {
   }, [email, isValid, submitted, navigateForward]);
 
   const handleSkip = useCallback(() => {
-    MixpanelService.track('Email Skipped', { source: 'onboarding' });
+    Analytics.track('Email Skipped', { source: 'onboarding' });
     navigateForward();
   }, [navigateForward]);
 

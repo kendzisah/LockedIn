@@ -10,7 +10,7 @@ import {
 import LottieView from 'lottie-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
@@ -47,7 +47,7 @@ const ProductExplainerScreen: React.FC<Props> = ({ navigation }) => {
   const buttonOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'ProductExplainer', step: 14, total_steps: 18 });
+    Analytics.track('Onboarding Screen Viewed', { screen: 'ProductExplainer', step: 14, total_steps: 18 });
   }, []);
 
   useEffect(() => {

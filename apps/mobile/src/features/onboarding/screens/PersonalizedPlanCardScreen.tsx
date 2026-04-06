@@ -15,8 +15,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import { useSubscription } from '../../subscription/SubscriptionProvider';
-import { MixpanelService } from '../../../services/MixpanelService';
-import { AppsFlyerService } from '../../../services/AppsFlyerService';
+import { Analytics } from '../../../services/AnalyticsService';
+
 import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
@@ -50,8 +50,8 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
   useOnboardingTracking('PersonalizedPlanCard');
 
   useEffect(() => {
-    MixpanelService.track('Paywall Viewed', { source: 'onboarding' });
-    AppsFlyerService.logEvent('paywall_view', {
+    Analytics.track('Paywall Viewed', { source: 'onboarding' });
+    Analytics.trackAF('paywall_view', {
       source: 'onboarding',
       goal: state.primaryGoal ?? '',
       daily_commitment: String(state.dailyMinutes ?? ''),
@@ -64,7 +64,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
    */
   const continueToAccountPrompt = useCallback(async (subscribed: boolean) => {
     // Fire Onboarding Completed (previously only fired on SignatureCommitment)
-    MixpanelService.track('Onboarding Completed', {
+    Analytics.track('Onboarding Completed', {
       screen: 'PersonalizedPlanCard',
       subscribed,
       goal: state.primaryGoal ?? '',
@@ -75,7 +75,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
     try {
       const sent = await AsyncStorage.getItem(AF_REG_SENT_KEY);
       if (!sent) {
-        AppsFlyerService.logEvent('af_complete_registration', {
+        Analytics.trackAF('af_complete_registration', {
           af_registration_method: subscribed ? 'paywall_subscribe' : 'paywall_skip',
         });
         await AsyncStorage.setItem(AF_REG_SENT_KEY, '1');
@@ -256,20 +256,20 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
           <TouchableOpacity
             onPress={async () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              MixpanelService.track('Paywall CTA Tapped', { source: 'onboarding' });
+              Analytics.track('Paywall CTA Tapped', { source: 'onboarding' });
               const subscribed = await showPaywall();
               if (subscribed) {
-                MixpanelService.track('Subscription Started', { source: 'onboarding' });
+                Analytics.track('Subscription Started', { source: 'onboarding' });
                 Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
                   continueToAccountPrompt(true);
                 });
               } else {
-                AppsFlyerService.logEvent('paywall_dismiss', {
+                Analytics.trackAF('paywall_dismiss', {
                   source: 'onboarding',
                   goal: state.primaryGoal ?? '',
                   daily_commitment: String(state.dailyMinutes ?? ''),
                 });
-                MixpanelService.track('Paywall Dismissed', { source: 'onboarding' });
+                Analytics.track('Paywall Dismissed', { source: 'onboarding' });
               }
             }}
             activeOpacity={0.9}
@@ -304,8 +304,8 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
 
           <TouchableOpacity
             onPress={() => {
-              MixpanelService.track('Paywall Skipped', { source: 'onboarding' });
-              AppsFlyerService.logEvent('paywall_dismiss', {
+              Analytics.track('Paywall Skipped', { source: 'onboarding' });
+              Analytics.trackAF('paywall_dismiss', {
                 source: 'onboarding',
                 goal: state.primaryGoal ?? '',
                 daily_commitment: String(state.dailyMinutes ?? ''),

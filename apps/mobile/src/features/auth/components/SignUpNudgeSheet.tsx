@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../../types/navigation';
+import { Analytics } from '../../../services/AnalyticsService';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -36,6 +37,7 @@ const SignUpNudgeSheet: React.FC<SignUpNudgeSheetProps> = ({
 
   useEffect(() => {
     if (visible) {
+      Analytics.track('Signup Nudge Shown', { nudge_type: 'streak_3' });
       Animated.spring(slideAnim, {
         toValue: 0,
         useNativeDriver: true,
@@ -48,6 +50,7 @@ const SignUpNudgeSheet: React.FC<SignUpNudgeSheetProps> = ({
   }, [visible, slideAnim]);
 
   const dismiss = useCallback(async () => {
+    Analytics.track('Signup Nudge Dismissed', { nudge_type: 'streak_3' });
     await AsyncStorage.setItem(NUDGE_KEY, 'true').catch(() => {});
     Animated.timing(slideAnim, {
       toValue: SCREEN_HEIGHT,
@@ -57,6 +60,7 @@ const SignUpNudgeSheet: React.FC<SignUpNudgeSheetProps> = ({
   }, [slideAnim, onDismiss]);
 
   const handleSecure = useCallback(async () => {
+    Analytics.track('Signup Nudge Converted', { nudge_type: 'streak_3' });
     await AsyncStorage.setItem(NUDGE_KEY, 'true').catch(() => {});
     Animated.timing(slideAnim, {
       toValue: SCREEN_HEIGHT,

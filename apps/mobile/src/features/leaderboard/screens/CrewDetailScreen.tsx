@@ -20,6 +20,7 @@ import type { MainStackParamList } from '../../../types/navigation';
 import { CrewService, type CrewDetails, type CrewLeaderboardEntry } from '../CrewService';
 import { NotificationService } from '../../../services/NotificationService';
 import { SupabaseService } from '../../../services/SupabaseService';
+import { Analytics } from '../../../services/AnalyticsService';
 import MemberRow from '../components/MemberRow';
 import InviteCodeCard from '../components/InviteCodeCard';
 import { Colors } from '../../../design/colors';
@@ -86,6 +87,11 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   useEffect(() => {
     if (!details || !leaderboard.length || !userId) return;
     const me = leaderboard.find((e) => e.is_current_user);
+    Analytics.track('Crew Leaderboard Viewed', {
+      crew_id,
+      member_count: details.member_count,
+      user_rank: me?.rank ?? 0,
+    });
     if (!me) return;
     void AsyncStorage.setItem(
       '@lockedin/crew_cached_rank',
@@ -117,12 +123,14 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
       if (action === 'delete') {
         const ok = await CrewService.deleteCrew(crew_id);
         if (ok) {
+          Analytics.track('Crew Left', { crew_id, was_owner: true });
           await refreshNotificationsAfterCrewChange();
           navigation.goBack();
         } else Alert.alert('Error', 'Failed to delete crew.');
       } else {
         const ok = await CrewService.leaveCrew(crew_id);
         if (ok) {
+          Analytics.track('Crew Left', { crew_id, was_owner: false });
           await refreshNotificationsAfterCrewChange();
           navigation.goBack();
         } else Alert.alert('Error', 'Failed to leave crew.');

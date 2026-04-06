@@ -11,7 +11,7 @@ import LottieView from 'lottie-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 import { PermissionService } from '../../../services/PermissionService';
 import { LockModeService } from '../../../services/LockModeService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
@@ -85,11 +85,11 @@ const ScreenTimePreFrameScreen: React.FC<Props> = ({ navigation }) => {
       dispatch({ type: 'SET_SCREEN_TIME_STATUS', payload: status });
 
       if (status === 'granted') {
-        MixpanelService.track('Permission Granted', { screen: 'ScreenTimePreFrame', permission: 'screen_time' });
+        Analytics.track('Permission Granted', { screen: 'ScreenTimePreFrame', permission: 'screen_time' });
         await LockModeService.showAppPicker();
         navigateForward();
       } else {
-        MixpanelService.track('Permission Denied', { screen: 'ScreenTimePreFrame', permission: 'screen_time' });
+        Analytics.track('Permission Denied', { screen: 'ScreenTimePreFrame', permission: 'screen_time' });
         setDenied(true);
         Animated.timing(deniedOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
       }

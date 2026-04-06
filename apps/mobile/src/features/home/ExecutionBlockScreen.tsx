@@ -86,6 +86,10 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
 
     if (newFocused >= dailyCommitment && !goalAlreadyMet) {
       dispatch({ type: 'DAILY_GOAL_MET' });
+      Analytics.track('Daily Goal Met', {
+        daily_commitment: dailyCommitment,
+        actual_minutes: newFocused,
+      });
       const newStreak = computeNewStreak(state.lastSessionDayKey, state.consecutiveStreak, todayKey);
       return newStreak;
     }

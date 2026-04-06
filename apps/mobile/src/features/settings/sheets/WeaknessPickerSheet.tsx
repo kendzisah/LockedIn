@@ -4,7 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import SettingsSheetShell from '../components/SettingsSheetShell';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 import { getWeaknessOptions } from '../../missions/MissionEngine';
 
 interface Props {
@@ -43,7 +43,7 @@ const WeaknessPickerSheet: React.FC<Props> = ({
     const arr = [...sel];
     if (arr.length === 0) return;
     onSave(arr);
-    MixpanelService.track('Settings Changed', { setting: 'weaknesses', value: arr.join(',') });
+    Analytics.track('Settings Changed', { setting: 'weaknesses', value: arr.join(',') });
     onClose();
   };
 

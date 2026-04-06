@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Analytics } from '../../../services/AnalyticsService';
 let ImagePicker: typeof import('expo-image-picker') | null = null;
 try {
   ImagePicker = require('expo-image-picker');
@@ -185,6 +186,19 @@ const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
         return;
       }
 
+      if (publicUrl) {
+        Analytics.track('Profile Photo Set', {
+          source: source === 'signup' ? 'signup_flow' : 'settings',
+          method: avatarUri && isLocalAssetUri(avatarUri) ? 'library' : 'existing',
+        });
+      }
+      if (trimmedName) {
+        Analytics.track('Display Name Set', {
+          source: source === 'signup' ? 'signup_flow' : 'settings',
+          name_length: trimmedName.length,
+        });
+      }
+
       if (source === 'signup') {
         navigation.replace('Tabs');
       } else {
@@ -200,6 +214,7 @@ const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
   }, [avatarUri, canSave, navigation, source, trimmedName]);
 
   const onSkip = useCallback(() => {
+    Analytics.track('Profile Setup Skipped');
     navigation.replace('Tabs');
   }, [navigation]);
 

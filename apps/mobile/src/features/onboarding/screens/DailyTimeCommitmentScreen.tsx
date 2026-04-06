@@ -12,7 +12,7 @@ import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
@@ -130,7 +130,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
     const totalMinutes = selectedHours * 60;
     dispatch({ type: 'SET_DAILY_MINUTES', payload: totalMinutes });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    MixpanelService.track('Onboarding Answer Submitted', {
+    Analytics.track('Onboarding Answer Submitted', {
       screen: 'DailyTimeCommitment',
       answer: `${selectedHours} hours`,
       daily_minutes: totalMinutes,

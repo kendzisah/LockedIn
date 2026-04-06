@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import SettingsSheetShell from '../components/SettingsSheetShell';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 import { NotificationService } from '../../../services/NotificationService';
 import { useSession } from '../../home/state/SessionProvider';
 
@@ -32,7 +32,7 @@ const DailyCommitmentSheet: React.FC<Props> = ({
   const handleUpdate = async () => {
     onSave(sel);
     await NotificationService.scheduleAllDailyNotifications(state.consecutiveStreak);
-    MixpanelService.track('Settings Changed', {
+    Analytics.track('Settings Changed', {
       setting: 'daily_commitment',
       value: sel,
     });

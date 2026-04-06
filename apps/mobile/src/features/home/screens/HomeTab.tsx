@@ -23,7 +23,7 @@ import { useSubscription } from '../../subscription/SubscriptionProvider';
 import { ClockService } from '../../../services/ClockService';
 import { NotificationService } from '../../../services/NotificationService';
 import { LockModeService } from '../../../services/LockModeService';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 import { StreakRecoveryService } from '../../streak/StreakRecoveryService';
 import WeeklyReportService from '../../report/WeeklyReportService';
 import { ACTIVE_EB_KEY } from '../ExecutionBlockScreen';
@@ -233,8 +233,13 @@ const HomeTab: React.FC = () => {
         visible={showRecoveryModal}
         streak={state.consecutiveStreak}
         recoveriesRemaining={2}
-        onDismiss={() => setShowRecoveryModal(false)}
+        onDismiss={() => {
+          setShowRecoveryModal(false);
+        }}
         onSavePress={() => {
+          Analytics.track('Streak Recovered', {
+            streak_days: state.consecutiveStreak,
+          });
           setShowRecoveryModal(false);
           dispatch({ type: 'RESET_PHASE' });
         }}

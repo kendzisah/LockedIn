@@ -15,8 +15,8 @@ import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
-import { AppsFlyerService } from '../../../services/AppsFlyerService';
-import { MixpanelService } from '../../../services/MixpanelService';
+
+import { Analytics } from '../../../services/AnalyticsService';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -65,7 +65,7 @@ const SignatureCommitmentScreen: React.FC<Props> = ({ navigation }) => {
   const [hasSigned, setHasSigned] = useState(false);
 
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'SignatureCommitment', step: 18, total_steps: 18 });
+    Analytics.track('Onboarding Screen Viewed', { screen: 'SignatureCommitment', step: 18, total_steps: 18 });
   }, []);
 
   // ── Screen-level fade ──
@@ -277,12 +277,12 @@ const SignatureCommitmentScreen: React.FC<Props> = ({ navigation }) => {
         <TouchableOpacity
           onPress={async () => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            MixpanelService.track('Onboarding Completed', { screen: 'SignatureCommitment', signed: true });
+            Analytics.track('Onboarding Completed', { screen: 'SignatureCommitment', signed: true });
 
             try {
               const sent = await AsyncStorage.getItem(AF_REG_SENT_KEY);
               if (!sent) {
-                AppsFlyerService.logEvent('af_complete_registration', {
+                Analytics.trackAF('af_complete_registration', {
                   af_registration_method: 'signature',
                 });
                 await AsyncStorage.setItem(AF_REG_SENT_KEY, '1');

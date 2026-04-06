@@ -18,7 +18,7 @@ import * as Haptics from 'expo-haptics';
 
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 
 const MIN_AGE = 13;
@@ -84,7 +84,7 @@ export const AgeQuizScreen: React.FC<Props> = ({ navigation }) => {
     if (advancingRef.current) return;
     advancingRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    MixpanelService.track('Onboarding Answer Submitted', { screen: 'AgeQuiz', answer: String(selectedAge) });
+    Analytics.track('Onboarding Answer Submitted', { screen: 'AgeQuiz', answer: String(selectedAge) });
     dispatch({ type: 'SET_USER_AGE', payload: selectedAge });
     Animated.timing(screenOpacity, {
       toValue: 0,

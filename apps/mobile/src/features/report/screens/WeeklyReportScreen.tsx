@@ -15,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import { Analytics } from '../../../services/AnalyticsService';
 import WeeklyReportService, { WeeklyReport } from '../WeeklyReportService';
 
 interface WeeklyReportScreenProps {
@@ -41,6 +42,14 @@ const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({
   onDismiss,
 }) => {
   const navigation = useNavigation();
+
+  useEffect(() => {
+    Analytics.track('Weekly Report Viewed', {
+      grade: report.grade,
+      streak_days: report.streakDays,
+      score: report.totalFocusMinutes,
+    });
+  }, [report.grade, report.streakDays, report.totalFocusMinutes]);
 
   const handleDismiss = async () => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

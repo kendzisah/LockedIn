@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
 import { Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Analytics } from '../../../services/AnalyticsService';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { IOS_APP_STORE_PAGE_URL } from '../../settings/settingsConstants';
@@ -35,6 +36,7 @@ const InviteCodeCard: React.FC<InviteCodeCardProps> = ({
   const spacedCode = inviteCode.split('').join(' ');
 
   const handleCopy = async () => {
+    Analytics.track('Crew Invite Shared', { crew_id: crewName, share_method: 'copy' });
     if (Clipboard) {
       await Clipboard.setStringAsync(inviteCode);
     }
@@ -49,6 +51,8 @@ const InviteCodeCard: React.FC<InviteCodeCardProps> = ({
   };
 
   const handleShare = () => {
+    Analytics.track('Crew Invite Shared', { crew_id: crewName, share_method: 'share_sheet' });
+    Analytics.trackAF('af_invite', { method: 'crew_invite' });
     Share.share({
       message: `Join my crew "${crewName}" on Locked In! 🔒\n\nMy invite code: ${inviteCode}\n\nDownload the app and enter the code to compete with me:\n${IOS_APP_STORE_PAGE_URL}`,
     });

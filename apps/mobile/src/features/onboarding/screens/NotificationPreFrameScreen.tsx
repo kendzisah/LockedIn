@@ -11,7 +11,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import { NotificationService } from '../../../services/NotificationService';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
@@ -69,17 +69,17 @@ const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const granted = await NotificationService.requestPermission();
     if (granted) {
-      MixpanelService.track('Permission Granted', { screen: 'NotificationPreFrame', permission: 'notifications' });
+      Analytics.track('Notification Permission Granted', { source: 'onboarding' });
       await NotificationService.scheduleAllDailyNotifications(0);
     } else {
-      MixpanelService.track('Permission Denied', { screen: 'NotificationPreFrame', permission: 'notifications' });
+      Analytics.track('Notification Permission Denied', { source: 'onboarding' });
     }
     dispatch({ type: 'SET_NOTIFICATIONS_GRANTED', payload: granted });
     navigateForward();
   }, [dispatch, navigateForward]);
 
   const handleSkip = useCallback(() => {
-    MixpanelService.track('Permission Skipped', { screen: 'NotificationPreFrame', permission: 'notifications' });
+    Analytics.track('Notification Permission Denied', { source: 'onboarding' });
     dispatch({ type: 'SET_NOTIFICATIONS_GRANTED', payload: false });
     navigateForward();
   }, [dispatch, navigateForward]);

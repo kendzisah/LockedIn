@@ -3,7 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import SettingsSheetShell from '../components/SettingsSheetShell';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 import { getPrimaryGoals } from '../../missions/MissionEngine';
 
 const ORDER: string[] = [
@@ -39,7 +39,7 @@ const GoalPickerSheet: React.FC<Props> = ({
 
   const handleUpdate = () => {
     onSave(sel);
-    MixpanelService.track('Settings Changed', { setting: 'primary_goal', value: sel });
+    Analytics.track('Settings Changed', { setting: 'primary_goal', value: sel });
     Alert.alert('Missions updated', 'Missions updated for your new goal.');
     onClose();
   };

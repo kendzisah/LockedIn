@@ -41,6 +41,7 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
     setLoading(false);
 
     if (result) {
+      Analytics.track('Crew Created', { crew_name: result.name, crew_id: result.crew_id });
       void (async () => {
         try {
           const { hadCrewBefore, hasCrewNow } = await CrewService.syncHasActiveCrewFlag();

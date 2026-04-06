@@ -12,7 +12,7 @@
 
 import { useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 
 const TOTAL_STEPS = 11;
 const CURRENT_SCREEN_KEY = '@lockedin/onboarding_current_screen';
@@ -72,21 +72,21 @@ export function useOnboardingTracking(screen: OnboardingScreenName, step?: numbe
     mountTime.current = Date.now();
 
     // Fire screen viewed event
-    MixpanelService.track('Onboarding Screen Viewed', {
+    Analytics.track('Onboarding Screen Viewed', {
       screen,
       step: resolvedStep,
       total_steps: TOTAL_STEPS,
     });
 
     // Start Mixpanel timed event for this screen
-    MixpanelService.timeEvent('Onboarding Screen Exited');
+    Analytics.timeEvent('Onboarding Screen Exited');
 
     // Persist current screen for resume-on-restart
     AsyncStorage.setItem(CURRENT_SCREEN_KEY, screen).catch(() => {});
 
     return () => {
       const duration = Date.now() - mountTime.current;
-      MixpanelService.track('Onboarding Screen Exited', {
+      Analytics.track('Onboarding Screen Exited', {
         screen,
         step: resolvedStep,
         total_steps: TOTAL_STEPS,

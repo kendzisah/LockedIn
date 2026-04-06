@@ -14,6 +14,7 @@ import {
   calculateTotalXP,
 } from './MissionEngine';
 import { CrewService } from '../leaderboard/CrewService';
+import { Analytics } from '../../services/AnalyticsService';
 import { subscribeLogoutCleanup } from '../../services/logoutCleanupBus';
 
 // ─── Local-time helpers ──────────────────────────────────
@@ -296,7 +297,26 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
 
   const completeMission = (missionId: string) => {
     const mission = state.missions.find((m) => m.id === missionId);
+    const completedCount = state.missions.filter((m) => m.completed).length + 1;
+
+    if (mission) {
+      Analytics.track('Mission Completed', {
+        mission_id: mission.id,
+        mission_title: mission.title,
+        mission_type: mission.type,
+        xp: mission.xp,
+        slot: mission.slot,
+        completed_count: completedCount,
+      });
+    }
+
     dispatch({ type: 'COMPLETE_MISSION', payload: missionId });
+
+    if (completedCount === state.missions.length) {
+      Analytics.track('All Missions Completed', {
+        total_xp: calculateTotalXP(state.missions.map((m) => m.id === missionId ? { ...m, completed: true } : m).filter((m) => m.completed)),
+      });
+    }
 
     (async () => {
       try {

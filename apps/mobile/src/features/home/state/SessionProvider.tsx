@@ -20,7 +20,7 @@ import React, {
   useRef,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppsFlyerService } from '../../../services/AppsFlyerService';
+import { Analytics } from '../../../services/AnalyticsService';
 import { MixpanelService } from '../../../services/MixpanelService';
 import { subscribeLogoutCleanup } from '../../../services/logoutCleanupBus';
 import type {
@@ -251,6 +251,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // ── Mixpanel: super properties (auto-attached to every event) ──
   useEffect(() => {
     if (!isHydrated) return;
+    Analytics.setStreakDays(state.consecutiveStreak);
     MixpanelService.registerSuperProperties({
       streak: state.consecutiveStreak,
       lifetime_minutes: state.lifetimeTotalMinutes,
@@ -262,9 +263,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     if (!isHydrated) return;
     if (prevStreak.current > 0 && state.consecutiveStreak === 0 && state.consecutiveStreak < prevStreak.current) {
-      MixpanelService.track('Streak Broken', {
+      Analytics.track('Streak Broken', {
         previous_streak: prevStreak.current,
-        program_day: state.maxCompletedDay,
+        last_session_date: state.lastSessionDayKey,
       });
     }
     prevStreak.current = state.consecutiveStreak;
@@ -275,7 +276,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     if (!isHydrated) return;
     if (state.lifetimeExecutionBlocks > prevExecBlocks.current) {
-      MixpanelService.track('Lock In Completed', {
+      Analytics.track('Lock In Completed', {
         total_blocks: state.lifetimeExecutionBlocks,
         total_exec_minutes: state.lifetimeExecutionMinutes,
       });
@@ -291,7 +292,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         const sent = await AsyncStorage.getItem(AF_FIRST_SESSION_KEY);
         if (!sent) {
-          AppsFlyerService.logEvent('af_tutorial_completion', {
+          Analytics.trackAF('af_tutorial_completion', {
             af_success: '1',
             af_content_id: 'first_lock_in',
           });
@@ -315,14 +316,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         );
 
         for (const milestone of newMilestones) {
-          AppsFlyerService.logEvent('af_achievement_unlocked', {
+          Analytics.trackAF('af_achievement_unlocked', {
             af_description: `streak_${milestone}`,
             af_score: String(milestone),
           });
-          MixpanelService.track('Streak Milestone', {
-            milestone_days: milestone,
-            current_streak: state.consecutiveStreak,
-            program_day: state.maxCompletedDay,
+          Analytics.track('Streak Milestone Reached', {
+            days: milestone,
+            color_tier: String(milestone),
           });
           sent.push(milestone);
         }

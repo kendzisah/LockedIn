@@ -15,7 +15,7 @@ import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -134,13 +134,13 @@ const PhoneTimeQuizScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleContinue = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    MixpanelService.track('Onboarding Answer Submitted', { screen: 'PhoneTimeQuiz', answer: `${hours} hours` });
+    Analytics.track('Onboarding Answer Submitted', { screen: 'PhoneTimeQuiz', answer: `${hours} hours` });
     fadeAndNavigate(`${hours} hours`);
   };
 
   const handleDontKnow = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    MixpanelService.track('Onboarding Answer Submitted', { screen: 'PhoneTimeQuiz', answer: 'unknown' });
+    Analytics.track('Onboarding Answer Submitted', { screen: 'PhoneTimeQuiz', answer: 'unknown' });
     fadeAndNavigate('unknown');
   };
 

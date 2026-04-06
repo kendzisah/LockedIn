@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../../types/navigation';
 import { CrewService } from '../CrewService';
+import { Analytics } from '../../../services/AnalyticsService';
 import { NotificationService } from '../../../services/NotificationService';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -99,6 +100,7 @@ const JoinCrewScreen: React.FC<Props> = ({ navigation }) => {
     setLoading(false);
 
     if (result) {
+      Analytics.track('Crew Joined', { crew_id: result.crew_id, crew_name: result.crew_name, method: 'invite_code' });
       setSuccessMsg(`Joined ${result.crew_name}!`);
       void (async () => {
         try {

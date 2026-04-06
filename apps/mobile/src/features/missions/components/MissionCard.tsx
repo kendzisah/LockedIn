@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import { Analytics } from '../../../services/AnalyticsService';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import type { Mission, MissionType, CompletionType } from '../MissionEngine';
@@ -78,6 +79,10 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
   const slotMeta = SLOT_LABELS[mission.slot] ?? SLOT_LABELS.core;
 
   const handleCardTap = () => {
+    Analytics.track('Mission Viewed', {
+      mission_id: mission.id,
+      mission_title: mission.title,
+    });
     setModalVisible(true);
   };
 

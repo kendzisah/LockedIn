@@ -13,7 +13,7 @@ import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 
 const SLIDE = 25;
 const STAGGER = 80;
@@ -22,7 +22,7 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'TopPerformersFram
 
 const TopPerformersFrameScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'TopPerformersFrame', step: 7, total_steps: 18 });
+    Analytics.track('Onboarding Screen Viewed', { screen: 'TopPerformersFrame', step: 7, total_steps: 18 });
   }, []);
 
   const screenOpacity = useRef(new Animated.Value(1)).current;
