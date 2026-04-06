@@ -28,6 +28,7 @@ import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import AppleAuthButton from '../components/AppleAuthButton';
 import { useAuth } from '../AuthProvider';
+import { Analytics } from '../../../services/AnalyticsService';
 import type { MainStackParamList } from '../../../types/navigation';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -99,9 +100,11 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ navigation }) => {
 
       if (authError) {
         setError(authError.message);
+        Analytics.track('Sign In Failed', { method: 'email', error_code: authError.code });
         return;
       }
 
+      Analytics.track('Sign In Completed', { method: 'email' });
       navigation.replace('Tabs');
     } finally {
       setIsLoading(false);
@@ -118,10 +121,14 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ navigation }) => {
       const { error: authError } = await signInWithApple();
 
       if (authError) {
-        setError(authError.message);
+        if (authError.message !== 'Apple Sign-In cancelled') {
+          setError(authError.message);
+          Analytics.track('Sign In Failed', { method: 'apple', error_code: authError.code });
+        }
         return;
       }
 
+      Analytics.track('Sign In Completed', { method: 'apple' });
       navigation.replace('Tabs');
     } finally {
       setIsLoading(false);
@@ -149,9 +156,11 @@ const SignInScreen: React.FC<SignInScreenProps> = ({ navigation }) => {
     setResetSending(false);
 
     if (resetError) {
-      Alert.alert('Couldn’t send reset email', resetError.message);
+      Alert.alert("Couldn't send reset email", resetError.message);
       return;
     }
+
+    Analytics.track('Password Reset Requested', { source: 'sign_in' });
 
     Alert.alert(
       'Check your email',

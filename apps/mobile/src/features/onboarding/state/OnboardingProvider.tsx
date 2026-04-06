@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { OnboardingState, OnboardingAction } from './types';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 import { clearPersistedOnboardingScreen } from '../hooks/useOnboardingTracking';
 import { subscribeLogoutCleanup } from '../../../services/logoutCleanupBus';
 
@@ -173,7 +173,7 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
       // Clear resume screen since onboarding is done
       clearPersistedOnboardingScreen().catch(() => {});
 
-      MixpanelService.setUserProperties({
+      Analytics.setUserProperties({
         age: state.userAge,
         primary_goal: state.primaryGoal,
         daily_commitment_minutes: state.dailyMinutes,
@@ -182,6 +182,10 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
         screen_time_granted: state.screenTimeStatus === 'granted',
         notifications_granted: state.notificationsGranted ?? false,
         demo_completed: state.demoCompleted,
+        platform: 'ios',
+      });
+      Analytics.setUserPropertiesOnce({
+        onboarding_completed_at: new Date().toISOString(),
       });
     }
     prevComplete.current = state.onboardingComplete;

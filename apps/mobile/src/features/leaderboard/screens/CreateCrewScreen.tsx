@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +15,7 @@ import type { MainStackParamList } from '../../../types/navigation';
 import { CrewService } from '../CrewService';
 import { NotificationService } from '../../../services/NotificationService';
 import { useAuth } from '../../auth/AuthProvider';
+import { Analytics } from '../../../services/AnalyticsService';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -56,6 +57,12 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
       setError('Failed to create crew. You may own a maximum of 3 crews.');
     }
   };
+
+  useEffect(() => {
+    if (isAnonymous) {
+      Analytics.track('Signup Nudge Shown', { nudge_type: 'crew_create' });
+    }
+  }, [isAnonymous]);
 
   if (isAnonymous) {
     return (

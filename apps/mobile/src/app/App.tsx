@@ -29,8 +29,11 @@ import { rootNavigationRef } from '../navigation/rootNavigationRef';
 import { CrewService } from '../features/leaderboard/CrewService';
 import { AppsFlyerService } from '../services/AppsFlyerService';
 import { MixpanelService } from '../services/MixpanelService';
+import { Analytics } from '../services/AnalyticsService';
 import Purchases from 'react-native-purchases';
 import { ENV } from '../config/env';
+
+const LAST_OPEN_KEY = '@lockedin/last_app_open';
 
 // Keep splash screen visible while fonts + auth load
 SplashScreen.preventAutoHideAsync();
@@ -81,16 +84,44 @@ const App: React.FC = () => {
 
         await MixpanelService.initialize();
         await SupabaseService.initialize();
-        await NotificationService.touchLastAppOpen();
-        await CrewService.syncHasActiveCrewFlag();
+
+        // Identify user in analytics on boot
+        const userId = SupabaseService.getCurrentUserId();
+        if (userId) {
+          await Analytics.identify(userId);
+        }
+
+        // Detect returning user for App Returned event
         let streak = 0;
         try {
-          const raw = await AsyncStorage.getItem('@lockedin/session_state');
-          if (raw) {
-            const parsed = JSON.parse(raw);
+          const lastOpenRaw = await AsyncStorage.getItem(LAST_OPEN_KEY);
+          const sessionRaw = await AsyncStorage.getItem('@lockedin/session_state');
+          if (sessionRaw) {
+            const parsed = JSON.parse(sessionRaw);
             streak = parsed.consecutiveStreak ?? 0;
           }
+
+          if (lastOpenRaw) {
+            const lastOpen = new Date(lastOpenRaw);
+            const now = new Date();
+            const daysSince = Math.floor((now.getTime() - lastOpen.getTime()) / 86400000);
+            if (daysSince >= 1) {
+              Analytics.track('App Returned', {
+                days_inactive: daysSince,
+                previous_streak: streak,
+                notification_driven: false,
+              });
+            }
+          }
         } catch { /* use default streak of 0 */ }
+
+        // Hydrate analytics context
+        Analytics.setStreakDays(streak);
+        await Analytics.hydrateCrewCount();
+
+        await NotificationService.touchLastAppOpen();
+        await AsyncStorage.setItem(LAST_OPEN_KEY, new Date().toISOString());
+        await CrewService.syncHasActiveCrewFlag();
         await NotificationService.scheduleAllDailyNotifications(streak);
       } catch (e: any) {
         console.warn('[App] boot() failed, continuing anyway:', e);
@@ -127,8 +158,8 @@ const App: React.FC = () => {
       }
 
       AppsFlyerService.startSdk();
-      AppsFlyerService.logEvent('af_login', {});
-      MixpanelService.track('App Opened', { cold_start: true });
+      Analytics.trackAF('af_login', {});
+      Analytics.track('App Opened', { cold_start: true });
     }
   }, [fontsLoaded, authReady]);
 
@@ -136,8 +167,9 @@ const App: React.FC = () => {
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       if (next === 'active') {
-        MixpanelService.track('App Opened', { cold_start: false });
+        Analytics.track('App Opened', { cold_start: false });
         void NotificationService.touchLastAppOpen();
+        void AsyncStorage.setItem(LAST_OPEN_KEY, new Date().toISOString());
       }
     });
     return () => sub.remove();
@@ -146,6 +178,9 @@ const App: React.FC = () => {
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as NotificationPayload | undefined;
+      Analytics.track('Notification Tapped', {
+        notification_type: data?.screen ?? 'unknown',
+      });
       if (!data || typeof data !== 'object' || !data.screen) return;
       const go = () => {
         if (!rootNavigationRef.isReady()) return;

@@ -27,6 +27,7 @@ import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import AppleAuthButton from '../components/AppleAuthButton';
 import { useAuth } from '../AuthProvider';
+import { Analytics } from '../../../services/AnalyticsService';
 import type { MainStackParamList } from '../../../types/navigation';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -111,9 +112,12 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
       if (authError) {
         setError(authError.message);
         setAuthErrorCode(authError.code);
+        Analytics.track('Sign Up Failed', { method: 'email', error_code: authError.code });
         return;
       }
 
+      Analytics.track('Account Created', { method: 'email', was_anonymous: true });
+      Analytics.trackAF('af_complete_registration', { method: 'email' });
       navigation.replace('EditProfile', { source: 'signup' });
     } finally {
       setIsLoading(false);
@@ -130,11 +134,16 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
       const { error: authError } = await signInWithApple();
 
       if (authError) {
-        setError(authError.message);
-        setAuthErrorCode(authError.code);
+        if (authError.message !== 'Apple Sign-In cancelled') {
+          setError(authError.message);
+          setAuthErrorCode(authError.code);
+          Analytics.track('Sign Up Failed', { method: 'apple', error_code: authError.code });
+        }
         return;
       }
 
+      Analytics.track('Account Created', { method: 'apple', was_anonymous: true });
+      Analytics.trackAF('af_complete_registration', { method: 'apple' });
       navigation.replace('EditProfile', { source: 'signup' });
     } finally {
       setIsLoading(false);

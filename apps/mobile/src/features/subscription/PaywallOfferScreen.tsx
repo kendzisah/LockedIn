@@ -18,8 +18,7 @@ import { useSubscription } from './SubscriptionProvider';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
-import { AppsFlyerService } from '../../services/AppsFlyerService';
-import { MixpanelService } from '../../services/MixpanelService';
+import { Analytics } from '../../services/AnalyticsService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -67,12 +66,13 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
   const sweepAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    AppsFlyerService.logEvent('paywall_view', {
+    Analytics.track('Paywall Shown', { source: 'lock_in' });
+    Analytics.trackAF('paywall_view', {
       source: 'home',
       goal: state.primaryGoal ?? '',
       daily_commitment: String(state.dailyMinutes ?? ''),
     });
-    MixpanelService.track('Paywall Viewed', { source: 'home' });
+    Analytics.timeEvent('Paywall Dismissed');
   }, [state.primaryGoal, state.dailyMinutes]);
 
   useEffect(() => {
@@ -127,17 +127,18 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleLockIn = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    MixpanelService.track('Paywall CTA Tapped', { source: 'home' });
+    Analytics.track('Paywall CTA Tapped', { source: 'lock_in' });
     const subscribed = await showPaywall();
 
     if (subscribed) {
-      MixpanelService.track('Subscription Started', { source: 'home' });
+      Analytics.track('Subscription Started', { source: 'lock_in' });
+      Analytics.trackAF('af_subscribe', { af_currency: 'USD', af_content_id: 'paywall_lock_in' });
       Animated.timing(screenOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => {
         navigation.goBack();
       });
     } else {
-      MixpanelService.track('Paywall Dismissed', { source: 'home' });
-      AppsFlyerService.logEvent('paywall_dismiss', {
+      Analytics.track('Paywall Dismissed', { source: 'lock_in' });
+      Analytics.trackAF('paywall_dismiss', {
         source: 'home',
         goal: state.primaryGoal ?? '',
         daily_commitment: String(state.dailyMinutes ?? ''),
@@ -147,8 +148,8 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
   }, [showPaywall, screenOpacity, navigation, state.primaryGoal, state.dailyMinutes]);
 
   const handleDismiss = useCallback(() => {
-    MixpanelService.track('Paywall Skipped', { source: 'home' });
-    AppsFlyerService.logEvent('paywall_dismiss', {
+    Analytics.track('Paywall Dismissed', { source: 'lock_in' });
+    Analytics.trackAF('paywall_dismiss', {
       source: 'home',
       goal: state.primaryGoal ?? '',
       daily_commitment: String(state.dailyMinutes ?? ''),

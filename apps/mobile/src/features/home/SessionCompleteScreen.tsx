@@ -23,6 +23,7 @@ import { FontFamily } from '../../design/typography';
 import { getStreakTierInfo, getFlameColorFilters } from '../../design/streakTiers';
 import { CrewService } from '../leaderboard/CrewService';
 import { NotificationService } from '../../services/NotificationService';
+import { Analytics } from '../../services/AnalyticsService';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'SessionComplete'>;
 
@@ -50,6 +51,11 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
   }, [streak]);
 
   useEffect(() => {
+    Analytics.track('Execution Block Completed', {
+      duration_minutes: durationMinutes,
+      streak,
+    });
+
     (async () => {
       try {
         const stats = await CrewService.getWeeklyStats();
@@ -64,6 +70,13 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
           latest.missions_done,
           latest.streak_days,
         );
+
+        Analytics.track('Crew Score Submitted', {
+          total_score: latest.focus_minutes * 2 + latest.missions_done * 15 + latest.streak_days * 10,
+          focus_minutes: latest.focus_minutes,
+          missions_done: latest.missions_done,
+          streak_days: latest.streak_days,
+        });
       } catch (e) {
         console.error('[SessionComplete] Score submission failed:', e);
       }
