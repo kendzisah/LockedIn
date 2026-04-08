@@ -1,5 +1,8 @@
 {
   "private": true,
+  "pnpm": {
+    "onlyBuiltDependencies": ["supabase"]
+  },
   "scripts": {
     "mobile": "pnpm --filter mobile start",
     "admin": "pnpm --filter admin dev",
@@ -11,6 +14,7 @@
     "supabase:gen-types": "supabase gen types typescript --local > packages/supabase-client/src/types.ts"
   },
   "devDependencies": {
-    "concurrently": "^9"
+    "concurrently": "^9",
+    "supabase": "^2.87.2"
   }
 }

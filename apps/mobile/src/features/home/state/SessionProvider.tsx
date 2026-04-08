@@ -337,6 +337,10 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
             af_description: `streak_${milestone}`,
             af_score: String(milestone),
           });
+          Analytics.trackAF('af_level_achieved', {
+            af_level: String(milestone),
+            af_score: String(state.consecutiveStreak),
+          });
           Analytics.track('Streak Milestone Reached', {
             days: milestone,
             color_tier: String(milestone),

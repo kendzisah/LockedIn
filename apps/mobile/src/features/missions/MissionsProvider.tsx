@@ -11,10 +11,13 @@ import {
   Mission,
   generateDailyMissions,
   generateWeeklyMissions,
+  generateWeeklyReplacementMission,
+  normalizeWeeklyMissions,
   getMissionWeekKey,
   getRemainingDaysInWeek,
   getCompletedCount,
   calculateTotalXP,
+  MAX_WEEKLY_CHALLENGES,
 } from './MissionEngine';
 import { CrewService } from '../leaderboard/CrewService';
 import { Analytics } from '../../services/AnalyticsService';
@@ -43,7 +46,9 @@ type MissionAction =
   | { type: 'HYDRATE'; payload: MissionsState }
   | { type: 'GENERATE_DAILY'; payload: { missions: Mission[]; date: string } }
   | { type: 'COMPLETE_MISSION'; payload: string }
+  | { type: 'UPDATE_DAILY_PROGRESS'; payload: { missionId: string; progress: number; progressTarget: number } }
   | { type: 'SET_WEEKLY_MISSIONS'; payload: { weeklyMissions: Mission[]; weekKey: string } }
+  | { type: 'APPEND_WEEKLY_MISSION'; payload: Mission }
   | { type: 'UPDATE_WEEKLY_PROGRESS'; payload: { missionId: string; progress: number; remainingDays: number } }
   | { type: 'RESET_DAY' }
   | { type: 'FULL_LOGOUT_RESET' };
@@ -65,12 +70,22 @@ export interface MissionsState {
   weekKey: string;
 }
 
+/** Data available at session completion for auto-complete matching. */
+export interface SessionCompleteData {
+  durationMinutes: number;
+  dailyFocusedMinutes: number;
+  streak: number;
+  dailyGoalMet: boolean;
+}
+
 interface MissionsContextType extends MissionsState {
   completeMission: (missionId: string) => void;
   generateDailyMissions: (goal: string) => void;
   /** Regenerate today's 3 missions (optional overrides for immediate post-settings update). */
   regenerateTodaysMissions: (override?: { goal?: string; weaknesses?: string[] }) => void;
   resetDay: () => void;
+  /** Auto-complete eligible missions after a focus session finishes. */
+  checkAutoComplete: (data: SessionCompleteData) => void;
 }
 
 const MissionsContext = createContext<MissionsContextType | undefined>(undefined);
@@ -90,9 +105,15 @@ const getInitialState = (): MissionsState => ({
 
 const KEY_MISSIONS = '@lockedin/daily_missions';
 const KEY_DATE = '@lockedin/daily_missions_date';
+const KEY_DAILY_PROFILE = '@lockedin/daily_missions_profile';
 const KEY_CUMULATIVE_XP = '@lockedin/cumulative_xp';
 const KEY_WEEKLY_MISSIONS = '@lockedin/weekly_missions';
 const KEY_WEEKLY_WEEK = '@lockedin/weekly_missions_week';
+const KEY_WEEKLY_PROFILE = '@lockedin/weekly_missions_profile';
+
+/** Bust AsyncStorage cache when primary goal or focus areas change. */
+const buildMissionsProfileKey = (goal: string, weaknesses: string[]): string =>
+  `${goal}::${[...weaknesses].sort().join('|')}`;
 const KEY_ACTIVE_DAYS = '@lockedin/weekly_active_days';
 const KEY_EARLY_OPENS = '@lockedin/weekly_early_opens';
 
@@ -135,12 +156,34 @@ const missionsReducer = (state: MissionsState, action: MissionAction): MissionsS
       };
     }
 
+    case 'UPDATE_DAILY_PROGRESS': {
+      const updatedDaily = state.missions.map((m) => {
+        if (m.id !== action.payload.missionId || m.completed) return m;
+        return {
+          ...m,
+          progress: Math.min(action.payload.progress, action.payload.progressTarget),
+          progressTarget: action.payload.progressTarget,
+        };
+      });
+      return { ...state, missions: updatedDaily };
+    }
+
     case 'SET_WEEKLY_MISSIONS':
       return {
         ...state,
         weeklyMissions: action.payload.weeklyMissions,
         weekKey: action.payload.weekKey,
       };
+
+    case 'APPEND_WEEKLY_MISSION': {
+      if (state.weeklyMissions.length >= MAX_WEEKLY_CHALLENGES) return state;
+      if (state.weeklyMissions.some((m) => m.id === action.payload.id)) return state;
+      if (state.weeklyMissions.some((m) => m.title === action.payload.title)) return state;
+      return {
+        ...state,
+        weeklyMissions: [...state.weeklyMissions, action.payload],
+      };
+    }
 
     case 'UPDATE_WEEKLY_PROGRESS': {
       const remaining = action.payload.remainingDays;
@@ -178,10 +221,11 @@ const missionsReducer = (state: MissionsState, action: MissionAction): MissionsS
 
 // ─── Persistence helpers ────────────────────────────────
 
-const persistMissions = async (missions: Mission[], date: string) => {
+const persistMissions = async (missions: Mission[], date: string, profile: string) => {
   await Promise.all([
     AsyncStorage.setItem(KEY_MISSIONS, JSON.stringify(missions)),
     AsyncStorage.setItem(KEY_DATE, date),
+    AsyncStorage.setItem(KEY_DAILY_PROFILE, profile),
   ]);
 };
 
@@ -189,10 +233,11 @@ const persistCumulativeXP = async (xp: number) => {
   await AsyncStorage.setItem(KEY_CUMULATIVE_XP, String(xp));
 };
 
-const persistWeeklyMissions = async (missions: Mission[], weekKey: string) => {
+const persistWeeklyMissions = async (missions: Mission[], weekKey: string, profile: string) => {
   await Promise.all([
     AsyncStorage.setItem(KEY_WEEKLY_MISSIONS, JSON.stringify(missions)),
     AsyncStorage.setItem(KEY_WEEKLY_WEEK, weekKey),
+    AsyncStorage.setItem(KEY_WEEKLY_PROFILE, profile),
   ]);
 };
 
@@ -287,19 +332,33 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
   const stableWeaknesses = useMemo(() => userWeaknesses, [weaknessesKey]);
 
   const hydrate = useCallback(async () => {
+    const expectedProfile = buildMissionsProfileKey(userGoal, stableWeaknesses);
+
     try {
-      const [storedMissions, storedDate, cumulativeXP] = await Promise.all([
+      const [storedMissions, storedDate, storedDailyProfile, cumulativeXP] = await Promise.all([
         AsyncStorage.getItem(KEY_MISSIONS),
         AsyncStorage.getItem(KEY_DATE),
+        AsyncStorage.getItem(KEY_DAILY_PROFILE),
         loadCumulativeXP(),
       ]);
 
       const today = getLocalDateString();
 
-      if (storedMissions && storedDate === today) {
+      const canUseStoredDaily =
+        !!storedMissions &&
+        storedDate === today &&
+        (storedDailyProfile === expectedProfile ||
+          // Legacy installs: no profile yet — trust today's bundle once, then stamp profile.
+          storedDailyProfile == null);
+
+      if (canUseStoredDaily && storedMissions) {
         const missions = JSON.parse(storedMissions) as Mission[];
         const completedCount = getCompletedCount(missions);
         const dailyXP = calculateTotalXP(missions.filter((m) => m.completed));
+
+        if (storedDailyProfile == null) {
+          await AsyncStorage.setItem(KEY_DAILY_PROFILE, expectedProfile);
+        }
 
         dispatch({
           type: 'HYDRATE',
@@ -336,28 +395,39 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
           },
         });
 
-        await persistMissions(newMissions, today);
+        await persistMissions(newMissions, today, expectedProfile);
       }
 
       // ── Weekly missions hydration ──
       const currentWeekKey = getMissionWeekKey();
-      const [storedWeekly, storedWeekKey] = await Promise.all([
+      const [storedWeekly, storedWeekKey, storedWeeklyProfile] = await Promise.all([
         AsyncStorage.getItem(KEY_WEEKLY_MISSIONS),
         AsyncStorage.getItem(KEY_WEEKLY_WEEK),
+        AsyncStorage.getItem(KEY_WEEKLY_PROFILE),
       ]);
 
-      if (storedWeekly && storedWeekKey === currentWeekKey) {
-        const weeklyMissions = JSON.parse(storedWeekly) as Mission[];
+      const canUseStoredWeekly =
+        !!storedWeekly &&
+        storedWeekKey === currentWeekKey &&
+        (storedWeeklyProfile === expectedProfile || storedWeeklyProfile == null);
+
+      if (canUseStoredWeekly && storedWeekly) {
+        const weeklyMissions = normalizeWeeklyMissions(JSON.parse(storedWeekly) as Mission[]);
+        if (storedWeeklyProfile == null) {
+          await AsyncStorage.setItem(KEY_WEEKLY_PROFILE, expectedProfile);
+        }
         dispatch({ type: 'SET_WEEKLY_MISSIONS', payload: { weeklyMissions, weekKey: currentWeekKey } });
       } else {
-        const newWeekly = generateWeeklyMissions({
-          goal: userGoal,
-          weaknesses: stableWeaknesses,
-          onboardingDate,
-          streak,
-        });
+        const newWeekly = normalizeWeeklyMissions(
+          generateWeeklyMissions({
+            goal: userGoal,
+            weaknesses: stableWeaknesses,
+            onboardingDate,
+            streak,
+          }),
+        );
         dispatch({ type: 'SET_WEEKLY_MISSIONS', payload: { weeklyMissions: newWeekly, weekKey: currentWeekKey } });
-        await persistWeeklyMissions(newWeekly, currentWeekKey);
+        await persistWeeklyMissions(newWeekly, currentWeekKey, expectedProfile);
       }
     } catch (error) {
       console.error('[MissionsProvider] Hydration failed:', error);
@@ -372,6 +442,7 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
         type: 'GENERATE_DAILY',
         payload: { missions: newMissions, date: today },
       });
+      void persistMissions(newMissions, today, expectedProfile);
     }
   }, [userGoal, stableWeaknesses, onboardingDate, streak]);
 
@@ -420,9 +491,10 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
   // Persist missions on change
   useEffect(() => {
     if (state.missions.length > 0) {
-      persistMissions(state.missions, state.date).catch(() => {});
+      const profile = buildMissionsProfileKey(userGoal, stableWeaknesses);
+      persistMissions(state.missions, state.date, profile).catch(() => {});
     }
-  }, [state.missions, state.date]);
+  }, [state.missions, state.date, userGoal, stableWeaknesses]);
 
   // Persist cumulative XP on change
   useEffect(() => {
@@ -434,9 +506,24 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
   // Persist weekly missions on change
   useEffect(() => {
     if (state.weeklyMissions.length > 0) {
-      persistWeeklyMissions(state.weeklyMissions, state.weekKey).catch(() => {});
+      const profile = buildMissionsProfileKey(userGoal, stableWeaknesses);
+      persistWeeklyMissions(state.weeklyMissions, state.weekKey, profile).catch(() => {});
     }
-  }, [state.weeklyMissions, state.weekKey]);
+  }, [state.weeklyMissions, state.weekKey, userGoal, stableWeaknesses]);
+
+  // Single failed weekly → append replacement (max 2: missed + new challenge)
+  useEffect(() => {
+    const list = state.weeklyMissions;
+    if (list.length !== 1) return;
+    const m = list[0];
+    if (!m.failed || m.completed) return;
+    const rep = generateWeeklyReplacementMission(
+      { goal: userGoal, weaknesses: stableWeaknesses, onboardingDate, streak },
+      [m.title],
+    );
+    if (!rep) return;
+    dispatch({ type: 'APPEND_WEEKLY_MISSION', payload: rep });
+  }, [state.weeklyMissions, userGoal, stableWeaknesses, onboardingDate, streak]);
 
   // Update weekly mission progress on app foreground and daily hydration
   const updateWeeklyProgress = useCallback(async () => {
@@ -492,6 +579,7 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
         mission_id: mission.id,
         mission_title: mission.title,
         mission_type: mission.type,
+        mission_difficulty: mission.difficulty,
         xp: mission.xp,
         slot: mission.slot,
         completed_count: completedCount,
@@ -547,19 +635,39 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
       streak,
     });
     const today = getLocalDateString();
+    const profile = buildMissionsProfileKey(goal, stableWeaknesses);
     dispatch({ type: 'GENERATE_DAILY', payload: { missions: newMissions, date: today } });
+    void persistMissions(newMissions, today, profile);
   };
 
   const regenerateTodaysMissions = useCallback(
     (override?: { goal?: string; weaknesses?: string[] }) => {
+      const g = override?.goal ?? userGoal;
+      const w = override?.weaknesses ?? stableWeaknesses;
+      const profile = buildMissionsProfileKey(g, w);
+
       const newMissions = generateDailyMissions({
-        goal: override?.goal ?? userGoal,
-        weaknesses: override?.weaknesses ?? stableWeaknesses,
+        goal: g,
+        weaknesses: w,
         onboardingDate,
         streak,
       });
       const today = getLocalDateString();
       dispatch({ type: 'GENERATE_DAILY', payload: { missions: newMissions, date: today } });
+
+      const currentWeekKey = getMissionWeekKey();
+      const newWeekly = normalizeWeeklyMissions(
+        generateWeeklyMissions({
+          goal: g,
+          weaknesses: w,
+          onboardingDate,
+          streak,
+        }),
+      );
+      dispatch({ type: 'SET_WEEKLY_MISSIONS', payload: { weeklyMissions: newWeekly, weekKey: currentWeekKey } });
+
+      void persistMissions(newMissions, today, profile);
+      void persistWeeklyMissions(newWeekly, currentWeekKey, profile);
     },
     [userGoal, stableWeaknesses, onboardingDate, streak],
   );
@@ -568,12 +676,117 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
     dispatch({ type: 'RESET_DAY' });
   };
 
+  /**
+   * Parse a minimum duration (in minutes) from the variant portion of a
+   * core mission description.  Descriptions are formatted as:
+   *   "Complete a focus session before 10 AM — 30-min session"
+   * We split on " — " and parse from the variant suffix only, so numbers
+   * in the base description (e.g. "10 AM") don't interfere.
+   */
+  const parseMinutesFromDescription = (desc: string): number => {
+    const parts = desc.split(' — ');
+    const variant = parts.length > 1 ? parts[parts.length - 1] : desc;
+    const m = variant.match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : 0;
+  };
+
+  /**
+   * Check uncompleted auto-type missions against session data and complete any that match.
+   * Called from SessionCompleteScreen after a focus session finishes.
+   */
+  const checkAutoComplete = (data: SessionCompleteData) => {
+    const hour = new Date().getHours();
+
+    for (const mission of state.missions) {
+      if (mission.completed || mission.completionType !== 'auto') continue;
+
+      const required = parseMinutesFromDescription(mission.description);
+      // Current progress and target for this mission — null means no progress tracking
+      let progress: number | null = null;
+      let target: number | null = null;
+      let shouldComplete = false;
+
+      switch (mission.title) {
+        case 'Morning Focus Sprint':
+          if (hour < 10) {
+            target = required;
+            progress = data.durationMinutes;
+            shouldComplete = progress >= target;
+          }
+          break;
+        case 'Deep Work Block':
+          target = required;
+          progress = data.durationMinutes;
+          shouldComplete = progress >= target;
+          break;
+        case 'Afternoon Lock In':
+          if (hour >= 12 && hour < 17) {
+            target = required;
+            progress = data.durationMinutes;
+            shouldComplete = progress >= target;
+          }
+          break;
+        case 'Evening Focus Session':
+          if (hour >= 17 && hour < 21) {
+            target = required;
+            progress = data.durationMinutes;
+            shouldComplete = progress >= target;
+          }
+          break;
+        case 'Focus Marathon':
+          target = required;
+          progress = data.dailyFocusedMinutes;
+          shouldComplete = progress >= target;
+          break;
+        case 'Hit Your Daily Goal':
+          shouldComplete = data.dailyGoalMet;
+          break;
+        case 'Double Lock In': {
+          const descParts = mission.description.split(' — ');
+          const variant = descParts.length > 1 ? descParts[descParts.length - 1] : '';
+          const mul = variant.match(/(\d+)\s*×\s*(\d+)/);
+          const totalRequired = mul ? parseInt(mul[1], 10) * parseInt(mul[2], 10) : 0;
+          if (totalRequired > 0) {
+            target = totalRequired;
+            progress = data.dailyFocusedMinutes;
+            shouldComplete = progress >= target;
+          }
+          break;
+        }
+        case 'Streak Builder':
+          if (required > 0) {
+            target = required;
+            progress = data.durationMinutes;
+            shouldComplete = progress >= target;
+          } else {
+            // Easy variant: "Any session today" — complete immediately
+            shouldComplete = true;
+          }
+          break;
+        // First Thing Focus, Distraction-Free Hour — left as manual tap-to-complete.
+        default:
+          break;
+      }
+
+      // Update progress on the mission so the UI shows e.g. "25/45 min"
+      if (target != null && progress != null) {
+        dispatch({ type: 'UPDATE_DAILY_PROGRESS', payload: { missionId: mission.id, progress, progressTarget: target } });
+      }
+
+      if (shouldComplete) {
+        completeMission(mission.id);
+      }
+    }
+  };
+
   const contextValue: MissionsContextType = useMemo(() => ({
     ...state,
     completeMission,
     generateDailyMissions: generateDailyMissionsAction,
     regenerateTodaysMissions,
     resetDay,
+    checkAutoComplete,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [state, regenerateTodaysMissions]);
 
   return (

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ActionSheetIOS,
@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../../types/navigation';
 import { CrewService, type CrewDetails, type CrewLeaderboardEntry } from '../CrewService';
@@ -66,6 +67,7 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const [weekOffset, setWeekOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const skipFocusRefetchOnce = useRef(true);
 
   const selectedWeekKey = useMemo(() => getWeekKeyOffset(weekOffset), [weekOffset]);
   const isCurrentWeek = weekOffset === 0;
@@ -84,6 +86,17 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     setLoading(true);
     fetchData().finally(() => setLoading(false));
   }, [fetchData]);
+
+  // Refresh when returning to this screen; initial load is handled by useEffect above.
+  useFocusEffect(
+    useCallback(() => {
+      if (skipFocusRefetchOnce.current) {
+        skipFocusRefetchOnce.current = false;
+        return;
+      }
+      void fetchData();
+    }, [fetchData]),
+  );
 
   useEffect(() => {
     if (!details || !leaderboard.length || !userId) return;

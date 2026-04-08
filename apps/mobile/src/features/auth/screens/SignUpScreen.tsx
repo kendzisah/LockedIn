@@ -134,8 +134,8 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
       const { error: authError } = await signInWithApple();
 
       if (authError) {
-        if (authError.message !== 'Apple Sign-In cancelled') {
-          setError(authError.message);
+        setError(authError.message);
+        if (authError.code !== 'ERR_CANCELED') {
           setAuthErrorCode(authError.code);
           Analytics.track('Sign Up Failed', { method: 'apple', error_code: authError.code });
         }

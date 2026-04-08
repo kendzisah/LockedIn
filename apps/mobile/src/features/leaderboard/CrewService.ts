@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SupabaseService } from '../../services/SupabaseService';
-import { ENV } from '../../config/env';
 
 const WEEK_STATS_KEY = '@lockedin/crew_week_stats';
 
@@ -72,52 +71,9 @@ function getCurrentWeekKey(): string {
   return `${isoYear}-W${String(weekNo).padStart(2, '0')}`;
 }
 
-function computeTotalScore(
-  focusMinutes: number,
-  missionsDone: number,
-  streakDays: number
-): number {
-  return focusMinutes * 2 + missionsDone * 15 + streakDays * 10;
-}
-
 function rankFromSortedScores(sortedScores: number[], myScore: number): number {
   const idx = sortedScores.findIndex((s) => s === myScore);
   return idx === -1 ? 0 : idx + 1;
-}
-
-async function submitScoreInternal(
-  crewId: string,
-  focusMinutes: number,
-  missionsDone: number,
-  streakDays: number
-): Promise<boolean> {
-  try {
-    const client = SupabaseService.getClient();
-    const userId = SupabaseService.getCurrentUserId();
-    if (!client || !userId) return false;
-
-    const weekKey = getCurrentWeekKey();
-    const total_score = computeTotalScore(focusMinutes, missionsDone, streakDays);
-
-    const { error } = await client.from('crew_scores').upsert(
-      {
-        crew_id: crewId,
-        user_id: userId,
-        week_key: weekKey,
-        focus_minutes: focusMinutes,
-        missions_done: missionsDone,
-        streak_days: streakDays,
-        total_score,
-      },
-      { onConflict: 'crew_id,user_id,week_key' }
-    );
-
-    if (error) throw error;
-    return true;
-  } catch (error) {
-    console.error('[CrewService] submitScore failed:', error);
-    return false;
-  }
 }
 
 export const CrewService = {
@@ -471,52 +427,6 @@ export const CrewService = {
     }
   },
 
-  submitScore(
-    crewId: string,
-    focusMinutes: number,
-    missionsDone: number,
-    streakDays: number
-  ): Promise<boolean> {
-    return submitScoreInternal(crewId, focusMinutes, missionsDone, streakDays);
-  },
-
-  async submitScoreToAllCrews(
-    focusMinutes: number,
-    missionsDone: number,
-    streakDays: number
-  ): Promise<void> {
-    try {
-      const client = SupabaseService.getClient();
-      const userId = SupabaseService.getCurrentUserId();
-      if (!client || !userId) return;
-
-      const { data: memberships, error } = await client
-        .from('crew_members')
-        .select('crew_id')
-        .eq('user_id', userId);
-
-      if (error) throw error;
-
-      for (const m of memberships ?? []) {
-        try {
-          const ok = await submitScoreInternal(
-            m.crew_id as string,
-            focusMinutes,
-            missionsDone,
-            streakDays
-          );
-          if (!ok) {
-            console.error('[CrewService] submitScoreToAllCrews: submit failed for crew', m.crew_id);
-          }
-        } catch (err) {
-          console.error('[CrewService] submitScoreToAllCrews crew error:', m.crew_id, err);
-        }
-      }
-    } catch (error) {
-      console.error('[CrewService] submitScoreToAllCrews failed:', error);
-    }
-  },
-
   async getWeeklyStats(): Promise<WeeklyCrewStats> {
     const currentWeek = getCurrentWeekKey();
     const empty = (): WeeklyCrewStats => ({
@@ -582,8 +492,7 @@ export const CrewService = {
 
   /**
    * Submit a mission completion through the server-side Edge Function.
-   * The server validates the time gate against its own clock and upserts crew_scores.
-   * Falls back to client-side upsert if the Edge Function is unreachable.
+   * Upserts crew_scores for each crew via `upsert_crew_score` RPC.
    */
   async completeMissionServerSide(
     timeGate: string | undefined,
@@ -595,30 +504,16 @@ export const CrewService = {
       const client = SupabaseService.getClient();
       if (!client) return { success: false, error: 'Client not initialized' };
 
-      const { data: { session } } = await client.auth.getSession();
-      if (!session?.access_token) return { success: false, error: 'No session' };
-
-      const res = await fetch(`${ENV.SUPABASE_URL}/functions/v1/complete-mission`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          timeGate,
-          focusMinutes,
-          missionsDone,
-          streakDays,
-        }),
+      const { data, error } = await client.functions.invoke('complete-mission', {
+        body: { timeGate, focusMinutes, missionsDone, streakDays },
       });
 
-      if (res.status === 403) {
-        const body = await res.json();
-        return { success: false, error: body.error ?? 'time_gate_locked' };
-      }
-
-      if (!res.ok) {
-        throw new Error(`Edge function returned ${res.status}`);
+      if (error) {
+        const message = error.message ?? '';
+        if (message.includes('time_gate_locked') || (data && data.error === 'time_gate_locked')) {
+          return { success: false, error: 'time_gate_locked' };
+        }
+        throw error;
       }
 
       return { success: true };

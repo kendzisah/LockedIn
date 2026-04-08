@@ -19,6 +19,15 @@ import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import type { Mission, MissionType, CompletionType } from '../MissionEngine';
 
+const weeklyProgressCaption = (m: Mission): string => {
+  const cur = m.progress ?? 0;
+  const tgt = m.progressTarget ?? 0;
+  if (m.progressMetric === 'first_open_before_9am') {
+    return `${cur}/${tgt} before 9am`;
+  }
+  return `${cur}/${tgt} days`;
+};
+
 interface MissionCardProps {
   mission: Mission;
   onComplete: (missionId: string) => void;
@@ -76,6 +85,19 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
   const done = mission.completed;
   const failed = mission.failed === true;
   const isWeekly = mission.duration === 'weekly';
+  const hasProgressTarget = mission.progressTarget != null;
+  const weeklyProgressPct =
+    hasProgressTarget && mission.progressTarget! > 0
+      ? Math.min(100, ((mission.progress ?? 0) / mission.progressTarget!) * 100)
+      : 0;
+  const showWeeklyProgressBar =
+    isWeekly && hasProgressTarget && ((!done && !failed) || failed);
+  const showDailyProgressBar =
+    !isWeekly &&
+    hasProgressTarget &&
+    !done &&
+    !failed &&
+    (mission.progress ?? 0) > 0;
   const locked = !done && !failed && !isWeekly && !isTimeGateUnlocked(mission.timeGate);
   const iconInfo = MISSION_ICONS[mission.type] ?? MISSION_ICONS.custom;
   const slotMeta = SLOT_LABELS[mission.slot] ?? SLOT_LABELS.core;
@@ -135,18 +157,44 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
             </Text>
           </View>
         </View>
-        <Text style={[styles.description, done && styles.descDone, (locked || failed) && styles.titleLocked]} numberOfLines={1}>
-          {failed ? `Missed — ${mission.progress ?? 0}/${mission.progressTarget} days` : locked ? mission.timeGate : mission.description}
+        <Text
+          style={[styles.description, done && styles.descDone, (locked || failed) && styles.titleLocked]}
+          numberOfLines={isWeekly && !failed ? 2 : 1}
+        >
+          {failed ? 'Missed this week' : locked ? mission.timeGate : mission.description}
         </Text>
-        {isWeekly && !done && !failed && mission.progressTarget != null && (
+        {showWeeklyProgressBar && (
           <View style={styles.progressRow}>
             <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${Math.min(100, ((mission.progress ?? 0) / mission.progressTarget) * 100)}%` }]} />
+              <View
+                style={[
+                  styles.progressFill,
+                  failed && styles.progressFillFailed,
+                  { width: `${weeklyProgressPct}%` },
+                ]}
+              />
             </View>
-            <Text style={styles.progressText}>{mission.progress ?? 0}/{mission.progressTarget}</Text>
+            <Text style={[styles.progressText, failed && styles.progressTextFailed]}>
+              {weeklyProgressCaption(mission)}
+            </Text>
           </View>
         )}
-        {!done && !locked && !isWeekly && mission.completionType === 'auto' && (
+        {showDailyProgressBar && (
+          <View style={styles.progressRow}>
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${Math.min(100, ((mission.progress ?? 0) / (mission.progressTarget ?? 1)) * 100)}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.progressText}>
+              {mission.progress ?? 0}/{mission.progressTarget} min
+            </Text>
+          </View>
+        )}
+        {!done && !locked && !isWeekly && mission.completionType === 'auto' && !(mission.progressTarget != null && (mission.progress ?? 0) > 0) && (
           <View style={styles.autoRow}>
             <Ionicons name="flash" size={10} color={Colors.accent} />
             <Text style={styles.autoText}>Auto-complete</Text>
@@ -216,14 +264,21 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
             </View>
           </View>
 
-          {/* Weekly progress bar in modal */}
-          {isWeekly && !done && !failed && mission.progressTarget != null && (
+          {/* Progress (weekly always when active; dailies when tracking minutes) */}
+          {!done && !failed && mission.progressTarget != null && (isWeekly || (mission.progress ?? 0) > 0) && (
             <View style={s.weeklyProgressBar}>
               <View style={s.weeklyProgressTrack}>
-                <View style={[s.weeklyProgressFill, { width: `${Math.min(100, ((mission.progress ?? 0) / mission.progressTarget) * 100)}%` }]} />
+                <View
+                  style={[
+                    s.weeklyProgressFill,
+                    { width: `${Math.min(100, ((mission.progress ?? 0) / mission.progressTarget) * 100)}%` },
+                  ]}
+                />
               </View>
               <Text style={s.weeklyProgressLabel}>
-                {mission.progress ?? 0} of {mission.progressTarget} days
+                {isWeekly
+                  ? weeklyProgressCaption(mission)
+                  : `${mission.progress ?? 0} of ${mission.progressTarget} min`}
               </Text>
             </View>
           )}
@@ -247,6 +302,24 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
             <View style={s.completedBanner}>
               <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
               <Text style={s.completedText}>Mission Complete</Text>
+            </View>
+          )}
+
+          {/* Weekly progress at failure (how far you got) */}
+          {failed && isWeekly && mission.progressTarget != null && (
+            <View style={s.weeklyProgressBar}>
+              <View style={s.weeklyProgressTrack}>
+                <View
+                  style={[
+                    s.weeklyProgressFill,
+                    s.weeklyProgressFillFailed,
+                    {
+                      width: `${Math.min(100, ((mission.progress ?? 0) / mission.progressTarget) * 100)}%`,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={s.weeklyProgressLabelFailed}>{weeklyProgressCaption(mission)}</Text>
             </View>
           )}
 
@@ -394,10 +467,16 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: Colors.accent,
   },
+  progressFillFailed: {
+    backgroundColor: 'rgba(255,71,87,0.55)',
+  },
   progressText: {
     fontFamily: FontFamily.body,
     fontSize: 10,
     color: Colors.textMuted,
+  },
+  progressTextFailed: {
+    color: Colors.danger,
   },
   autoRow: {
     flexDirection: 'row',
@@ -531,6 +610,15 @@ const s = StyleSheet.create({
     fontFamily: FontFamily.bodyMedium,
     fontSize: 12,
     color: Colors.accent,
+    textAlign: 'center',
+  },
+  weeklyProgressFillFailed: {
+    backgroundColor: 'rgba(255,71,87,0.6)',
+  },
+  weeklyProgressLabelFailed: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 12,
+    color: Colors.danger,
     textAlign: 'center',
   },
   metaRow: {

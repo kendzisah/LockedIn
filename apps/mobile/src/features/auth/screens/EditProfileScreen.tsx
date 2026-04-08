@@ -38,13 +38,35 @@ const pickerOptions = {
 
 function isLocalAssetUri(uri: string | null): boolean {
   if (!uri) return false;
-  return uri.startsWith('file:') || uri.startsWith('content:') || uri.startsWith('ph://');
+  if (uri.startsWith('http://') || uri.startsWith('https://')) return false;
+  return (
+    uri.startsWith('file:') ||
+    uri.startsWith('content:') ||
+    uri.startsWith('ph://') ||
+    uri.startsWith('assets-library:')
+  );
+}
+
+/**
+ * Build a FormData body that React Native's networking layer can stream
+ * directly from a local file URI — no base64 / ArrayBuffer conversion needed.
+ */
+function buildImageFormData(uri: string, fileName: string, mime: string): FormData {
+  const form = new FormData();
+  form.append('', {
+    uri,
+    name: fileName,
+    type: mime,
+  } as unknown as Blob);
+  return form;
 }
 
 const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
   const { source } = route.params;
   const [displayName, setDisplayName] = useState('');
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  /** MIME from last picker result; used for upload Content-Type + file extension. */
+  const [avatarMime, setAvatarMime] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -59,7 +81,10 @@ const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
         .eq('id', userId)
         .maybeSingle();
       if (data?.display_name) setDisplayName(String(data.display_name));
-      if (data?.avatar_url) setAvatarUri(String(data.avatar_url));
+      if (data?.avatar_url) {
+        setAvatarUri(String(data.avatar_url));
+        setAvatarMime(null);
+      }
     })();
   }, []);
 
@@ -75,7 +100,9 @@ const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
     }
     const result = await ImagePicker.launchCameraAsync(pickerOptions);
     if (!result.canceled && result.assets[0]?.uri) {
-      setAvatarUri(result.assets[0].uri);
+      const a = result.assets[0];
+      setAvatarUri(a.uri);
+      setAvatarMime(a.mimeType ?? 'image/jpeg');
     }
   }, []);
 
@@ -91,7 +118,9 @@ const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
     }
     const result = await ImagePicker.launchImageLibraryAsync(pickerOptions);
     if (!result.canceled && result.assets[0]?.uri) {
-      setAvatarUri(result.assets[0].uri);
+      const a = result.assets[0];
+      setAvatarUri(a.uri);
+      setAvatarMime(a.mimeType ?? 'image/jpeg');
     }
   }, []);
 
@@ -115,7 +144,10 @@ const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
           if (buttonIndex === cancelButtonIndex) return;
           if (buttonIndex === 0) launchCamera();
           else if (buttonIndex === 1) launchLibrary();
-          else if (hasAvatar && buttonIndex === 2) setAvatarUri(null);
+          else if (hasAvatar && buttonIndex === 2) {
+            setAvatarUri(null);
+            setAvatarMime(null);
+          }
         },
       );
       return;
@@ -128,7 +160,16 @@ const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
         { text: 'Take Photo', onPress: () => void launchCamera() },
         { text: 'Choose from Library', onPress: () => void launchLibrary() },
         ...(hasAvatar
-          ? [{ text: 'Remove Photo', style: 'destructive' as const, onPress: () => setAvatarUri(null) }]
+          ? [
+              {
+                text: 'Remove Photo',
+                style: 'destructive' as const,
+                onPress: () => {
+                  setAvatarUri(null);
+                  setAvatarMime(null);
+                },
+              },
+            ]
           : []),
         { text: 'Cancel', style: 'cancel' },
       ],
@@ -153,13 +194,22 @@ const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
 
       if (avatarUri && isLocalAssetUri(avatarUri)) {
         setUploading(true);
-        const response = await fetch(avatarUri);
-        const blob = await response.blob();
-        const path = `${userId}/avatar.jpg`;
-        const { error: upErr } = await client.storage.from('avatars').upload(path, blob, {
-          contentType: 'image/jpeg',
-          upsert: true,
-        });
+        const mime = avatarMime ?? 'image/jpeg';
+        const ext = mime.includes('png')
+          ? 'png'
+          : mime.includes('webp')
+            ? 'webp'
+            : mime.includes('heic') || mime.includes('heif')
+              ? 'heic'
+              : 'jpg';
+        const fileName = `avatar.${ext}`;
+        const path = `${userId}/${fileName}`;
+        const formData = buildImageFormData(avatarUri, fileName, mime);
+        const { error: upErr } = await client.storage.from('avatars').upload(
+          path,
+          formData,
+          { contentType: mime, upsert: true },
+        );
         setUploading(false);
         if (upErr) {
           Alert.alert('Upload failed', upErr.message);
@@ -189,7 +239,7 @@ const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
       if (publicUrl) {
         Analytics.track('Profile Photo Set', {
           source: source === 'signup' ? 'signup_flow' : 'settings',
-          method: avatarUri && isLocalAssetUri(avatarUri) ? 'library' : 'existing',
+          method: avatarUri && isLocalAssetUri(avatarUri) ? 'upload' : 'existing',
         });
       }
       if (trimmedName) {
@@ -211,7 +261,7 @@ const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
       setUploading(false);
       setSaving(false);
     }
-  }, [avatarUri, canSave, navigation, source, trimmedName]);
+  }, [avatarMime, avatarUri, canSave, navigation, source, trimmedName]);
 
   const onSkip = useCallback(() => {
     Analytics.track('Profile Setup Skipped');

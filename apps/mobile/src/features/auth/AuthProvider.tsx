@@ -62,6 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   // Keep analytics context in sync with auth state
   useEffect(() => {
     Analytics.setIsAnonymous(isAnonymous);
+    Analytics.registerSuperProperties({ is_anonymous: isAnonymous });
   }, [isAnonymous]);
 
   // On mount, check current session and set up listener

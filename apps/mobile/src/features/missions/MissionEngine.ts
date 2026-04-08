@@ -204,6 +204,15 @@ export const getRemainingDaysInWeek = (date: Date = new Date()): number => {
 
 // ─── Weekly mission generation ─────────────────────────
 
+/** Max concurrent weekly challenge rows (missed + replacement still fits in 2). */
+export const MAX_WEEKLY_CHALLENGES = 2;
+
+/** Weekly XP is scaled above typical dailies (~15–35 XP) after streak bonus. */
+export const WEEKLY_XP_MULTIPLIER = 2;
+
+export const applyWeeklyXpPremium = (xp: number): number =>
+  Math.max(1, Math.round(xp * WEEKLY_XP_MULTIPLIER));
+
 /** ISO week key (YYYY-Www) for the device's local date. */
 export const getMissionWeekKey = (date: Date = new Date()): string => {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -215,11 +224,98 @@ export const getMissionWeekKey = (date: Date = new Date()): string => {
 };
 
 /**
+ * Collect weekly mission templates from the user's active pools (unique titles).
+ */
+export const buildWeeklyTemplatePool = (
+  params: MissionGenerationParams,
+): { template: MissionTemplate; slot: MissionSlot }[] => {
+  const { goal, weaknesses } = params;
+  const weeklyTemplates: { template: MissionTemplate; slot: MissionSlot }[] = [];
+  const seenTitles = new Set<string>();
+
+  const addUnique = (t: MissionTemplate, slot: MissionSlot) => {
+    if (t.duration === 'weekly' && !seenTitles.has(t.title)) {
+      seenTitles.add(t.title);
+      weeklyTemplates.push({ template: t, slot });
+    }
+  };
+
+  const validWeaknesses = weaknesses.filter((w) => WEAKNESS_MISSIONS[w]);
+  for (const wk of validWeaknesses) {
+    for (const t of WEAKNESS_MISSIONS[wk]) addUnique(t, 'weakness');
+  }
+  if (validWeaknesses.length === 0) {
+    for (const t of WEAKNESS_MISSIONS['I lack daily consistency'] ?? []) addUnique(t, 'weakness');
+  }
+
+  const goalPool = GOAL_MISSIONS[goal] ?? GOAL_MISSIONS['Increase discipline & self-control'];
+  for (const t of goalPool) addUnique(t, 'goal');
+
+  return weeklyTemplates;
+};
+
+/**
+ * Dedupe titles, prefer failed rows first, cap at MAX_WEEKLY_CHALLENGES (fixes legacy storage with 3+ rows).
+ */
+export const normalizeWeeklyMissions = (missions: Mission[]): Mission[] => {
+  const weeklyOnly = missions.filter((m) => m.duration === 'weekly');
+  const seen = new Set<string>();
+  const deduped: Mission[] = [];
+  for (const m of weeklyOnly) {
+    if (seen.has(m.title)) continue;
+    seen.add(m.title);
+    deduped.push(m);
+  }
+  const sorted = [...deduped].sort((a, b) => {
+    if (!!a.failed !== !!b.failed) return a.failed ? -1 : 1;
+    if (!!a.completed !== !!b.completed) return a.completed ? 1 : -1;
+    return 0;
+  });
+  return sorted.slice(0, MAX_WEEKLY_CHALLENGES);
+};
+
+/**
+ * Next weekly challenge after the primary pick, excluding titles already on screen.
+ */
+export const generateWeeklyReplacementMission = (
+  params: MissionGenerationParams,
+  excludeTitles: string[],
+  date: Date = new Date(),
+): Mission | null => {
+  const pool = buildWeeklyTemplatePool(params);
+  if (pool.length === 0) return null;
+
+  const excluded = new Set(excludeTitles);
+  const weekKey = getMissionWeekKey(date);
+  const weekNumber = parseInt(weekKey.replace(/\D/g, ''), 10) || 0;
+  const { onboardingDate, streak = 0 } = params;
+  const dayOfYear = getDayOfYear(date);
+  const daysSinceOnboarding = onboardingDate
+    ? Math.max(0, Math.floor((date.getTime() - new Date(onboardingDate).getTime()) / 86_400_000))
+    : 0;
+  const tier = getDifficultyTier(daysSinceOnboarding);
+
+  for (let offset = 1; offset <= pool.length; offset++) {
+    const idx = (weekNumber + offset) % pool.length;
+    const picked = pool[idx];
+    if (excluded.has(picked.template.title)) continue;
+    const m = buildMission(picked.template, picked.slot, tier, streak, dayOfYear, 100);
+    return {
+      ...m,
+      id: `weekly_${weekKey}_${hashStr(picked.template.title)}_r${offset}`,
+      progress: 0,
+      xp: applyWeeklyXpPremium(m.xp),
+    };
+  }
+  return null;
+};
+
+/**
  * Collect all weekly mission templates from the user's active pools.
  * Returns only templates with duration: 'weekly'.
  */
 export const generateWeeklyMissions = (params: MissionGenerationParams): Mission[] => {
-  const { goal, weaknesses, date = new Date(), onboardingDate, streak = 0 } = params;
+  const { date = new Date(), onboardingDate, streak = 0 } = params;
   const dayOfYear = getDayOfYear(date);
   const daysSinceOnboarding = onboardingDate
     ? Math.max(0, Math.floor((date.getTime() - new Date(onboardingDate).getTime()) / 86_400_000))
@@ -227,36 +323,22 @@ export const generateWeeklyMissions = (params: MissionGenerationParams): Mission
   const tier = getDifficultyTier(daysSinceOnboarding);
   const weekKey = getMissionWeekKey(date);
 
-  const weeklyTemplates: { template: MissionTemplate; slot: MissionSlot }[] = [];
+  const weeklyTemplates = buildWeeklyTemplatePool(params);
 
-  // Scan weakness pools for weekly missions
-  const validWeaknesses = weaknesses.filter((w) => WEAKNESS_MISSIONS[w]);
-  for (const wk of validWeaknesses) {
-    for (const t of WEAKNESS_MISSIONS[wk]) {
-      if (t.duration === 'weekly') weeklyTemplates.push({ template: t, slot: 'weakness' });
-    }
-  }
-  // Fallback if no weaknesses selected
-  if (validWeaknesses.length === 0) {
-    for (const t of (WEAKNESS_MISSIONS['I lack daily consistency'] ?? [])) {
-      if (t.duration === 'weekly') weeklyTemplates.push({ template: t, slot: 'weakness' });
-    }
-  }
+  if (weeklyTemplates.length === 0) return [];
 
-  // Scan goal pool
-  const goalPool = GOAL_MISSIONS[goal] ?? GOAL_MISSIONS['Increase discipline & self-control'];
-  for (const t of goalPool) {
-    if (t.duration === 'weekly') weeklyTemplates.push({ template: t, slot: 'goal' });
-  }
-
-  return weeklyTemplates.map((entry, i) => {
-    const m = buildMission(entry.template, entry.slot, tier, streak, dayOfYear, 100 + i);
-    return {
+  // Pick one weekly mission per week, rotating through available templates
+  const weekNumber = parseInt(weekKey.replace(/\D/g, ''), 10) || 0;
+  const picked = weeklyTemplates[weekNumber % weeklyTemplates.length];
+  const m = buildMission(picked.template, picked.slot, tier, streak, dayOfYear, 100);
+  return [
+    {
       ...m,
-      id: `weekly_${weekKey}_${hashStr(entry.template.title)}_${i}`,
+      id: `weekly_${weekKey}_${hashStr(picked.template.title)}_0`,
       progress: 0,
-    };
-  });
+      xp: applyWeeklyXpPremium(m.xp),
+    },
+  ];
 };
 
 // ─── Legacy compat wrapper (used by MissionsProvider before migration) ───

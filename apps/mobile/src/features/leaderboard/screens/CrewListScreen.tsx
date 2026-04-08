@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { MainStackParamList } from '../../../types/navigation';
 import { CrewService, type MyCrewRow } from '../CrewService';
 import CrewCard from '../components/CrewCard';
@@ -28,15 +28,33 @@ const CrewListScreen: React.FC = () => {
   const [crews, setCrews] = useState<MyCrewRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const initialLoadDone = useRef(false);
 
   const fetchCrews = useCallback(async () => {
     const data = await CrewService.getMyCrews();
     setCrews(data);
   }, []);
 
-  useEffect(() => {
-    fetchCrews().finally(() => setLoading(false));
-  }, [fetchCrews]);
+  // Refetch whenever the Crews tab gains focus (create/join/leave/detail all use stack modals).
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      const run = async () => {
+        if (!initialLoadDone.current) {
+          setLoading(true);
+        }
+        const data = await CrewService.getMyCrews();
+        if (cancelled) return;
+        setCrews(data);
+        initialLoadDone.current = true;
+        setLoading(false);
+      };
+      void run();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
