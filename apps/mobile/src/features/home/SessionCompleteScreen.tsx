@@ -6,7 +6,7 @@
  * Auto-navigates to Home after ~4s or on tap.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   StyleSheet,
@@ -20,6 +20,11 @@ import type { MainStackParamList } from '../../types/navigation';
 import { getCompletionMessage, getStreakCheckpoint } from './engine/CompletionCopy';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
+import { getStreakTierInfo, getFlameColorFilters } from '../../design/streakTiers';
+import { CrewService } from '../leaderboard/CrewService';
+import { NotificationService } from '../../services/NotificationService';
+import { Analytics } from '../../services/AnalyticsService';
+import { recordActiveDay } from '../missions/MissionsProvider';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'SessionComplete'>;
 
@@ -29,6 +34,11 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
 
   const message = useRef(getCompletionMessage(phase)).current;
   const checkpoint = useRef(getStreakCheckpoint(streak)).current;
+  const tierInfo = useMemo(() => getStreakTierInfo(streak), [streak]);
+  const flameFilters = useMemo(
+    () => getFlameColorFilters(tierInfo.color, tierInfo.colorLight),
+    [tierInfo.color, tierInfo.colorLight],
+  );
 
   // Animation values
   const messageOpacity = useRef(new Animated.Value(0)).current;
@@ -37,10 +47,50 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
 
   const showStreakCelebration = phase === 'execution_block' && streak > 0;
 
+  useEffect(() => {
+    void NotificationService.scheduleStreakMilestoneIfNeeded(streak);
+  }, [streak]);
+
+  useEffect(() => {
+    Analytics.track('Execution Block Completed', {
+      duration_minutes: durationMinutes,
+      streak,
+    });
+
+    // Record this as an active day for weekly mission progress
+    recordActiveDay().catch(() => {});
+
+    (async () => {
+      try {
+        const stats = await CrewService.getWeeklyStats();
+        const updated = {
+          focus_minutes: stats.focus_minutes + durationMinutes,
+          streak_days: streak,
+        };
+        await CrewService.updateWeeklyStats(updated);
+        const latest = await CrewService.getWeeklyStats();
+        await CrewService.submitScoreToAllCrews(
+          latest.focus_minutes,
+          latest.missions_done,
+          latest.streak_days,
+        );
+
+        Analytics.track('Crew Score Submitted', {
+          total_score: latest.focus_minutes * 2 + latest.missions_done * 15 + latest.streak_days * 10,
+          focus_minutes: latest.focus_minutes,
+          missions_done: latest.missions_done,
+          streak_days: latest.streak_days,
+        });
+      } catch (e) {
+        console.error('[SessionComplete] Score submission failed:', e);
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const navigateHome = useCallback(() => {
     if (dismissed) return;
     setDismissed(true);
-    navigation.replace('Home');
+    navigation.replace('Tabs');
   }, [dismissed, navigation]);
 
   useEffect(() => {
@@ -105,8 +155,9 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
               autoPlay
               loop
               style={styles.flameLottie}
+              colorFilters={flameFilters}
             />
-            <Text style={styles.streakNumber}>{streak}</Text>
+            <Text style={[styles.streakNumber, { color: tierInfo.color }]}>{streak}</Text>
             <Text style={styles.streakDetail}>{checkpoint.detail}</Text>
             <Text style={styles.streakHeadline}>{checkpoint.headline}</Text>
             <Text style={styles.streakSub}>{checkpoint.sub}</Text>

@@ -1,18 +1,13 @@
 /**
- * SessionProvider — Global session state with persistence and crash-resume.
- *
- * Phase transitions enforced: IDLE -> ANIMATING -> ACTIVE -> COMPLETING -> IDLE
- * Invalid transitions are no-ops.
+ * SessionProvider — Global session state with persistence.
  *
  * Program-day progression:
  *   - maxCompletedDay tracks how many program days finished (0-90)
- *   - Only Lock In (COMPLETE_EXECUTION_BLOCK) increments maxCompletedDay
- *   - Alignment/Unlock add listening time but do NOT advance the day
+ *   - Execution block completion (COMPLETE_EXECUTION_BLOCK) increments maxCompletedDay
  *   - Streak increments via DAILY_GOAL_MET when daily focus goal is hit
  *
  * Lifetime vs current-run:
  *   - lifetimeTotalMinutes / lifetimeLongestStreak / lifetimeRunsCompleted survive across program completion
- *   - After 90 days, programCompleteSeen flag hides the progress bar
  *
  * HYDRATE handles legacy shapes (startDayKey, completedDayKeys, etc.) for migration.
  */
@@ -21,12 +16,13 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppsFlyerService } from '../../../services/AppsFlyerService';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
+import { subscribeLogoutCleanup } from '../../../services/logoutCleanupBus';
 import type {
   SessionState,
   SessionAction,
@@ -54,13 +50,11 @@ const initialState: SessionState = {
   lifetimeRunsCompleted: 0,
   lifetimeExecutionBlocks: 0,
   lifetimeExecutionMinutes: 0,
-  activeSession: null,
   lastLockInCompletedDate: null,
-  lastUnlockCompletedDate: null,
   dailyFocusedMinutes: 0,
   dailyFocusDate: null,
   dailyGoalMetDate: null,
-  programCompleteSeen: false,
+  weekCompletedDays: [],
 };
 
 // ─── Reducer ─────────────────────────────────────────────────────
@@ -88,14 +82,12 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         lifetimeRunsCompleted: migratedRunsCompleted,
         lifetimeExecutionBlocks: p.lifetimeExecutionBlocks ?? 0,
         lifetimeExecutionMinutes: p.lifetimeExecutionMinutes ?? 0,
-        activeSession: p.activeSession,
         lastLockInCompletedDate: p.lastLockInCompletedDate ?? null,
-        lastUnlockCompletedDate: p.lastUnlockCompletedDate ?? null,
         dailyFocusedMinutes: p.dailyFocusedMinutes ?? 0,
         dailyFocusDate: p.dailyFocusDate ?? null,
         dailyGoalMetDate: p.dailyGoalMetDate ?? null,
-        programCompleteSeen: p.programCompleteSeen ?? false,
-        phase: p.activeSession ? 'ACTIVE' : 'IDLE',
+        weekCompletedDays: Array.isArray(p.weekCompletedDays) ? p.weekCompletedDays : [],
+        phase: 'IDLE',
       };
     }
 
@@ -104,73 +96,13 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return { ...state, phase: 'ANIMATING' };
     }
 
-    case 'START_SESSION': {
-      if (state.phase !== 'IDLE' && state.phase !== 'ANIMATING') return state;
-      const todayKey = getTodayKey();
-      return {
-        ...state,
-        phase: 'ACTIVE',
-        activeSession: {
-          startTimestamp: action.payload.startTimestamp,
-          expectedEndTimestamp: action.payload.expectedEndTimestamp,
-          durationMinutes: action.payload.durationMinutes,
-        },
-        // Initialize programStartDate on first session ever
-        programStartDate: state.programStartDate || todayKey,
-      };
-    }
-
-    case 'UPDATE_SESSION_END': {
-      if (!state.activeSession) return state;
-      return {
-        ...state,
-        activeSession: {
-          ...state.activeSession,
-          expectedEndTimestamp: action.payload.expectedEndTimestamp,
-          durationMinutes: action.payload.durationMinutes,
-        },
-      };
-    }
-
-    case 'COMPLETE_SESSION': {
-      if (state.phase !== 'ACTIVE' && state.phase !== 'COMPLETING') return state;
-
-      const todayKey = getTodayKey();
-      const newLifetimeMinutes = state.lifetimeTotalMinutes + (action.payload.durationMinutes || 0);
-
-      const focusBase = state.dailyFocusDate === todayKey ? state.dailyFocusedMinutes : 0;
-      return {
-        ...state,
-        phase: 'IDLE',
-        activeSession: null,
-        lifetimeTotalMinutes: newLifetimeMinutes,
-        lastLockInCompletedDate: todayKey,
-        dailyFocusedMinutes: focusBase + (action.payload.durationMinutes || 0),
-        dailyFocusDate: todayKey,
-      };
-    }
-
-    case 'COMPLETE_UNLOCK': {
-      const todayKey = getTodayKey();
-      const focusBase = state.dailyFocusDate === todayKey ? state.dailyFocusedMinutes : 0;
-      return {
-        ...state,
-        phase: 'IDLE',
-        activeSession: null,
-        lifetimeTotalMinutes: state.lifetimeTotalMinutes + (action.payload.durationMinutes || 0),
-        lastUnlockCompletedDate: todayKey,
-        dailyFocusedMinutes: focusBase + (action.payload.durationMinutes || 0),
-        dailyFocusDate: todayKey,
-      };
-    }
-
     case 'COMPLETE_EXECUTION_BLOCK': {
       const mins = action.payload.durationMinutes || 0;
       const todayKey = getTodayKey();
       const alreadyAdvancedToday = state.lastLockInCompletedDate === todayKey;
       const newMaxDay = alreadyAdvancedToday
         ? state.maxCompletedDay
-        : Math.min(90, state.maxCompletedDay + 1);
+        : state.maxCompletedDay + 1;
       const focusBase = state.dailyFocusDate === todayKey ? state.dailyFocusedMinutes : 0;
       return {
         ...state,
@@ -205,21 +137,36 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       );
       const newLifetimeLongest = Math.max(state.lifetimeLongestStreak, newStreak);
 
+      // Add today to weekly completed days (keep only current week)
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const monday = new Date(now);
+      monday.setDate(monday.getDate() + mondayOffset);
+      const mondayKey = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+
+      const updatedWeekDays = state.weekCompletedDays
+        .filter((dk) => dk >= mondayKey) // prune days from previous weeks
+        .concat(todayKey);
+
       return {
         ...state,
         consecutiveStreak: newStreak,
         lifetimeLongestStreak: newLifetimeLongest,
         lastSessionDayKey: todayKey,
         dailyGoalMetDate: todayKey,
+        weekCompletedDays: [...new Set(updatedWeekDays)],
       };
-    }
-
-    case 'MARK_PROGRAM_SEEN': {
-      return { ...state, programCompleteSeen: true };
     }
 
     case 'RESET_PHASE': {
       return { ...state, phase: 'IDLE' };
+    }
+
+    case 'FULL_RESET': {
+      return {
+        ...initialState,
+      };
     }
 
     default:
@@ -266,6 +213,12 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     })();
   }, []);
 
+  useEffect(() => {
+    return subscribeLogoutCleanup(() => {
+      dispatch({ type: 'FULL_RESET' });
+    });
+  }, []);
+
   // Persist to AsyncStorage on every state change (skip first render)
   useEffect(() => {
     if (isFirstRender.current) {
@@ -284,13 +237,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       lifetimeRunsCompleted: state.lifetimeRunsCompleted,
       lifetimeExecutionBlocks: state.lifetimeExecutionBlocks,
       lifetimeExecutionMinutes: state.lifetimeExecutionMinutes,
-      activeSession: state.activeSession,
       lastLockInCompletedDate: state.lastLockInCompletedDate,
-      lastUnlockCompletedDate: state.lastUnlockCompletedDate,
       dailyFocusedMinutes: state.dailyFocusedMinutes,
       dailyFocusDate: state.dailyFocusDate,
       dailyGoalMetDate: state.dailyGoalMetDate,
-      programCompleteSeen: state.programCompleteSeen,
+      weekCompletedDays: state.weekCompletedDays,
     };
 
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(persisted)).catch((e) => {
@@ -307,19 +258,18 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     state.lifetimeRunsCompleted,
     state.lifetimeExecutionBlocks,
     state.lifetimeExecutionMinutes,
-    state.activeSession,
     state.lastLockInCompletedDate,
-    state.lastUnlockCompletedDate,
     state.dailyFocusedMinutes,
     state.dailyFocusDate,
     state.dailyGoalMetDate,
+    state.weekCompletedDays,
   ]);
 
   // ── Mixpanel: super properties (auto-attached to every event) ──
   useEffect(() => {
     if (!isHydrated) return;
-    MixpanelService.registerSuperProperties({
-      program_day: state.maxCompletedDay,
+    Analytics.setStreakDays(state.consecutiveStreak);
+    Analytics.registerSuperProperties({
       streak: state.consecutiveStreak,
       lifetime_minutes: state.lifetimeTotalMinutes,
     });
@@ -330,59 +280,20 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     if (!isHydrated) return;
     if (prevStreak.current > 0 && state.consecutiveStreak === 0 && state.consecutiveStreak < prevStreak.current) {
-      MixpanelService.track('Streak Broken', {
+      Analytics.track('Streak Broken', {
         previous_streak: prevStreak.current,
-        program_day: state.maxCompletedDay,
+        last_session_date: state.lastSessionDayKey,
       });
     }
     prevStreak.current = state.consecutiveStreak;
   }, [isHydrated, state.consecutiveStreak, state.maxCompletedDay]);
-
-  // ── Mixpanel: program completed (Day 90) ──
-  useEffect(() => {
-    if (!isHydrated) return;
-    if (state.maxCompletedDay >= 90) {
-      MixpanelService.track('Program Completed', {
-        lifetime_minutes: state.lifetimeTotalMinutes,
-        longest_streak: state.lifetimeLongestStreak,
-      });
-      MixpanelService.setUserProperties({ program_completed: true, program_completed_at: new Date().toISOString() });
-    }
-  }, [isHydrated, state.maxCompletedDay, state.lifetimeTotalMinutes, state.lifetimeLongestStreak]);
-
-  // ── Mixpanel: session completion ──
-  const prevLockInDate = useRef(state.lastLockInCompletedDate);
-  const prevUnlockDate = useRef(state.lastUnlockCompletedDate);
-
-  useEffect(() => {
-    if (!isHydrated) return;
-    if (state.lastLockInCompletedDate && state.lastLockInCompletedDate !== prevLockInDate.current) {
-      MixpanelService.track('Alignment Completed', {
-        program_day: state.maxCompletedDay,
-        streak: state.consecutiveStreak,
-        lifetime_minutes: state.lifetimeTotalMinutes,
-      });
-    }
-    prevLockInDate.current = state.lastLockInCompletedDate;
-  }, [isHydrated, state.lastLockInCompletedDate, state.maxCompletedDay, state.consecutiveStreak, state.lifetimeTotalMinutes]);
-
-  useEffect(() => {
-    if (!isHydrated) return;
-    if (state.lastUnlockCompletedDate && state.lastUnlockCompletedDate !== prevUnlockDate.current) {
-      MixpanelService.track('Reflection Completed', {
-        program_day: state.maxCompletedDay,
-        lifetime_minutes: state.lifetimeTotalMinutes,
-      });
-    }
-    prevUnlockDate.current = state.lastUnlockCompletedDate;
-  }, [isHydrated, state.lastUnlockCompletedDate, state.maxCompletedDay, state.lifetimeTotalMinutes]);
 
   // ── Mixpanel: execution block completion ──
   const prevExecBlocks = useRef(state.lifetimeExecutionBlocks);
   useEffect(() => {
     if (!isHydrated) return;
     if (state.lifetimeExecutionBlocks > prevExecBlocks.current) {
-      MixpanelService.track('Lock In Completed', {
+      Analytics.track('Lock In Completed', {
         total_blocks: state.lifetimeExecutionBlocks,
         total_exec_minutes: state.lifetimeExecutionMinutes,
       });
@@ -398,7 +309,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         const sent = await AsyncStorage.getItem(AF_FIRST_SESSION_KEY);
         if (!sent) {
-          AppsFlyerService.logEvent('af_tutorial_completion', {
+          Analytics.trackAF('af_tutorial_completion', {
             af_success: '1',
             af_content_id: 'first_lock_in',
           });
@@ -422,14 +333,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         );
 
         for (const milestone of newMilestones) {
-          AppsFlyerService.logEvent('af_achievement_unlocked', {
+          Analytics.trackAF('af_achievement_unlocked', {
             af_description: `streak_${milestone}`,
             af_score: String(milestone),
           });
-          MixpanelService.track('Streak Milestone', {
-            milestone_days: milestone,
-            current_streak: state.consecutiveStreak,
-            program_day: state.maxCompletedDay,
+          Analytics.track('Streak Milestone Reached', {
+            days: milestone,
+            color_tier: String(milestone),
           });
           sent.push(milestone);
         }
@@ -441,8 +351,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     })();
   }, [isHydrated, state.consecutiveStreak]);
 
+  const contextValue = useMemo(
+    () => ({ state, dispatch, isHydrated }),
+    [state, isHydrated],
+  );
+
   return (
-    <SessionContext.Provider value={{ state, dispatch, isHydrated }}>
+    <SessionContext.Provider value={contextValue}>
       {children}
     </SessionContext.Provider>
   );

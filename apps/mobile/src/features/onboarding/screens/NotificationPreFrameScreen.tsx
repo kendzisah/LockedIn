@@ -10,11 +10,11 @@ import LottieView from 'lottie-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
-import { PermissionService } from '../../../services/PermissionService';
 import { NotificationService } from '../../../services/NotificationService';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -26,9 +26,7 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'NotificationPreFr
 const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
   const { dispatch } = useOnboarding();
 
-  useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'NotificationPreFrame', step: 15, total_steps: 18 });
-  }, []);
+  useOnboardingTracking('NotificationPreFrame');
 
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const headlineOpacity = useRef(new Animated.Value(0)).current;
@@ -69,19 +67,19 @@ const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleTurnOn = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const granted = await PermissionService.requestNotificationPermission();
+    const granted = await NotificationService.requestPermission();
     if (granted) {
-      MixpanelService.track('Permission Granted', { screen: 'NotificationPreFrame', permission: 'notifications' });
+      Analytics.track('Notification Permission Granted', { source: 'onboarding' });
       await NotificationService.scheduleAllDailyNotifications(0);
     } else {
-      MixpanelService.track('Permission Denied', { screen: 'NotificationPreFrame', permission: 'notifications' });
+      Analytics.track('Notification Permission Denied', { source: 'onboarding' });
     }
     dispatch({ type: 'SET_NOTIFICATIONS_GRANTED', payload: granted });
     navigateForward();
   }, [dispatch, navigateForward]);
 
   const handleSkip = useCallback(() => {
-    MixpanelService.track('Permission Skipped', { screen: 'NotificationPreFrame', permission: 'notifications' });
+    Analytics.track('Notification Permission Denied', { source: 'onboarding' });
     dispatch({ type: 'SET_NOTIFICATIONS_GRANTED', payload: false });
     navigateForward();
   }, [dispatch, navigateForward]);
@@ -89,7 +87,7 @@ const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer>
-        <ProgressIndicator current={17} total={19} />
+        <ProgressIndicator current={9} total={10} />
 
         <View style={styles.body}>
           <View style={styles.lottieWrap}>

@@ -19,6 +19,10 @@ export interface OnboardingState {
   notificationsGranted: boolean | null;
   demoCompleted: boolean;
   onboardingComplete: boolean;
+  /** ISO timestamp of when onboarding was completed. */
+  onboardingCompletedAt: string | null;
+  /** Persisted screen name for resume-on-restart */
+  currentScreen: string | null;
 }
 
 export type OnboardingAction =
@@ -31,4 +35,6 @@ export type OnboardingAction =
   | { type: 'SET_NOTIFICATIONS_GRANTED'; payload: boolean }
   | { type: 'SET_DEMO_COMPLETED' }
   | { type: 'COMPLETE_ONBOARDING' }
-  | { type: 'HYDRATE_ONBOARDING'; payload: boolean };
+  | { type: 'SET_CURRENT_SCREEN'; payload: string }
+  | { type: 'HYDRATE_STATE'; payload: Partial<OnboardingState> }
+  | { type: 'FULL_RESET' };

@@ -29,6 +29,13 @@ export const ENV = {
   /** Supabase anonymous/public key */
   SUPABASE_ANON_KEY: requireEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY', process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY),
 
+  /**
+   * Password reset deep link / web URL (must be listed under Supabase Auth → URL Configuration → Redirect URLs).
+   * Falls back to app scheme if unset.
+   */
+  SUPABASE_PASSWORD_RESET_REDIRECT:
+    process.env.EXPO_PUBLIC_SUPABASE_PASSWORD_RESET_REDIRECT?.trim() || 'lockedin://auth/reset-password',
+
   /** RevenueCat iOS API key */
   REVENUECAT_IOS_API_KEY: requireEnv(
     'EXPO_PUBLIC_REVENUECAT_IOS_API_KEY',

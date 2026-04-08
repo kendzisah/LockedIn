@@ -1,8 +1,10 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Purchases from 'react-native-purchases';
 import RevenueCatUI from 'react-native-purchases-ui';
 import { SubscriptionService } from '../../services/SubscriptionService';
-import { MixpanelService } from '../../services/MixpanelService';
+import { Analytics } from '../../services/AnalyticsService';
+import { useAuth } from '../auth/AuthProvider';
+import { subscribeLogoutCleanup } from '../../services/logoutCleanupBus';
 
 interface SubscriptionContextValue {
   isSubscribed: boolean;
@@ -16,9 +18,11 @@ const SubscriptionContext = createContext<SubscriptionContextValue | null>(null)
 export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
+  const { user, isAuthenticated, isAnonymous } = useAuth();
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const mounted = useRef(true);
+  const loggedInUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -31,10 +35,11 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Identify user in Mixpanel with RevenueCat anonymous ID
       try {
-        const { appUserID } = await Purchases.getCustomerInfo();
-        if (appUserID) {
-          await MixpanelService.identify(appUserID);
-          await MixpanelService.setUserPropertiesOnce({ '$name': appUserID, first_seen: new Date().toISOString() });
+        const customerInfo = await Purchases.getCustomerInfo();
+        const userId = customerInfo.originalAppUserId;
+        if (userId) {
+          await Analytics.identify(userId);
+          await Analytics.setUserPropertiesOnce({ '$name': userId, first_seen: new Date().toISOString() });
         }
       } catch {}
 
@@ -59,11 +64,39 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
+  // Sync RevenueCat identity with Supabase auth state.
+  // When user links an account (anonymous → authenticated), call Purchases.logIn()
+  // to transfer any anonymous subscription to the authenticated user ID.
+  useEffect(() => {
+    if (!SubscriptionService.isInitialized() || isLoading) return;
+
+    async function syncRevenueCatIdentity() {
+      if (isAuthenticated && user?.id && loggedInUserIdRef.current !== user.id) {
+        loggedInUserIdRef.current = user.id;
+        const subscribed = await SubscriptionService.logIn(user.id);
+        if (mounted.current) setIsSubscribed(subscribed);
+      }
+    }
+
+    syncRevenueCatIdentity();
+  }, [isAuthenticated, user?.id, isLoading]);
+
+  // On logout, reset RevenueCat to anonymous and clear cached state
+  useEffect(() => {
+    const unsubscribe = subscribeLogoutCleanup(() => {
+      loggedInUserIdRef.current = null;
+      SubscriptionService.logOut();
+      setIsSubscribed(false);
+    });
+    return unsubscribe;
+  }, []);
+
   // Keep Mixpanel super properties and user profile in sync with subscription status
   useEffect(() => {
     if (isLoading) return;
-    MixpanelService.registerSuperProperties({ is_subscribed: isSubscribed });
-    MixpanelService.setUserProperties({ is_subscribed: isSubscribed });
+    Analytics.setIsSubscribed(isSubscribed);
+    Analytics.registerSuperProperties({ is_subscribed: isSubscribed });
+    Analytics.setUserProperties({ is_subscribed: isSubscribed });
   }, [isSubscribed, isLoading]);
 
   const showPaywall = useCallback(async (): Promise<boolean> => {
@@ -90,10 +123,13 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
+  const contextValue = useMemo(
+    () => ({ isSubscribed, isLoading, showPaywall, restorePurchases }),
+    [isSubscribed, isLoading, showPaywall, restorePurchases],
+  );
+
   return (
-    <SubscriptionContext.Provider
-      value={{ isSubscribed, isLoading, showPaywall, restorePurchases }}
-    >
+    <SubscriptionContext.Provider value={contextValue}>
       {children}
     </SubscriptionContext.Provider>
   );

@@ -5,10 +5,6 @@
  * All day comparisons use timezone-safe local day keys (YYYY-MM-DD).
  *
  * Day key computation is delegated to ClockService (single source of truth).
- *
- * Program-day progression is completion-based:
- *   - computeCurrentDay(maxCompletedDay) = maxCompletedDay + 1 (capped at 90)
- *   - Only Lock In completion advances the day
  */
 
 import type { DayKey } from '../state/types';
@@ -84,18 +80,6 @@ export function getPhaseText(elapsedSeconds: number, totalSeconds: number): stri
   return 'Finishing strong.';
 }
 
-/** Deterministic Unlock/Reflect phase text based on elapsed proportion */
-export function getUnlockPhaseText(elapsedSeconds: number, totalSeconds: number): string {
-  const ratio = elapsedSeconds / totalSeconds;
-
-  if (ratio < 0.15) return 'Let the noise settle.';
-  if (ratio < 0.35) return 'Process what surfaced.';
-  if (ratio < 0.55) return 'What did you overcome today?';
-  if (ratio < 0.75) return 'Stillness is earned.';
-  if (ratio < 0.90) return 'You showed up. Acknowledge it.';
-  return 'Reflection complete.';
-}
-
 // ─── Streak Calculation ──────────────────────────────────────────
 
 /**
@@ -124,141 +108,3 @@ export function computeNewStreak(
   return 1;
 }
 
-// ─── Day & Progress Calculation ──────────────────────────────────
-
-/** Compute the next program day to lock in (1-90). */
-export function computeCurrentDay(maxCompletedDay: number): number {
-  return Math.min(90, maxCompletedDay + 1);
-}
-
-/**
- * The program day to display in the UI and use for content fetch.
- *
- * After Lock In completes for Day N, the user still needs to Reflect on Day N,
- * so the display stays on Day N until the next calendar day.
- *
- *  - Lock In not done today → next day to lock in (maxCompletedDay + 1)
- *  - Lock In done today     → the day just completed (maxCompletedDay)
- */
-export function getDisplayDay(
-  maxCompletedDay: number,
-  lastLockInCompletedDate: DayKey | null,
-): number {
-  const today = getTodayKey();
-  if (lastLockInCompletedDate === today) {
-    return Math.max(1, maxCompletedDay);
-  }
-  return Math.min(90, maxCompletedDay + 1);
-}
-
-/** Check if the 90-day program is complete */
-export function isProgramComplete(maxCompletedDay: number): boolean {
-  return maxCompletedDay >= 90;
-}
-
-/**
- * Compute commitment percentage: completed days / eligible calendar days (capped at 100%).
- *
- * Only counts today in the denominator if the user has already locked in today.
- * This prevents commitment from dropping at midnight before the user has a
- * chance to complete the day.
- */
-export function computeCommitmentPercent(
-  maxCompletedDay: number,
-  programStartDate: DayKey | null,
-  lastLockInCompletedDate: DayKey | null,
-): number {
-  if (!programStartDate || maxCompletedDay <= 0) return 0;
-
-  const today = getTodayKey();
-  const completedToday = lastLockInCompletedDate === today;
-
-  // Days fully elapsed (not counting today)
-  const pastDays = dayKeyDelta(programStartDate, today);
-
-  // Include today only if the user already completed it
-  const denominator = completedToday ? pastDays + 1 : Math.max(1, pastDays);
-
-  return Math.min(100, Math.round((maxCompletedDay / denominator) * 100));
-}
-
-// ─── Identity Card Messages ──────────────────────────────────────
-
-/**
- * Deterministic identity message based on streak state.
- *
- * Priority order:
- * 1. Broke a 7+ streak → "Streak broken. Rebuild starts now."
- * 2. Missed yesterday → "Missed yesterday. Today matters."
- * 3. streak >= 7 → "Discipline compounds."
- * 4. streak 3-6 → "You are separating from average."
- * 5. streak 1-2 → "The foundation is forming."
- * 6. streak 0, had sessions → "Control is rebuilt daily."
- * 7. No sessions ever → "Control is built daily."
- */
-export function getIdentityMessage(
-  consecutiveStreak: number,
-  longestStreak: number,
-  lastSessionDayKey: DayKey | null,
-  maxCompletedDay: number,
-  currentDay: number,
-): string {
-  const yesterdayKey = getYesterdayKey();
-  const todayKey = getTodayKey();
-  const missedYesterday =
-    lastSessionDayKey !== null &&
-    lastSessionDayKey !== yesterdayKey &&
-    lastSessionDayKey !== todayKey;
-
-  // First-week cap: only show limited variants for days 1-7
-  const isFirstWeek = currentDay <= 7;
-
-  // Broke a 7+ streak
-  if (longestStreak >= 7 && consecutiveStreak === 0 && maxCompletedDay > 0) {
-    return 'Streak broken. Rebuild starts now.';
-  }
-
-  // Missed yesterday specifically
-  if (missedYesterday && maxCompletedDay > 0) {
-    return 'Missed yesterday. Today matters.';
-  }
-
-  if (isFirstWeek) {
-    if (maxCompletedDay === 0) return 'Control is built daily.';
-    if (consecutiveStreak <= 2) return 'The foundation is forming.';
-    return 'You are separating from average.';
-  }
-
-  // Full variant set after first week
-  if (consecutiveStreak >= 7) return 'Discipline compounds.';
-  if (consecutiveStreak >= 3) return 'You are separating from average.';
-  if (consecutiveStreak >= 1) return 'The foundation is forming.';
-  if (maxCompletedDay > 0) return 'Control is rebuilt daily.';
-  return 'Control is built daily.';
-}
-
-// ─── Dynamic Subtext for Progress Block ──────────────────────────
-
-export function getProgressSubtext(
-  consecutiveStreak: number,
-  lastSessionDayKey: DayKey | null,
-): string {
-  const todayKey = getTodayKey();
-  const yesterdayKey = getYesterdayKey();
-
-  if (lastSessionDayKey === todayKey) {
-    return consecutiveStreak > 1
-      ? `Streak: ${consecutiveStreak} days`
-      : 'Session complete.';
-  }
-
-  if (lastSessionDayKey === yesterdayKey && consecutiveStreak > 0) {
-    return `Streak: ${consecutiveStreak} days. Keep going.`;
-  }
-
-  if (lastSessionDayKey !== null) {
-    return 'Streak reset. Rebuild today.';
-  }
-
-  return 'Begin your first session.';
-}

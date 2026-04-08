@@ -12,7 +12,8 @@ import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -66,9 +67,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
   const knobRef = useRef<View>(null);
   const knobLayout = useRef({ x: 0, y: 0, w: 0, h: 0 });
 
-  useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'DailyTimeCommitment', step: 10, total_steps: 18 });
-  }, []);
+  useOnboardingTracking('DailyTimeCommitment');
 
   useEffect(() => {
     Animated.parallel([
@@ -131,7 +130,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
     const totalMinutes = selectedHours * 60;
     dispatch({ type: 'SET_DAILY_MINUTES', payload: totalMinutes });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    MixpanelService.track('Onboarding Answer Submitted', {
+    Analytics.track('Onboarding Answer Submitted', {
       screen: 'DailyTimeCommitment',
       answer: `${selectedHours} hours`,
       daily_minutes: totalMinutes,
@@ -142,7 +141,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
       duration: 400,
       useNativeDriver: true,
     }).start(() => {
-      navigation.navigate('CompoundStat');
+      navigation.navigate('ScreenTimePreFrame');
     });
   };
 
@@ -152,7 +151,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
 
   // Track dots (background ring)
   const trackDots = useMemo(() => {
-    const dots = [];
+    const dots: React.ReactNode[] = [];
     for (let i = 0; i < DOT_COUNT; i++) {
       const a = (i / DOT_COUNT) * 360;
       const { x, y } = polarXY(a, TRACK_RADIUS);
@@ -171,7 +170,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
 
   // Active arc dots
   const activeDots = useMemo(() => {
-    const dots = [];
+    const dots: React.ReactNode[] = [];
     const sweep = currentAngle - startAngle;
     if (sweep <= 0) return dots;
 
@@ -245,7 +244,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
-        <ProgressIndicator current={10} total={17} />
+        <ProgressIndicator current={7} total={10} />
 
         <View style={styles.body}>
           <Animated.Text

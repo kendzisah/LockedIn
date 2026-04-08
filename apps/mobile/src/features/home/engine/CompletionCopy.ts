@@ -1,12 +1,4 @@
-type Phase = 'lock_in' | 'unlock' | 'execution_block';
-
-const LOCK_IN_MESSAGES = [
-  'You Are Aligned. Now Execute.',
-  'The standard is set.',
-  'Identity activated.',
-  'The day is yours to prove.',
-  'Discipline begins with intention.',
-];
+type Phase = 'execution_block';
 
 const EXECUTION_BLOCK_MESSAGES = [
   'Distraction Resisted. Standard Raised.',
@@ -16,26 +8,12 @@ const EXECUTION_BLOCK_MESSAGES = [
   'You did what most avoid.',
 ];
 
-const UNLOCK_MESSAGES = [
-  'You Kept Your Word Today.',
-  'Integrity strengthened.',
-  'Consistency compounds.',
-  'You showed up.',
-  'Progress locked in.',
-];
-
-const MESSAGES: Record<Phase, string[]> = {
-  lock_in: LOCK_IN_MESSAGES,
-  execution_block: EXECUTION_BLOCK_MESSAGES,
-  unlock: UNLOCK_MESSAGES,
-};
-
 function pickRandom(arr: string[]): string {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
 export function getCompletionMessage(phase: Phase): string {
-  return pickRandom(MESSAGES[phase]);
+  return pickRandom(EXECUTION_BLOCK_MESSAGES);
 }
 
 interface StreakCheckpoint {

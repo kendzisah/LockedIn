@@ -14,7 +14,7 @@ import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 
 const LIFE_EXPECTANCY = 80;
 const DEFAULT_AGE = 25;
@@ -40,9 +40,7 @@ function calcYearsLost(hoursPerDay: number, age: number | null): number {
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'LossAversionStat'>;
 
 const LossAversionStatScreen: React.FC<Props> = ({ navigation }) => {
-  useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'LossAversionStat', step: 5, total_steps: 18 });
-  }, []);
+  useOnboardingTracking('LossAversionStat');
 
   const { state } = useOnboarding();
   const hoursPerDay = parseHoursPerDay(state.phoneUsageHours ?? '');
@@ -142,7 +140,7 @@ const LossAversionStatScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer>
-        <ProgressIndicator current={5} total={16} />
+        <ProgressIndicator current={4} total={10} />
 
         <View style={styles.body}>
           {/* Intro */}
@@ -190,7 +188,7 @@ const LossAversionStatScreen: React.FC<Props> = ({ navigation }) => {
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
-                navigation.navigate('FixPromise');
+                navigation.navigate('GoalQuiz');
               });
             }}
             activeOpacity={0.85}

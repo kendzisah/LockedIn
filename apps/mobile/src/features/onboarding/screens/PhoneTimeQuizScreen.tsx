@@ -14,10 +14,11 @@ import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
+import { Analytics } from '../../../services/AnalyticsService';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
-import { MixpanelService } from '../../../services/MixpanelService';
 
 const MIN_HOURS = 1;
 const MAX_HOURS = 12;
@@ -28,9 +29,7 @@ const CIRCLE_BTN = 44;
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'PhoneTimeQuiz'>;
 
 const PhoneTimeQuizScreen: React.FC<Props> = ({ navigation }) => {
-  useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PhoneTimeQuiz', step: 3, total_steps: 18 });
-  }, []);
+  useOnboardingTracking('PhoneTimeQuiz');
 
   const { dispatch } = useOnboarding();
   const [hours, setHours] = useState(DEFAULT_HOURS);
@@ -135,20 +134,20 @@ const PhoneTimeQuizScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleContinue = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    MixpanelService.track('Onboarding Answer Submitted', { screen: 'PhoneTimeQuiz', answer: `${hours} hours` });
+    Analytics.track('Onboarding Answer Submitted', { screen: 'PhoneTimeQuiz', answer: `${hours} hours` });
     fadeAndNavigate(`${hours} hours`);
   };
 
   const handleDontKnow = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    MixpanelService.track('Onboarding Answer Submitted', { screen: 'PhoneTimeQuiz', answer: 'unknown' });
+    Analytics.track('Onboarding Answer Submitted', { screen: 'PhoneTimeQuiz', answer: 'unknown' });
     fadeAndNavigate('unknown');
   };
 
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer centered={false}>
-      <ProgressIndicator current={3} total={17} />
+      <ProgressIndicator current={2} total={10} />
 
       <View style={styles.body}>
         <Text style={styles.title}>

@@ -48,12 +48,19 @@ async function initialize(): Promise<boolean> {
     );
 
     currentUserId = await ensureAnonymousSession(client);
+
+    // Keep cached id in sync with the live session (sign-up / link / sign-out all change auth).
+    client.auth.onAuthStateChange((_event, session) => {
+      currentUserId = session?.user?.id ?? null;
+    });
+
     initialized = true;
     console.log('[SupabaseService] Authenticated anonymously:', currentUserId);
     return true;
   } catch (error) {
     console.warn('[SupabaseService] Init failed (app will run in timer-only mode):', error);
-    initialized = true;
+    // Don't set initialized = true — allow retry on next call
+    client = null;
     return false;
   }
 }

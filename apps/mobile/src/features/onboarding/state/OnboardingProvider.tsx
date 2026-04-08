@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useEffect, useReducer, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { OnboardingState, OnboardingAction } from './types';
-import { MixpanelService } from '../../../services/MixpanelService';
+import { Analytics } from '../../../services/AnalyticsService';
+import { clearPersistedOnboardingScreen } from '../hooks/useOnboardingTracking';
+import { subscribeLogoutCleanup } from '../../../services/logoutCleanupBus';
 
 const STORAGE_KEY = '@lockedin/onboarding_complete';
 const ONBOARDING_DATA_KEY = '@lockedin/onboarding_data';
@@ -16,6 +18,8 @@ const initialState: OnboardingState = {
   notificationsGranted: null,
   demoCompleted: false,
   onboardingComplete: false,
+  onboardingCompletedAt: null,
+  currentScreen: null,
 };
 
 function onboardingReducer(
@@ -40,9 +44,13 @@ function onboardingReducer(
     case 'SET_DEMO_COMPLETED':
       return { ...state, demoCompleted: true };
     case 'COMPLETE_ONBOARDING':
-      return { ...state, onboardingComplete: true };
-    case 'HYDRATE_ONBOARDING':
-      return { ...state, onboardingComplete: action.payload };
+      return { ...state, onboardingComplete: true, onboardingCompletedAt: state.onboardingCompletedAt ?? new Date().toISOString() };
+    case 'SET_CURRENT_SCREEN':
+      return { ...state, currentScreen: action.payload };
+    case 'HYDRATE_STATE':
+      return { ...state, ...action.payload };
+    case 'FULL_RESET':
+      return { ...initialState, onboardingComplete: false };
     default:
       return state;
   }
@@ -61,9 +69,13 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [state, dispatch] = useReducer(onboardingReducer, initialState);
   const [isHydrated, setIsHydrated] = useState(false);
-  const prevComplete = useRef(state.onboardingComplete);
+  // Use null to distinguish "not yet set" from "was false" — prevents completion
+  // side-effects from re-firing on hydration cold starts.
+  const prevComplete = useRef<boolean | null>(null);
+  // Guard to block persistence while logout cleanup is in progress
+  const isResetting = useRef(false);
 
-  // ── Load persisted onboarding flag + data on mount ──
+  // ── Load persisted onboarding flag + data on mount (single dispatch) ──
   useEffect(() => {
     (async () => {
       try {
@@ -71,6 +83,9 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
           AsyncStorage.getItem(STORAGE_KEY),
           AsyncStorage.getItem(ONBOARDING_DATA_KEY),
         ]);
+        const payload: Partial<OnboardingState> = {
+          onboardingComplete: flagRaw === 'true',
+        };
         if (dataRaw) {
           try {
             const data = JSON.parse(dataRaw);
@@ -78,17 +93,16 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
             if (typeof data.dailyMinutes === 'string') {
               data.dailyMinutes = 60;
             }
-            if (typeof data.dailyMinutes === 'number') {
-              dispatch({ type: 'SET_DAILY_MINUTES', payload: data.dailyMinutes });
-            }
-            if (typeof data.primaryGoal === 'string') {
-              dispatch({ type: 'SET_PRIMARY_GOAL', payload: data.primaryGoal });
-            }
+            if (typeof data.dailyMinutes === 'number') payload.dailyMinutes = data.dailyMinutes;
+            if (typeof data.primaryGoal === 'string') payload.primaryGoal = data.primaryGoal;
+            if (typeof data.phoneUsageHours === 'string') payload.phoneUsageHours = data.phoneUsageHours;
+            if (typeof data.userAge === 'number') payload.userAge = data.userAge;
+            if (Array.isArray(data.selectedWeaknesses)) payload.selectedWeaknesses = data.selectedWeaknesses;
+            if (typeof data.currentScreen === 'string') payload.currentScreen = data.currentScreen;
+            if (typeof data.onboardingCompletedAt === 'string') payload.onboardingCompletedAt = data.onboardingCompletedAt;
           } catch {}
         }
-        if (flagRaw === 'true') {
-          dispatch({ type: 'HYDRATE_ONBOARDING', payload: true });
-        }
+        dispatch({ type: 'HYDRATE_STATE', payload });
       } catch (e) {
         console.warn('[OnboardingProvider] Hydration failed:', e);
       } finally {
@@ -97,19 +111,81 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
     })();
   }, []);
 
-  // ── Persist when onboardingComplete flips to true ──
   useEffect(() => {
-    if (state.onboardingComplete && !prevComplete.current) {
+    return subscribeLogoutCleanup(() => {
+      isResetting.current = true;
+      dispatch({ type: 'FULL_RESET' });
+      // Re-enable persistence after React processes the FULL_RESET render
+      queueMicrotask(() => { isResetting.current = false; });
+    });
+  }, []);
+
+  // ── Persist quiz answers incrementally so resume works ──
+  useEffect(() => {
+    if (!isHydrated) return; // Don't persist before hydration completes
+    if (isResetting.current) return; // Don't re-persist during logout cleanup
+    if (state.onboardingComplete) return; // Don't overwrite after completion
+    AsyncStorage.setItem(ONBOARDING_DATA_KEY, JSON.stringify({
+      dailyMinutes: state.dailyMinutes,
+      primaryGoal: state.primaryGoal,
+      phoneUsageHours: state.phoneUsageHours,
+      userAge: state.userAge,
+      selectedWeaknesses: state.selectedWeaknesses,
+      currentScreen: state.currentScreen,
+    })).catch(() => {});
+  }, [isHydrated, state.dailyMinutes, state.primaryGoal, state.phoneUsageHours, state.userAge, state.selectedWeaknesses, state.currentScreen, state.onboardingComplete]);
+
+  // ── After onboarding: keep goal / commitment / weaknesses in sync with AsyncStorage ──
+  useEffect(() => {
+    if (!isHydrated || !state.onboardingComplete) return;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(ONBOARDING_DATA_KEY);
+        const prev = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+        await AsyncStorage.setItem(
+          ONBOARDING_DATA_KEY,
+          JSON.stringify({
+            ...prev,
+            dailyMinutes: state.dailyMinutes,
+            primaryGoal: state.primaryGoal,
+            selectedWeaknesses: state.selectedWeaknesses,
+            phoneUsageHours: state.phoneUsageHours,
+            userAge: state.userAge,
+          }),
+        );
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [
+    isHydrated,
+    state.onboardingComplete,
+    state.dailyMinutes,
+    state.primaryGoal,
+    state.selectedWeaknesses,
+    state.phoneUsageHours,
+    state.userAge,
+  ]);
+
+  // ── Persist when onboardingComplete flips to true (skip hydration) ──
+  useEffect(() => {
+    if (prevComplete.current !== null && state.onboardingComplete && !prevComplete.current) {
       AsyncStorage.setItem(STORAGE_KEY, 'true').catch((e) => {
         console.warn('[OnboardingProvider] Persist failed:', e);
       });
 
-      AsyncStorage.setItem(ONBOARDING_DATA_KEY, JSON.stringify({
-        dailyMinutes: state.dailyMinutes,
-        primaryGoal: state.primaryGoal,
-      })).catch(() => {});
+      // Persist onboardingCompletedAt in the data key for MissionsProvider
+      if (state.onboardingCompletedAt) {
+        AsyncStorage.getItem(ONBOARDING_DATA_KEY).then((raw) => {
+          const prev = raw ? JSON.parse(raw) : {};
+          return AsyncStorage.setItem(ONBOARDING_DATA_KEY, JSON.stringify({ ...prev, onboardingCompletedAt: state.onboardingCompletedAt }));
+        }).catch(() => {});
+      }
 
-      MixpanelService.setUserProperties({
+      // Clear resume screen since onboarding is done
+      clearPersistedOnboardingScreen().catch(() => {});
+
+      Analytics.setUserProperties({
         age: state.userAge,
         primary_goal: state.primaryGoal,
         daily_commitment_minutes: state.dailyMinutes,
@@ -118,13 +194,22 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
         screen_time_granted: state.screenTimeStatus === 'granted',
         notifications_granted: state.notificationsGranted ?? false,
         demo_completed: state.demoCompleted,
+        platform: 'ios',
+      });
+      Analytics.setUserPropertiesOnce({
+        onboarding_completed_at: new Date().toISOString(),
       });
     }
     prevComplete.current = state.onboardingComplete;
   }, [state.onboardingComplete, state.userAge, state.primaryGoal, state.dailyMinutes, state.phoneUsageHours, state.selectedWeaknesses, state.screenTimeStatus, state.notificationsGranted, state.demoCompleted]);
 
+  const contextValue = useMemo(
+    () => ({ state, dispatch, isHydrated }),
+    [state, isHydrated],
+  );
+
   return (
-    <OnboardingContext.Provider value={{ state, dispatch, isHydrated }}>
+    <OnboardingContext.Provider value={contextValue}>
       {children}
     </OnboardingContext.Provider>
   );

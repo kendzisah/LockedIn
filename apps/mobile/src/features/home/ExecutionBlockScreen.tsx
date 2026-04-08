@@ -27,6 +27,7 @@ import { useOnboarding } from '../onboarding/state/OnboardingProvider';
 import { getTodayKey, computeNewStreak } from './engine/SessionEngine';
 import { LockModeService } from '../../services/LockModeService';
 import { NotificationService } from '../../services/NotificationService';
+import { Analytics } from '../../services/AnalyticsService';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
 
@@ -85,6 +86,10 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
 
     if (newFocused >= dailyCommitment && !goalAlreadyMet) {
       dispatch({ type: 'DAILY_GOAL_MET' });
+      Analytics.track('Daily Goal Met', {
+        daily_commitment: dailyCommitment,
+        actual_minutes: newFocused,
+      });
       const newStreak = computeNewStreak(state.lastSessionDayKey, state.consecutiveStreak, todayKey);
       return newStreak;
     }
@@ -116,8 +121,15 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
       type: 'COMPLETE_EXECUTION_BLOCK',
       payload: { durationMinutes },
     });
+    void NotificationService.onSessionCompletedToday();
 
     const resultStreak = computeStreakAfterCompletion(durationMinutes);
+
+    Analytics.track('Session Completed', {
+      type: 'execution_block',
+      duration_minutes: durationMinutes,
+      streak_day: resultStreak || state.consecutiveStreak,
+    });
 
     Animated.timing(timerOpacity, {
       toValue: 0,
@@ -130,7 +142,7 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
         streak: resultStreak,
       });
     });
-  }, [dispatch, durationMinutes, timerOpacity, navigation, computeStreakAfterCompletion]);
+  }, [dispatch, durationMinutes, timerOpacity, navigation, computeStreakAfterCompletion, state.consecutiveStreak]);
 
   const handleHoldComplete = useCallback(() => {
     if (completedRef.current) return;
@@ -144,8 +156,15 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
 
     const elapsedSeconds = totalSeconds - Math.max(0, Math.ceil((endTimestampRef.current - Date.now()) / 1000));
 
+    Analytics.track('Session Abandoned', {
+      type: 'execution_block',
+      duration_minutes: durationMinutes,
+      elapsed_seconds: elapsedSeconds,
+      reason: 'hold_to_unlock',
+    });
+
     if (elapsedSeconds < 60) {
-      navigation.replace('Home' as any);
+      navigation.replace('Tabs' as any);
       return;
     }
 
@@ -155,6 +174,7 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
       type: 'COMPLETE_EXECUTION_BLOCK',
       payload: { durationMinutes: actualMinutes },
     });
+    void NotificationService.onSessionCompletedToday();
 
     const resultStreak = computeStreakAfterCompletion(actualMinutes);
 
@@ -169,7 +189,7 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
         streak: resultStreak,
       });
     });
-  }, [dispatch, totalSeconds, timerOpacity, navigation, computeStreakAfterCompletion]);
+  }, [dispatch, durationMinutes, totalSeconds, timerOpacity, navigation, computeStreakAfterCompletion, state.consecutiveStreak]);
 
   // Persist execution block info, schedule notification, fade in timer
   useEffect(() => {
@@ -183,6 +203,13 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
     );
 
     NotificationService.scheduleExecutionBlockDone(new Date(endTimestampRef.current));
+
+    Analytics.track('Session Started', {
+      type: 'execution_block',
+      duration_minutes: durationMinutes,
+      streak_day: state.consecutiveStreak,
+    });
+    Analytics.timeEvent('Session Completed');
 
     Animated.timing(timerOpacity, {
       toValue: 1,

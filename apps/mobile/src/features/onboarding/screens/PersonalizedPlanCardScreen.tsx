@@ -9,18 +9,22 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import { useSubscription } from '../../subscription/SubscriptionProvider';
-import { MixpanelService } from '../../../services/MixpanelService';
-import { AppsFlyerService } from '../../../services/AppsFlyerService';
+import { Analytics } from '../../../services/AnalyticsService';
+
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+
+const AF_REG_SENT_KEY = '@lockedin/af_reg_sent';
 
 const CARD_STAGGER = 100;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -40,18 +44,46 @@ function formatHours(h: number): string {
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'PersonalizedPlanCard'>;
 
 const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
-  const { state, dispatch } = useOnboarding();
+  const { state } = useOnboarding();
   const { showPaywall } = useSubscription();
 
+  useOnboardingTracking('PersonalizedPlanCard');
+
   useEffect(() => {
-    MixpanelService.track('Onboarding Screen Viewed', { screen: 'PersonalizedPlanCard', step: 16, total_steps: 18 });
-    MixpanelService.track('Paywall Viewed', { source: 'onboarding' });
-    AppsFlyerService.logEvent('paywall_view', {
+    Analytics.track('Paywall Viewed', { source: 'onboarding' });
+    Analytics.trackAF('af_content_view', {
+      af_content_type: 'paywall',
+      af_content_id: 'paywall_onboarding',
       source: 'onboarding',
+    });
+  }, []);
+
+  /**
+   * Fires completion events (Mixpanel + AppsFlyer), then opens the account prompt.
+   * Called by BOTH the subscribe path and the "Maybe Later" path.
+   */
+  const continueToAccountPrompt = useCallback(async (subscribed: boolean) => {
+    // Fire Onboarding Completed (previously only fired on SignatureCommitment)
+    Analytics.track('Onboarding Completed', {
+      screen: 'PersonalizedPlanCard',
+      subscribed,
       goal: state.primaryGoal ?? '',
       daily_commitment: state.dailyMinutes ?? '',
     });
-  }, []);
+
+    // Fire AppsFlyer registration event (deduplicated)
+    try {
+      const sent = await AsyncStorage.getItem(AF_REG_SENT_KEY);
+      if (!sent) {
+        Analytics.trackAF('af_complete_registration', {
+          af_registration_method: subscribed ? 'paywall_subscribe' : 'paywall_skip',
+        });
+        await AsyncStorage.setItem(AF_REG_SENT_KEY, '1');
+      }
+    } catch {}
+
+    navigation.navigate('AccountPrompt');
+  }, [navigation, state.primaryGoal, state.dailyMinutes]);
 
   const dailyHours = (state.dailyMinutes ?? 60) / 60;
   const dailyLabel = dailyHours === 1 ? '1 hour' : `${dailyHours} hours`;
@@ -156,7 +188,7 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
 
       <SafeAreaView style={styles.safe}>
         <View style={styles.content}>
-        <ProgressIndicator current={18} total={19} />
+        <ProgressIndicator current={10} total={10} />
 
         <View style={styles.body}>
           <Animated.View style={{ opacity: headlineOpacity, transform: [{ translateY: headlineTranslateY }] }}>
@@ -224,20 +256,21 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
           <TouchableOpacity
             onPress={async () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              MixpanelService.track('Paywall CTA Tapped', { source: 'onboarding' });
+              Analytics.track('Paywall CTA Tapped', { source: 'onboarding' });
               const subscribed = await showPaywall();
               if (subscribed) {
-                MixpanelService.track('Subscription Started', { source: 'onboarding' });
+                Analytics.track('Subscription Started', { source: 'onboarding' });
+                Analytics.trackAF('af_subscribe', { af_revenue: '0', af_currency: 'USD', af_content_id: 'paywall_onboarding' });
                 Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
-                  navigation.navigate('EmailCollection');
+                  continueToAccountPrompt(true);
                 });
               } else {
-                AppsFlyerService.logEvent('paywall_dismiss', {
+                Analytics.trackAF('paywall_dismiss', {
                   source: 'onboarding',
                   goal: state.primaryGoal ?? '',
-                  daily_commitment: state.dailyMinutes ?? '',
+                  daily_commitment: String(state.dailyMinutes ?? ''),
                 });
-                MixpanelService.track('Paywall Dismissed', { source: 'onboarding' });
+                Analytics.track('Paywall Dismissed', { source: 'onboarding' });
               }
             }}
             activeOpacity={0.9}
@@ -272,13 +305,13 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
 
           <TouchableOpacity
             onPress={() => {
-              MixpanelService.track('Paywall Skipped', { source: 'onboarding' });
-              AppsFlyerService.logEvent('paywall_dismiss', {
+              Analytics.track('Paywall Skipped', { source: 'onboarding' });
+              Analytics.trackAF('paywall_dismiss', {
                 source: 'onboarding',
                 goal: state.primaryGoal ?? '',
-                daily_commitment: state.dailyMinutes ?? '',
+                daily_commitment: String(state.dailyMinutes ?? ''),
               });
-              dispatch({ type: 'COMPLETE_ONBOARDING' });
+              continueToAccountPrompt(false);
             }}
             activeOpacity={0.7}
             style={styles.skipButton}

@@ -81,6 +81,32 @@ async function checkSubscription(): Promise<boolean> {
   }
 }
 
+/**
+ * Identify an authenticated user in RevenueCat.
+ * Transfers any anonymous subscription to the authenticated user ID.
+ */
+async function logIn(userId: string): Promise<boolean> {
+  try {
+    const { customerInfo } = await Purchases.logIn(userId);
+    return hasEntitlement(customerInfo);
+  } catch (e) {
+    console.warn('[SubscriptionService] logIn failed:', e);
+    return false;
+  }
+}
+
+/**
+ * Reset RevenueCat to a new anonymous user.
+ * Call on sign-out so the next session gets a fresh customer ID.
+ */
+async function logOut(): Promise<void> {
+  try {
+    await Purchases.logOut();
+  } catch (e) {
+    console.warn('[SubscriptionService] logOut failed:', e);
+  }
+}
+
 async function restore(): Promise<boolean> {
   try {
     const info = await Purchases.restorePurchases();
@@ -93,8 +119,8 @@ async function restore(): Promise<boolean> {
 function addListener(
   callback: (info: CustomerInfo) => void,
 ): () => void {
-  const remove = Purchases.addCustomerInfoUpdateListener(callback);
-  return remove;
+  Purchases.addCustomerInfoUpdateListener(callback);
+  return () => {};
 }
 
 function isInitialized(): boolean {
@@ -103,6 +129,8 @@ function isInitialized(): boolean {
 
 export const SubscriptionService = {
   initialize,
+  logIn,
+  logOut,
   checkSubscription,
   restore,
   addListener,
