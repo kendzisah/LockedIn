@@ -24,6 +24,7 @@ import { getStreakTierInfo, getFlameColorFilters } from '../../design/streakTier
 import { CrewService } from '../leaderboard/CrewService';
 import { NotificationService } from '../../services/NotificationService';
 import { Analytics } from '../../services/AnalyticsService';
+import { recordActiveDay } from '../missions/MissionsProvider';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'SessionComplete'>;
 
@@ -55,6 +56,9 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
       duration_minutes: durationMinutes,
       streak,
     });
+
+    // Record this as an active day for weekly mission progress
+    recordActiveDay().catch(() => {});
 
     (async () => {
       try {

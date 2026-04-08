@@ -496,7 +496,7 @@ const SettingsScreen: React.FC = () => {
         }}
       />
       <ReminderTimeSheet visible={sheetTime} onClose={() => { setSheetTime(false); void refreshNotifPrefs(); }} />
-      <ChangePasswordSheet visible={sheetPw} onClose={() => setSheetPw(false)} />
+      <ChangePasswordSheet visible={sheetPw} onClose={() => setSheetPw(false)} email={user?.email ?? ''} />
       <DeleteAccountSheet
         visible={sheetDelete}
         onClose={() => setSheetDelete(false)}
@@ -580,6 +580,11 @@ function FeedbackModal({
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
 
   const handleClose = () => {
     setMessage('');
@@ -603,7 +608,7 @@ function FeedbackModal({
       });
       if (res.ok) {
         setSent(true);
-        setTimeout(handleClose, 1600);
+        timerRef.current = setTimeout(handleClose, 1600);
       } else Alert.alert('Error', 'Failed to send feedback.');
     } catch {
       Alert.alert('Error', 'Network error.');

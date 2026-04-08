@@ -16,9 +16,11 @@ import { SupabaseService } from '../../../services/SupabaseService';
 interface Props {
   visible: boolean;
   onClose: () => void;
+  email: string;
 }
 
-const ChangePasswordSheet: React.FC<Props> = ({ visible, onClose }) => {
+const ChangePasswordSheet: React.FC<Props> = ({ visible, onClose, email }) => {
+  const [currentPw, setCurrentPw] = useState('');
   const [pw1, setPw1] = useState('');
   const [pw2, setPw2] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -26,13 +28,14 @@ const ChangePasswordSheet: React.FC<Props> = ({ visible, onClose }) => {
 
   React.useEffect(() => {
     if (visible) {
+      setCurrentPw('');
       setPw1('');
       setPw2('');
       setErr(null);
     }
   }, [visible]);
 
-  const valid = pw1.length >= 8 && pw2.length >= 8 && pw1 === pw2;
+  const valid = currentPw.length > 0 && pw1.length >= 8 && pw2.length >= 8 && pw1 === pw2;
 
   const save = async () => {
     if (!valid) return;
@@ -41,6 +44,12 @@ const ChangePasswordSheet: React.FC<Props> = ({ visible, onClose }) => {
     try {
       const client = SupabaseService.getClient();
       if (!client) throw new Error('Not connected');
+      // Verify current password before allowing change
+      const { error: verifyError } = await client.auth.signInWithPassword({
+        email,
+        password: currentPw,
+      });
+      if (verifyError) throw new Error('Current password is incorrect');
       const { error } = await client.auth.updateUser({ password: pw1 });
       if (error) throw error;
       Alert.alert('Password updated', 'Your password has been updated.');
@@ -54,6 +63,14 @@ const ChangePasswordSheet: React.FC<Props> = ({ visible, onClose }) => {
 
   return (
     <SettingsSheetShell visible={visible} onClose={onClose} title="Change password">
+      <TextInput
+        style={styles.input}
+        placeholder="Current password"
+        placeholderTextColor={Colors.textMuted}
+        secureTextEntry
+        value={currentPw}
+        onChangeText={setCurrentPw}
+      />
       <TextInput
         style={styles.input}
         placeholder="New password"

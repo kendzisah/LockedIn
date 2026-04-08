@@ -2,44 +2,25 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
 /**
- * complete-mission — Server-side mission completion with time-gate enforcement.
+ * complete-mission — Server-side mission completion with score computation.
  *
- * Accepts: { timeGate?: string, focusMinutes: number, missionsDone: number, streakDays: number }
+ * Accepts: { focusMinutes: number, missionsDone: number, streakDays: number }
  * Auth: Bearer token from the mobile client (anon key + user JWT).
  *
- * 1. Validates the time gate against the server clock (UTC-based, converted to user's offset).
- * 2. Computes total_score server-side (prevents client-side score tampering).
- * 3. Upserts crew_scores for every crew the user belongs to.
+ * 1. Computes total_score server-side (prevents client-side score tampering).
+ * 2. Upserts crew_scores for every crew the user belongs to, using GREATEST
+ *    to ensure scores never regress from stale client state.
+ *
+ * Time gates are enforced client-side only (UX feature, not a security boundary).
  */
 
 function computeTotalScore(focusMinutes: number, missionsDone: number, streakDays: number): number {
   return focusMinutes * 2 + missionsDone * 15 + streakDays * 10;
 }
 
-/** Check if a time gate like "After 9 PM" is satisfied given a UTC offset in minutes. */
-function isTimeGateUnlocked(timeGate: string | undefined, utcOffsetMinutes: number): boolean {
-  if (!timeGate) return true;
-  const match = timeGate.match(/After (\d{1,2})\s*(AM|PM)/i);
-  if (!match) return true;
-  let hour = parseInt(match[1], 10);
-  if (match[2].toUpperCase() === 'PM' && hour !== 12) hour += 12;
-  if (match[2].toUpperCase() === 'AM' && hour === 12) hour = 0;
-
-  // Compute user's local hour from server UTC + their offset
-  const now = new Date();
-  const userLocalMs = now.getTime() + utcOffsetMinutes * 60 * 1000;
-  const userLocal = new Date(userLocalMs);
-  const userHour = userLocal.getUTCHours();
-
-  return userHour >= hour;
-}
-
-/** ISO week key (YYYY-Www) from a UTC timestamp adjusted by offset. */
-function getWeekKey(utcOffsetMinutes: number): string {
-  const now = new Date();
-  const localMs = now.getTime() + utcOffsetMinutes * 60 * 1000;
-  const d = new Date(localMs);
-  // Reset to midnight UTC (we've already offset)
+/** ISO week key (YYYY-Www) from server UTC clock. */
+function getWeekKey(): string {
+  const d = new Date();
   d.setUTCHours(0, 0, 0, 0);
   d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
   const isoYear = d.getUTCFullYear();
@@ -64,8 +45,6 @@ Deno.serve(async (req: Request) => {
     }
 
     const {
-      timeGate,
-      utcOffsetMinutes = 0,
       focusMinutes,
       missionsDone,
       streakDays,
@@ -83,11 +62,15 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Server-side time gate check
-    if (!isTimeGateUnlocked(timeGate, utcOffsetMinutes)) {
+    // Bounds validation — reject negative, NaN, Infinity, or unreasonable values
+    if (
+      !Number.isFinite(focusMinutes) || focusMinutes < 0 || focusMinutes > 1440 ||
+      !Number.isFinite(missionsDone) || missionsDone < 0 || missionsDone > 50 ||
+      !Number.isFinite(streakDays) || streakDays < 0 || streakDays > 3650
+    ) {
       return new Response(
-        JSON.stringify({ error: 'time_gate_locked', message: `Mission locked until ${timeGate}` }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        JSON.stringify({ error: 'Score values out of allowed range' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
@@ -111,7 +94,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const userId = user.id;
-    const weekKey = getWeekKey(utcOffsetMinutes);
+    const weekKey = getWeekKey();
     const totalScore = computeTotalScore(focusMinutes, missionsDone, streakDays);
 
     // Get all crews the user belongs to
@@ -124,21 +107,18 @@ Deno.serve(async (req: Request) => {
       throw memError;
     }
 
-    // Upsert score for each crew
+    // Upsert score for each crew using GREATEST to prevent regression from stale client state
     const results: { crew_id: string; ok: boolean }[] = [];
     for (const m of memberships ?? []) {
-      const { error: upsertError } = await supabase.from('crew_scores').upsert(
-        {
-          crew_id: m.crew_id,
-          user_id: userId,
-          week_key: weekKey,
-          focus_minutes: focusMinutes,
-          missions_done: missionsDone,
-          streak_days: streakDays,
-          total_score: totalScore,
-        },
-        { onConflict: 'crew_id,user_id,week_key' },
-      );
+      const { error: upsertError } = await supabase.rpc('upsert_crew_score', {
+        p_crew_id: m.crew_id,
+        p_user_id: userId,
+        p_week_key: weekKey,
+        p_focus_minutes: focusMinutes,
+        p_missions_done: missionsDone,
+        p_streak_days: streakDays,
+        p_total_score: totalScore,
+      });
       results.push({ crew_id: m.crew_id as string, ok: !upsertError });
     }
 

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Purchases from 'react-native-purchases';
 import RevenueCatUI from 'react-native-purchases-ui';
 import { SubscriptionService } from '../../services/SubscriptionService';
@@ -94,6 +94,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
   // Keep Mixpanel super properties and user profile in sync with subscription status
   useEffect(() => {
     if (isLoading) return;
+    Analytics.setIsSubscribed(isSubscribed);
     Analytics.registerSuperProperties({ is_subscribed: isSubscribed });
     Analytics.setUserProperties({ is_subscribed: isSubscribed });
   }, [isSubscribed, isLoading]);
@@ -122,10 +123,13 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
+  const contextValue = useMemo(
+    () => ({ isSubscribed, isLoading, showPaywall, restorePurchases }),
+    [isSubscribed, isLoading, showPaywall, restorePurchases],
+  );
+
   return (
-    <SubscriptionContext.Provider
-      value={{ isSubscribed, isLoading, showPaywall, restorePurchases }}
-    >
+    <SubscriptionContext.Provider value={contextValue}>
       {children}
     </SubscriptionContext.Provider>
   );

@@ -16,6 +16,7 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
 } from 'react';
@@ -53,6 +54,7 @@ const initialState: SessionState = {
   dailyFocusedMinutes: 0,
   dailyFocusDate: null,
   dailyGoalMetDate: null,
+  weekCompletedDays: [],
 };
 
 // ─── Reducer ─────────────────────────────────────────────────────
@@ -84,6 +86,7 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         dailyFocusedMinutes: p.dailyFocusedMinutes ?? 0,
         dailyFocusDate: p.dailyFocusDate ?? null,
         dailyGoalMetDate: p.dailyGoalMetDate ?? null,
+        weekCompletedDays: Array.isArray(p.weekCompletedDays) ? p.weekCompletedDays : [],
         phase: 'IDLE',
       };
     }
@@ -134,12 +137,25 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       );
       const newLifetimeLongest = Math.max(state.lifetimeLongestStreak, newStreak);
 
+      // Add today to weekly completed days (keep only current week)
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const monday = new Date(now);
+      monday.setDate(monday.getDate() + mondayOffset);
+      const mondayKey = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+
+      const updatedWeekDays = state.weekCompletedDays
+        .filter((dk) => dk >= mondayKey) // prune days from previous weeks
+        .concat(todayKey);
+
       return {
         ...state,
         consecutiveStreak: newStreak,
         lifetimeLongestStreak: newLifetimeLongest,
         lastSessionDayKey: todayKey,
         dailyGoalMetDate: todayKey,
+        weekCompletedDays: [...new Set(updatedWeekDays)],
       };
     }
 
@@ -225,6 +241,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       dailyFocusedMinutes: state.dailyFocusedMinutes,
       dailyFocusDate: state.dailyFocusDate,
       dailyGoalMetDate: state.dailyGoalMetDate,
+      weekCompletedDays: state.weekCompletedDays,
     };
 
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(persisted)).catch((e) => {
@@ -245,6 +262,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     state.dailyFocusedMinutes,
     state.dailyFocusDate,
     state.dailyGoalMetDate,
+    state.weekCompletedDays,
   ]);
 
   // ── Mixpanel: super properties (auto-attached to every event) ──
@@ -333,8 +351,13 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     })();
   }, [isHydrated, state.consecutiveStreak]);
 
+  const contextValue = useMemo(
+    () => ({ state, dispatch, isHydrated }),
+    [state, isHydrated],
+  );
+
   return (
-    <SessionContext.Provider value={{ state, dispatch, isHydrated }}>
+    <SessionContext.Provider value={contextValue}>
       {children}
     </SessionContext.Provider>
   );

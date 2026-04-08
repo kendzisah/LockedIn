@@ -80,13 +80,22 @@ const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({
   };
 
   const getGradeMessage = (): string => {
+    const GRADE_ORDER: Record<string, number> = {
+      'A+': 0, 'A': 1, 'A-': 2,
+      'B+': 3, 'B': 4, 'B-': 5,
+      'C+': 6, 'C': 7, 'C-': 8,
+      'D+': 9, 'D': 10, 'D-': 11,
+      'F': 12,
+    };
     if (!report.previousGrade) {
       return `You got an ${report.grade}!`;
     }
-    if (report.grade > report.previousGrade) {
+    const curr = GRADE_ORDER[report.grade] ?? 12;
+    const prev = GRADE_ORDER[report.previousGrade] ?? 12;
+    if (curr < prev) {
       return `You went from ${report.previousGrade} to ${report.grade}! Great progress!`;
     }
-    if (report.grade < report.previousGrade) {
+    if (curr > prev) {
       return `You went from ${report.previousGrade} to ${report.grade}. Let's bounce back!`;
     }
     return `You held steady at ${report.grade}!`;
@@ -162,7 +171,7 @@ const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({
           <View style={styles.percentileHeader}>
             <Text style={styles.percentileLabel}>Your Performance</Text>
             <Text style={[styles.percentileText, { color: Colors.accent }]}>
-              Top {report.percentile}%
+              {report.percentile}/100
             </Text>
           </View>
 
@@ -179,7 +188,7 @@ const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({
           </View>
 
           <Text style={styles.percentileDescription}>
-            You're performing better than {report.percentile}% of users this week
+            Your weekly performance score
           </Text>
         </View>
 

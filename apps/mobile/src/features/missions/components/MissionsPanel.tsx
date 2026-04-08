@@ -21,7 +21,7 @@ interface MissionsPanelProps {
 }
 
 export const MissionsPanel: React.FC<MissionsPanelProps> = ({ showScrollView = false }) => {
-  const { missions, completedCount, totalXP, lockedInToday, completeMission } = useMissions();
+  const { missions, weeklyMissions, completedCount, totalXP, lockedInToday, completeMission } = useMissions();
 
   useEffect(() => {
     if (lockedInToday) {
@@ -40,11 +40,11 @@ export const MissionsPanel: React.FC<MissionsPanelProps> = ({ showScrollView = f
 
         {/* Counter */}
         <View style={styles.counter}>
-          <Text style={styles.counterText}>{completedCount}/3 Complete</Text>
+          <Text style={styles.counterText}>{completedCount}/{missions.length} Complete</Text>
         </View>
       </View>
 
-      {/* Missions List */}
+      {/* Daily Missions List */}
       <View style={styles.missionsContainer}>
         {missions.map(mission => (
           <MissionCard
@@ -54,6 +54,24 @@ export const MissionsPanel: React.FC<MissionsPanelProps> = ({ showScrollView = f
           />
         ))}
       </View>
+
+      {/* Weekly Missions */}
+      {weeklyMissions.length > 0 && (
+        <>
+          <View style={styles.weeklyHeader}>
+            <Text style={styles.weeklyTitle}>Weekly Challenges</Text>
+          </View>
+          <View style={styles.missionsContainer}>
+            {weeklyMissions.map(mission => (
+              <MissionCard
+                key={mission.id}
+                mission={mission}
+                onComplete={completeMission}
+              />
+            ))}
+          </View>
+        </>
+      )}
 
       {/* Stats and Badge Row */}
       <View style={styles.footerContainer}>
@@ -135,6 +153,16 @@ const styles = StyleSheet.create({
   },
   missionsContainer: {
     marginBottom: 16,
+    gap: 8,
+  },
+  weeklyHeader: {
+    marginBottom: 10,
+  },
+  weeklyTitle: {
+    fontSize: 16,
+    fontFamily: FontFamily.headingSemiBold,
+    color: Colors.accent,
+    letterSpacing: -0.2,
   },
   footerContainer: {
     flexDirection: 'row',

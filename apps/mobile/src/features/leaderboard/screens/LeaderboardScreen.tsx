@@ -18,27 +18,21 @@ import LeaderboardService, {
   UserRankInfo,
   TierType,
 } from '../LeaderboardService';
-
-interface UserContextData {
-  user?: {
-    id: string;
-  };
-}
+import { useAuth } from '../../auth/AuthProvider';
 
 const LeaderboardScreen: React.FC = () => {
+  const { user } = useAuth();
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
   const [userRank, setUserRank] = useState<UserRankInfo | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const userId = user?.id ?? null;
+
   useEffect(() => {
-    // Get user ID from context/auth
-    // For now, we'll use a placeholder
-    const currentUserId = 'current-user-id'; // TODO: Get from auth context
-    setUserId(currentUserId);
-    loadData(currentUserId);
-  }, []);
+    if (!userId) return;
+    loadData(userId);
+  }, [userId]);
 
   const loadData = async (currentUserId: string) => {
     try {
@@ -121,7 +115,7 @@ const LeaderboardScreen: React.FC = () => {
     item,
     index,
   }) => {
-    const isCurrentUser = userId && leaderboardData[index]?.username === `User ${userId.substring(0, 8)}`;
+    const isCurrentUser = userId && item.user_id === userId;
 
     return (
       <View

@@ -59,7 +59,8 @@ async function initialize(): Promise<boolean> {
     return true;
   } catch (error) {
     console.warn('[SupabaseService] Init failed (app will run in timer-only mode):', error);
-    initialized = true;
+    // Don't set initialized = true — allow retry on next call
+    client = null;
     return false;
   }
 }

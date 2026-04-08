@@ -74,7 +74,9 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
   const [modalVisible, setModalVisible] = useState(false);
 
   const done = mission.completed;
-  const locked = !done && !isTimeGateUnlocked(mission.timeGate);
+  const failed = mission.failed === true;
+  const isWeekly = mission.duration === 'weekly';
+  const locked = !done && !failed && !isWeekly && !isTimeGateUnlocked(mission.timeGate);
   const iconInfo = MISSION_ICONS[mission.type] ?? MISSION_ICONS.custom;
   const slotMeta = SLOT_LABELS[mission.slot] ?? SLOT_LABELS.core;
 
@@ -87,7 +89,7 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
   };
 
   const handleComplete = async () => {
-    if (done || locked) return;
+    if (done || locked || isWeekly) return;
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onComplete(mission.id);
     setModalVisible(false);
@@ -103,16 +105,18 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
     <TouchableOpacity
       onPress={handleCardTap}
       activeOpacity={0.8}
-      style={[styles.card, done && styles.cardDone, locked && styles.cardLocked]}
+      style={[styles.card, done && styles.cardDone, locked && styles.cardLocked, failed && styles.cardFailed]}
     >
       <View style={[
         styles.iconBox,
-        { backgroundColor: done ? 'rgba(0,214,143,0.1)' : `${iconInfo.color}12` },
+        { backgroundColor: done ? 'rgba(0,214,143,0.1)' : failed ? 'rgba(255,71,87,0.08)' : `${iconInfo.color}12` },
         done && { borderColor: 'rgba(0,214,143,0.15)' },
-        locked && { opacity: 0.5 },
+        (locked || failed) && { opacity: 0.5 },
       ]}>
         {done ? (
           <Ionicons name="checkmark" size={20} color={Colors.success} />
+        ) : failed ? (
+          <Ionicons name="close" size={18} color={Colors.danger} />
         ) : locked ? (
           <Ionicons name="lock-closed" size={16} color={Colors.textMuted} />
         ) : (
@@ -122,17 +126,27 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
 
       <View style={styles.content}>
         <View style={styles.titleRow}>
-          <Text style={[styles.title, done && styles.titleDone, locked && styles.titleLocked]} numberOfLines={1}>
+          <Text style={[styles.title, done && styles.titleDone, (locked || failed) && styles.titleLocked, failed && styles.titleFailed]} numberOfLines={1}>
             {mission.title}
           </Text>
-          <View style={[styles.slotBadge, { backgroundColor: `${slotMeta.color}15` }]}>
-            <Text style={[styles.slotText, { color: slotMeta.color }]}>{slotMeta.label}</Text>
+          <View style={[styles.slotBadge, { backgroundColor: failed ? 'rgba(255,71,87,0.1)' : isWeekly ? 'rgba(0,194,255,0.12)' : `${slotMeta.color}15` }]}>
+            <Text style={[styles.slotText, { color: failed ? Colors.danger : isWeekly ? Colors.accent : slotMeta.color }]}>
+              {failed ? 'MISSED' : isWeekly ? 'WEEKLY' : slotMeta.label}
+            </Text>
           </View>
         </View>
-        <Text style={[styles.description, done && styles.descDone, locked && styles.titleLocked]} numberOfLines={1}>
-          {locked ? mission.timeGate : mission.description}
+        <Text style={[styles.description, done && styles.descDone, (locked || failed) && styles.titleLocked]} numberOfLines={1}>
+          {failed ? `Missed — ${mission.progress ?? 0}/${mission.progressTarget} days` : locked ? mission.timeGate : mission.description}
         </Text>
-        {!done && !locked && mission.completionType === 'auto' && (
+        {isWeekly && !done && !failed && mission.progressTarget != null && (
+          <View style={styles.progressRow}>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${Math.min(100, ((mission.progress ?? 0) / mission.progressTarget) * 100)}%` }]} />
+            </View>
+            <Text style={styles.progressText}>{mission.progress ?? 0}/{mission.progressTarget}</Text>
+          </View>
+        )}
+        {!done && !locked && !isWeekly && mission.completionType === 'auto' && (
           <View style={styles.autoRow}>
             <Ionicons name="flash" size={10} color={Colors.accent} />
             <Text style={styles.autoText}>Auto-complete</Text>
@@ -202,8 +216,20 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
             </View>
           </View>
 
+          {/* Weekly progress bar in modal */}
+          {isWeekly && !done && !failed && mission.progressTarget != null && (
+            <View style={s.weeklyProgressBar}>
+              <View style={s.weeklyProgressTrack}>
+                <View style={[s.weeklyProgressFill, { width: `${Math.min(100, ((mission.progress ?? 0) / mission.progressTarget) * 100)}%` }]} />
+              </View>
+              <Text style={s.weeklyProgressLabel}>
+                {mission.progress ?? 0} of {mission.progressTarget} days
+              </Text>
+            </View>
+          )}
+
           {/* Time gate notice */}
-          {mission.timeGate && (
+          {mission.timeGate && !isWeekly && (
             <View style={[s.timeGateBar, locked && s.timeGateBarLocked]}>
               <Ionicons
                 name={locked ? 'lock-closed' : 'lock-open'}
@@ -224,6 +250,14 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
             </View>
           )}
 
+          {/* Failed state */}
+          {failed && (
+            <View style={s.failedBanner}>
+              <Ionicons name="close-circle" size={16} color={Colors.danger} />
+              <Text style={s.failedText}>Missed — not enough days left this week</Text>
+            </View>
+          )}
+
           {/* Divider */}
           <View style={s.divider} />
 
@@ -233,7 +267,7 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
               <Text style={s.closeBtnText}>Close</Text>
             </TouchableOpacity>
 
-            {!done && (
+            {!done && !isWeekly && (
               <TouchableOpacity
                 style={[s.completeBtn, locked && s.completeBtnDisabled]}
                 onPress={handleComplete}
@@ -285,6 +319,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(21,26,33,0.3)',
     borderColor: 'rgba(255,255,255,0.03)',
   },
+  cardFailed: {
+    backgroundColor: 'rgba(21,26,33,0.25)',
+    borderColor: 'rgba(255,71,87,0.08)',
+    opacity: 0.6,
+  },
   iconBox: {
     width: 42,
     height: 42,
@@ -316,6 +355,9 @@ const styles = StyleSheet.create({
   titleLocked: {
     color: Colors.textMuted,
   },
+  titleFailed: {
+    textDecorationLine: 'line-through',
+  },
   slotBadge: {
     paddingHorizontal: 5,
     paddingVertical: 2,
@@ -332,6 +374,29 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   descDone: {
+    color: Colors.textMuted,
+  },
+  progressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  progressTrack: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(44,52,64,0.5)',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: Colors.accent,
+  },
+  progressText: {
+    fontFamily: FontFamily.body,
+    fontSize: 10,
     color: Colors.textMuted,
   },
   autoRow: {
@@ -447,6 +512,27 @@ const s = StyleSheet.create({
     marginBottom: 18,
   },
 
+  weeklyProgressBar: {
+    marginBottom: 16,
+    gap: 6,
+  },
+  weeklyProgressTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(44,52,64,0.5)',
+    overflow: 'hidden',
+  },
+  weeklyProgressFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: Colors.accent,
+  },
+  weeklyProgressLabel: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 12,
+    color: Colors.accent,
+    textAlign: 'center',
+  },
   metaRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -513,6 +599,23 @@ const s = StyleSheet.create({
     fontFamily: FontFamily.headingSemiBold,
     fontSize: 13,
     color: Colors.success,
+  },
+  failedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255,71,87,0.08)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,71,87,0.12)',
+    marginBottom: 16,
+  },
+  failedText: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 13,
+    color: Colors.danger,
   },
 
   divider: {

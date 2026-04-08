@@ -5,6 +5,7 @@ export interface GymCheckInState {
   weeklyCount: number;
   monthlyCount: number;
   currentWeekStart: string;
+  currentMonthStart: string;
 }
 
 const STORAGE_KEY = '@lockedin/gym_checkin';
@@ -21,17 +22,23 @@ class GymCheckInService {
       }
 
       const state: GymCheckInState = JSON.parse(stored);
+      // Backfill currentMonthStart for legacy data
+      if (!state.currentMonthStart) {
+        state.currentMonthStart = this.getMonthStartDate();
+      }
 
-      // Check if week has changed
+      // Check if week has changed — recount from checkins map instead of clearing
       const weekStart = this.getWeekStartDate();
       if (state.currentWeekStart !== weekStart) {
-        // Week changed, reset weekly count
-        return {
-          ...state,
-          checkins: {},
-          weeklyCount: 0,
-          currentWeekStart: weekStart,
-        };
+        state.currentWeekStart = weekStart;
+        state.weeklyCount = this.countCheckinsInCurrentWeek(state.checkins, weekStart);
+      }
+
+      // Check if month has changed — recount from checkins map
+      const monthStart = this.getMonthStartDate();
+      if (state.currentMonthStart !== monthStart) {
+        state.currentMonthStart = monthStart;
+        state.monthlyCount = this.countCheckinsInCurrentMonth(state.checkins, monthStart);
       }
 
       return state;
@@ -50,6 +57,7 @@ class GymCheckInService {
       weeklyCount: 0,
       monthlyCount: 0,
       currentWeekStart: this.getWeekStartDate(),
+      currentMonthStart: this.getMonthStartDate(),
     };
   }
 
@@ -192,6 +200,42 @@ class GymCheckInService {
     weekStart.setHours(0, 0, 0, 0);
 
     return this.formatDate(weekStart);
+  }
+
+  /**
+   * Get month start date as YYYY-MM-DD
+   */
+  private getMonthStartDate(): string {
+    const today = new Date();
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    return this.formatDate(monthStart);
+  }
+
+  /**
+   * Count check-ins that fall within the current week (Mon-Sun)
+   */
+  private countCheckinsInCurrentWeek(checkins: Record<string, boolean>, weekStart: string): number {
+    const start = new Date(weekStart);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 7);
+    return Object.entries(checkins).filter(([date, checked]) => {
+      if (!checked) return false;
+      const d = new Date(date);
+      return d >= start && d < end;
+    }).length;
+  }
+
+  /**
+   * Count check-ins that fall within the current month
+   */
+  private countCheckinsInCurrentMonth(checkins: Record<string, boolean>, monthStart: string): number {
+    const start = new Date(monthStart);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    return Object.entries(checkins).filter(([date, checked]) => {
+      if (!checked) return false;
+      const d = new Date(date);
+      return d >= start && d < end;
+    }).length;
   }
 
   /**

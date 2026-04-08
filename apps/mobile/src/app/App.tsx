@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, type AppStateStatus, View, StyleSheet, Text } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { AppState, type AppStateStatus, Platform, View, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
@@ -21,7 +21,6 @@ import { useSession } from '../features/home/state/SessionProvider';
 import RootNavigator from '../navigation/RootNavigator';
 import { Colors } from '../design/colors';
 import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
-import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SupabaseService } from '../services/SupabaseService';
 import { NotificationService, type NotificationPayload } from '../services/NotificationService';
@@ -30,6 +29,7 @@ import { CrewService } from '../features/leaderboard/CrewService';
 import { AppsFlyerService } from '../services/AppsFlyerService';
 import { MixpanelService } from '../services/MixpanelService';
 import { Analytics } from '../services/AnalyticsService';
+import { recordEarlyOpen } from '../features/missions/MissionsProvider';
 import Purchases from 'react-native-purchases';
 import { ENV } from '../config/env';
 
@@ -50,6 +50,7 @@ const MissionsBridge: React.FC<{ children: React.ReactNode }> = ({ children }) =
     <MissionsProvider
       userGoal={onboarding.primaryGoal ?? undefined}
       userWeaknesses={onboarding.selectedWeaknesses}
+      onboardingDate={onboarding.onboardingCompletedAt ?? undefined}
       streak={session.consecutiveStreak}
     >
       {children}
@@ -121,6 +122,7 @@ const App: React.FC = () => {
 
         await NotificationService.touchLastAppOpen();
         await AsyncStorage.setItem(LAST_OPEN_KEY, new Date().toISOString());
+        recordEarlyOpen().catch(() => {});
         await CrewService.syncHasActiveCrewFlag();
         await NotificationService.scheduleAllDailyNotifications(streak);
       } catch (e: any) {
@@ -142,16 +144,28 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const onLayoutRootView = useCallback(async () => {
-    if (fontsLoaded && authReady) {
-      await SplashScreen.hideAsync();
+  // Hide splash + run cold-open side effects when fonts and boot finish.
+  // useEffect (not onLayout) so we still run if the root view never re-lays out.
+  useEffect(() => {
+    if (!fontsLoaded || !authReady) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        await SplashScreen.hideAsync();
+      } catch {
+        /* splash already hidden */
+      }
+      if (cancelled) return;
 
       if (Platform.OS === 'ios' && !attRequested.current) {
         attRequested.current = true;
         try {
           await requestTrackingPermissionsAsync();
-          // Re-collect identifiers now that IDFA may be available
-          try { Purchases.collectDeviceIdentifiers(); } catch {}
+          try {
+            Purchases.collectDeviceIdentifiers();
+          } catch {}
         } catch {
           // ATT not available (e.g. simulator) — continue
         }
@@ -160,7 +174,11 @@ const App: React.FC = () => {
       AppsFlyerService.startSdk();
       Analytics.trackAF('af_login', {});
       Analytics.track('App Opened', { cold_start: true });
-    }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [fontsLoaded, authReady]);
 
   // Track foreground resumes as warm App Opened events
@@ -170,6 +188,7 @@ const App: React.FC = () => {
         Analytics.track('App Opened', { cold_start: false });
         void NotificationService.touchLastAppOpen();
         void AsyncStorage.setItem(LAST_OPEN_KEY, new Date().toISOString());
+        recordEarlyOpen().catch(() => {});
       }
     });
     return () => sub.remove();
@@ -211,11 +230,11 @@ const App: React.FC = () => {
   }, []);
 
   if (!fontsLoaded || !authReady) {
-    return null;
+    return <View style={styles.bootPlaceholder} />;
   }
 
   return (
-    <View style={styles.root} onLayout={onLayoutRootView}>
+    <View style={styles.root}>
       <SafeAreaProvider>
         <AuthProvider>
           <OnboardingProvider>
@@ -238,6 +257,10 @@ const App: React.FC = () => {
 
 const styles = StyleSheet.create({
   root: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  bootPlaceholder: {
     flex: 1,
     backgroundColor: Colors.background,
   },

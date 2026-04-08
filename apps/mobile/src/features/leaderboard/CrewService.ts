@@ -29,6 +29,7 @@ export interface CrewDetails {
 export interface CrewLeaderboardEntry {
   user_id: string;
   username: string;
+  avatar_url: string | null;
   rank: number;
   focus_minutes: number;
   missions_done: number;
@@ -60,13 +61,13 @@ function formatUsername(userId: string): string {
   return `User ${userId.substring(0, 8)}`;
 }
 
-/** ISO week key from the device local calendar (YYYY-Www), e.g. '2026-W14'. */
+/** ISO week key from UTC clock (YYYY-Www), matching the server edge function. */
 function getCurrentWeekKey(): string {
-  const now = new Date();
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
-  const isoYear = d.getFullYear();
-  const yearStart = new Date(isoYear, 0, 1);
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const isoYear = d.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
   const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   return `${isoYear}-W${String(weekNo).padStart(2, '0')}`;
 }
@@ -133,7 +134,8 @@ export const CrewService = {
       const hasCrewNow = crews.length > 0;
       await AsyncStorage.setItem(HAS_ACTIVE_CREW_STORAGE_KEY, hasCrewNow ? 'true' : 'false');
       return { hadCrewBefore, hasCrewNow };
-    } catch {
+    } catch (e) {
+      console.warn('[CrewService] syncHasActiveCrewFlag failed:', e);
       return { hadCrewBefore, hasCrewNow: hadCrewBefore };
     }
   },
@@ -267,6 +269,7 @@ export const CrewService = {
       const currentUserId = SupabaseService.getCurrentUserId();
       if (!client) return [];
 
+      // Fetch members
       const { data: members, error: memErr } = await client
         .from('crew_members')
         .select('user_id')
@@ -275,6 +278,23 @@ export const CrewService = {
       if (memErr) throw memErr;
       if (!members?.length) return [];
 
+      const memberIds = members.map((m) => m.user_id as string);
+
+      // Fetch profiles for all members in one query
+      const { data: profiles } = await client
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .in('id', memberIds);
+
+      const profileByUser = new Map<string, { display_name: string | null; avatar_url: string | null }>();
+      for (const p of profiles ?? []) {
+        profileByUser.set(p.id as string, {
+          display_name: p.display_name as string | null,
+          avatar_url: p.avatar_url as string | null,
+        });
+      }
+
+      // Fetch scores for the selected week
       const { data: scores, error: scoreErr } = await client
         .from('crew_scores')
         .select('user_id, focus_minutes, missions_done, streak_days, total_score')
@@ -296,11 +316,13 @@ export const CrewService = {
         });
       }
 
-      const merged = members.map((m) => {
-        const uid = m.user_id as string;
+      const merged = memberIds.map((uid) => {
+        const profile = profileByUser.get(uid);
         const sc = scoreByUser.get(uid);
         return {
           user_id: uid,
+          display_name: profile?.display_name ?? null,
+          avatar_url: profile?.avatar_url ?? null,
           focus_minutes: sc?.focus_minutes ?? 0,
           missions_done: sc?.missions_done ?? 0,
           streak_days: sc?.streak_days ?? 0,
@@ -312,7 +334,8 @@ export const CrewService = {
 
       return merged.map((row, index) => ({
         user_id: row.user_id,
-        username: formatUsername(row.user_id),
+        username: row.display_name || formatUsername(row.user_id),
+        avatar_url: row.avatar_url,
         rank: index + 1,
         focus_minutes: row.focus_minutes,
         missions_done: row.missions_done,
@@ -575,8 +598,6 @@ export const CrewService = {
       const { data: { session } } = await client.auth.getSession();
       if (!session?.access_token) return { success: false, error: 'No session' };
 
-      const utcOffsetMinutes = new Date().getTimezoneOffset() * -1;
-
       const res = await fetch(`${ENV.SUPABASE_URL}/functions/v1/complete-mission`, {
         method: 'POST',
         headers: {
@@ -585,7 +606,6 @@ export const CrewService = {
         },
         body: JSON.stringify({
           timeGate,
-          utcOffsetMinutes,
           focusMinutes,
           missionsDone,
           streakDays,
@@ -603,10 +623,8 @@ export const CrewService = {
 
       return { success: true };
     } catch (err) {
-      console.warn('[CrewService] Edge function failed, falling back to client upsert:', err);
-      // Fallback: submit directly (no time-gate enforcement, but keeps scores working)
-      await CrewService.submitScoreToAllCrews(focusMinutes, missionsDone, streakDays);
-      return { success: true };
+      console.warn('[CrewService] Edge function failed:', err);
+      return { success: false, error: 'network_error' };
     }
   },
 };

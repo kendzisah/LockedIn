@@ -150,18 +150,16 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
   const [pressedOption, setPressedOption] = useState<number | null>(null);
 
   const handleSelect = useCallback((minutes: number) => {
+    // Navigate first while the component is still mounted, then close the modal.
+    if (!isSubscribed) {
+      navigation.navigate('PaywallOffer');
+      onClose();
+      return;
+    }
+    Analytics.track('Lock In Started', { duration_minutes: minutes });
+    LockModeService.beginSession();
+    navigation.navigate('ExecutionBlock', { durationMinutes: minutes });
     onClose();
-    // Defer navigation to the next frame so the Modal unmounts cleanly
-    // before the Stack navigator processes the navigate action.
-    requestAnimationFrame(() => {
-      if (!isSubscribed) {
-        navigation.navigate('PaywallOffer');
-        return;
-      }
-      Analytics.track('Lock In Started', { duration_minutes: minutes });
-      LockModeService.beginSession();
-      navigation.navigate('ExecutionBlock', { durationMinutes: minutes });
-    });
   }, [isSubscribed, navigation, onClose]);
 
   const formatDuration = (mins: number): { value: string; label: string } =>
@@ -521,7 +519,5 @@ const dp = StyleSheet.create({
     color: Colors.textMuted,
   },
 });
-
-const styles = StyleSheet.create({});
 
 export default MainNavigator;

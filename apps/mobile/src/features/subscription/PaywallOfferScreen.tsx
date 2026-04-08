@@ -137,6 +137,7 @@ const PaywallOfferScreen: React.FC<Props> = ({ navigation }) => {
         navigation.goBack();
       });
     } else {
+      Analytics.track('Paywall Dismissed', { source: 'lock_in', reason: 'cancelled' });
       navigation.goBack();
     }
   }, [showPaywall, screenOpacity, navigation, state.primaryGoal, state.dailyMinutes]);

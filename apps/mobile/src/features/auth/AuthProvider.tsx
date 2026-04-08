@@ -23,6 +23,7 @@ import { CrewService } from '../leaderboard/CrewService';
 import { NotificationService } from '../../services/NotificationService';
 import { clearAllLockedInStorage } from '../../services/lockedInStorage';
 import { emitLogoutCleanup } from '../../services/logoutCleanupBus';
+import { Analytics } from '../../services/AnalyticsService';
 
 export interface AuthContextType {
   user: User | null;
@@ -58,22 +59,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const isAuthenticated = user !== null && !user.is_anonymous;
   const isAnonymous = user?.is_anonymous ?? false;
 
+  // Keep analytics context in sync with auth state
+  useEffect(() => {
+    Analytics.setIsAnonymous(isAnonymous);
+  }, [isAnonymous]);
+
   // On mount, check current session and set up listener
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
 
     const initAuth = async () => {
       try {
-        // Check current session
-        const { user: currentUser } = await AuthService.getCurrentUser();
-        setUser(currentUser);
-
-        // Set up listener for future changes
+        // Register listener first to avoid missing auth events during getCurrentUser()
         unsubscribe = AuthService.onAuthStateChange(
           (newUser) => {
             setUser(newUser);
           },
         );
+
+        // Then check current session (listener may have already fired, setUser is idempotent)
+        const { user: currentUser } = await AuthService.getCurrentUser();
+        setUser(currentUser);
       } catch (err) {
         console.warn('[AuthProvider] Failed to initialize auth:', err);
       } finally {
@@ -158,6 +164,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     async (): Promise<{ error: AuthError | null }> => {
       const response = await AuthService.signOut();
       if (!response.error) {
+        // Reset analytics identity before clearing storage
+        Analytics.reset();
+        Analytics.resetContext();
         try {
           await clearAllLockedInStorage();
         } catch {

@@ -41,6 +41,11 @@ const DayDots: React.FC = () => {
   const completedSet = useMemo(() => {
     const s = new Set<string>();
     const week = new Set(weekKeys);
+    // Use persisted weekly completion history
+    for (const dk of state.weekCompletedDays ?? []) {
+      if (week.has(dk)) s.add(dk);
+    }
+    // Also include recent dates for backwards compat
     if (state.lastLockInCompletedDate && week.has(state.lastLockInCompletedDate)) {
       s.add(state.lastLockInCompletedDate);
     }
@@ -48,7 +53,7 @@ const DayDots: React.FC = () => {
       s.add(state.lastSessionDayKey);
     }
     return s;
-  }, [state.lastLockInCompletedDate, state.lastSessionDayKey, weekKeys]);
+  }, [state.weekCompletedDays, state.lastLockInCompletedDate, state.lastSessionDayKey, weekKeys]);
 
   return (
     <View style={styles.wrapper}>

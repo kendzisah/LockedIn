@@ -7,6 +7,7 @@ import {
   FlatList,
   Platform,
   RefreshControl,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -182,7 +183,9 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         },
         async (idx) => {
           if (idx === 0 && details) {
-            // Share handled by InviteCodeCard
+            Share.share({
+              message: `Join my crew "${details.name}" on Locked In! My invite code: ${details.invite_code}`,
+            });
           } else if (idx === 1) {
             if (isOwner) {
               Alert.alert(
@@ -215,11 +218,38 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         },
       );
     } else {
-      const actions = isOwner
-        ? [{ text: 'Delete Crew', onPress: () => handleDeleteOrLeave('delete') }]
-        : [{ text: 'Leave Crew', onPress: () => handleDeleteOrLeave('leave') }];
+      // Android: show options alert, then confirm destructive actions
       Alert.alert(details?.name ?? 'Options', undefined, [
-        ...actions,
+        {
+          text: 'Share Invite Code',
+          onPress: () => {
+            if (details) {
+              Share.share({
+                message: `Join my crew "${details.name}" on Locked In! My invite code: ${details.invite_code}`,
+              });
+            }
+          },
+        },
+        {
+          text: isOwner ? 'Delete Crew' : 'Leave Crew',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              isOwner ? 'Delete Crew' : 'Leave Crew',
+              isOwner
+                ? `Are you sure you want to delete "${details?.name}"? This cannot be undone.`
+                : `Are you sure you want to leave "${details?.name}"?`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: isOwner ? 'Delete' : 'Leave',
+                  style: 'destructive',
+                  onPress: () => handleDeleteOrLeave(isOwner ? 'delete' : 'leave'),
+                },
+              ],
+            );
+          },
+        },
         { text: 'Cancel', style: 'cancel' },
       ]);
     }
@@ -321,6 +351,7 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
               <MemberRow
                 rank={item.rank}
                 username={item.username}
+                avatarUrl={item.avatar_url}
                 focusMinutes={item.focus_minutes}
                 missionsDone={item.missions_done}
                 streakDays={item.streak_days}

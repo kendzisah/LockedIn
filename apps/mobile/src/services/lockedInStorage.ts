@@ -6,7 +6,7 @@ export async function clearAllLockedInStorage(): Promise<void> {
     const keys = await AsyncStorage.getAllKeys();
     const locked = keys.filter((k) => k.startsWith('@lockedin/'));
     if (locked.length) await AsyncStorage.multiRemove(locked);
-  } catch {
-    /* ignore */
+  } catch (e) {
+    console.warn('[lockedInStorage] clearAll failed:', e);
   }
 }

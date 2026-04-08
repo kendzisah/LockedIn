@@ -41,25 +41,21 @@ export class StreakRecoveryService {
   static async useRecovery(
     currentStreak: number
   ): Promise<{ newStreak: number; recovered: boolean }> {
-    const canUse = await this.canRecover();
-
-    if (!canUse) {
-      return { newStreak: currentStreak, recovered: false };
-    }
-
+    // Atomic read-check-mutate-write to prevent TOCTOU race
     const state = await this.getState();
     const today = this.getTodayString();
+
+    // getState() already handles week reset, so check limits directly
+    if (state.lastRecoveryDate === today) {
+      return { newStreak: currentStreak, recovered: false };
+    }
+    if (state.recoveriesUsedThisWeek >= MAX_RECOVERIES_PER_WEEK) {
+      return { newStreak: currentStreak, recovered: false };
+    }
 
     // Update recovery usage
     state.lastRecoveryDate = today;
     state.recoveriesUsedThisWeek += 1;
-
-    // Reset week counter if needed
-    const weekStart = this.getWeekStartDate();
-    if (weekStart !== state.weekStartDate) {
-      state.weekStartDate = weekStart;
-      state.recoveriesUsedThisWeek = 1;
-    }
 
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 
@@ -138,20 +134,28 @@ export class StreakRecoveryService {
   }
 
   /**
-   * Get today's date as ISO string (YYYY-MM-DD)
+   * Get today's date as local YYYY-MM-DD (matches ClockService.getLocalDateKey)
    */
   private static getTodayString(): string {
-    return new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   /**
-   * Get the start of the current week (Monday) as ISO string
+   * Get the start of the current week (Monday) as local YYYY-MM-DD
    */
   private static getWeekStartDate(): string {
     const today = new Date();
     const dayOfWeek = today.getDay();
-    const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-    const weekStart = new Date(today.setDate(diff));
-    return weekStart.toISOString().split('T')[0];
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - daysToMonday);
+    const year = weekStart.getFullYear();
+    const month = String(weekStart.getMonth() + 1).padStart(2, '0');
+    const day = String(weekStart.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 }

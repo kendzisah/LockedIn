@@ -5,6 +5,7 @@ export type TierType = 'Bronze' | 'Silver' | 'Gold' | 'Diamond' | 'Locked In Eli
 
 export interface LeaderboardEntry {
   rank: number;
+  user_id: string;
   username: string;
   score: number;
   grade: string;
@@ -106,6 +107,7 @@ class LeaderboardService {
       // Map to LeaderboardEntry with rank
       return (data || []).map((entry, index) => ({
         rank: index + 1,
+        user_id: entry.user_id,
         username: `User ${entry.user_id.substring(0, 8)}`, // Anonymous username
         score: entry.score,
         grade: entry.grade,
@@ -142,9 +144,9 @@ class LeaderboardService {
       }
 
       // Count how many users have a higher score
-      const { data: higherScores, error: countError } = await client
+      const { count: higherCount, error: countError } = await client
         .from('leaderboard')
-        .select('score', { count: 'exact' })
+        .select('*', { count: 'exact', head: true })
         .gt('score', userData.score);
 
       if (countError) {
@@ -160,7 +162,7 @@ class LeaderboardService {
         throw totalError;
       }
 
-      const usersWithHigherScore = higherScores?.length || 0;
+      const usersWithHigherScore = higherCount ?? 0;
       const rank = usersWithHigherScore + 1;
       const percentile =
         totalCount && totalCount > 0
@@ -227,6 +229,7 @@ class LeaderboardService {
 
       return {
         rank: rankInfo.rank,
+        user_id: userId,
         username: `User ${userId.substring(0, 8)}`,
         score: data.score,
         grade: data.grade,

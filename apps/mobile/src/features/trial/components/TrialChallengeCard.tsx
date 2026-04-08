@@ -6,27 +6,8 @@ import {
   Animated,
   ViewStyle,
 } from 'react-native';
-
-const Colors = {
-  background: '#0E1116',
-  backgroundSecondary: '#151A21',
-  surface: '#2C3440',
-  primary: '#3A66FF',
-  accent: '#00C2FF',
-  textPrimary: '#FFFFFF',
-  textSecondary: '#9CA3AF',
-  textMuted: '#6B7280',
-  danger: '#FF4757',
-  success: '#00D68F',
-};
-
-const FontFamily = {
-  headingBold: 'InterTight_800ExtraBold',
-  heading: 'InterTight_700Bold',
-  headingSemiBold: 'InterTight_600SemiBold',
-  bodyMedium: 'Inter_500Medium',
-  body: 'Inter_400Regular',
-};
+import { Colors } from '../../../design/colors';
+import { FontFamily } from '../../../design/typography';
 
 export interface TrialChallengeCardProps {
   isActive: boolean;
@@ -53,7 +34,7 @@ export const TrialChallengeCard: React.FC<TrialChallengeCardProps> = ({
 
   useEffect(() => {
     // Pulsing animation for the current day circle
-    Animated.loop(
+    const anim = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1.1,
@@ -66,7 +47,9 @@ export const TrialChallengeCard: React.FC<TrialChallengeCardProps> = ({
           useNativeDriver: true,
         }),
       ])
-    ).start();
+    );
+    anim.start();
+    return () => anim.stop();
   }, [pulseAnim]);
 
   if (!isActive) {

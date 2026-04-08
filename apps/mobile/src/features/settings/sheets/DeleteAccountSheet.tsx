@@ -45,8 +45,8 @@ const DeleteAccountSheet: React.FC<Props> = ({ visible, onClose, onDeleted }) =>
       if (error) throw error;
       Analytics.track('Account Deleted');
       await clearAllLockedInStorage();
-      onClose();
       onDeleted();
+      onClose();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not delete account');
     } finally {

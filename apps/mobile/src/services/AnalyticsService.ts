@@ -10,6 +10,7 @@
  *   Analytics.setUserProperties({ primary_goal: 'Build discipline' });
  */
 
+import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MixpanelService } from './MixpanelService';
@@ -36,12 +37,20 @@ function getDefaultProperties(): Record<string, unknown> {
     streak_days: _streakDays,
     crew_count: _crewCount,
     app_version: APP_VERSION,
-    platform: 'ios',
+    platform: Platform.OS,
   };
 }
 
 export const Analytics = {
   // ── Context setters (called by providers) ──
+
+  setIsAnonymous(val: boolean) {
+    _isAnonymous = val;
+  },
+
+  setIsSubscribed(val: boolean) {
+    _isSubscribed = val;
+  },
 
   setStreakDays(val: number) {
     _streakDays = val;
@@ -118,5 +127,15 @@ export const Analytics = {
    */
   reset(): void {
     MixpanelService.reset();
+  },
+
+  /**
+   * Reset mutable context vars (call on sign-out alongside reset()).
+   */
+  resetContext(): void {
+    _isAnonymous = true;
+    _isSubscribed = false;
+    _streakDays = 0;
+    _crewCount = 0;
   },
 };

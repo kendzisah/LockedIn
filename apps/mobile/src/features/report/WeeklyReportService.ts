@@ -55,9 +55,10 @@ class WeeklyReportService {
   }
 
   /**
-   * Generate weekly report from current session state
+   * Generate weekly report from current session state.
+   * Async so it can read the previous report for grade comparison.
    */
-  generateWeeklyReport(
+  async generateWeeklyReport(
     sessionState: {
       sessionsCompletedThisWeek: number;
       totalFocusMinutes: number;
@@ -68,7 +69,7 @@ class WeeklyReportService {
       streak: number;
     },
     dailyCommitment: number
-  ): WeeklyReport {
+  ): Promise<WeeklyReport> {
     const now = new Date();
     const dayOfWeek = now.getDay();
     const weekStartDate = new Date(now);
@@ -93,12 +94,12 @@ class WeeklyReportService {
 
     const grade = this.scoreToGrade(score);
 
-    // Get previous grade
-    const lastReport = this.getLastReportSync();
+    // Get previous grade from stored reports
+    const lastReport = await this.getLastReport();
     const previousGrade = lastReport?.grade || null;
 
-    // Calculate percentile (approximation: score / 100 * 100)
-    const percentile = Math.min(Math.round((score / 100) * 100), 100);
+    // Performance score (clamped 0-100)
+    const percentile = Math.min(Math.round(score), 100);
 
     return {
       weekStartDate: weekStartDate.toISOString(),
@@ -145,19 +146,6 @@ class WeeklyReportService {
       return reports.length > 0 ? reports[reports.length - 1] : null;
     } catch (error) {
       console.error('[WeeklyReportService] Error getting last report:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Sync version for use in selectors
-   */
-  private getLastReportSync(): WeeklyReport | null {
-    try {
-      // Note: This should ideally use AsyncStorage, but for sync access,
-      // consider using a context or state management solution
-      return null;
-    } catch {
       return null;
     }
   }

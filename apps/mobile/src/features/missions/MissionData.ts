@@ -5,7 +5,7 @@
  * Each template carries XP values per difficulty tier and optional time-gate.
  */
 
-import type { MissionType, CompletionType } from './MissionEngine';
+import type { MissionType, CompletionType, MissionDuration, ProgressMetric } from './MissionEngine';
 
 export interface MissionTemplate {
   title: string;
@@ -16,6 +16,12 @@ export interface MissionTemplate {
   timeGate?: string;
   /** For core missions, the task description changes per tier. */
   variants?: { easy: string; medium: string; hard: string };
+  /** 'daily' (default) or 'weekly'. Weekly missions persist across the week. */
+  duration?: MissionDuration;
+  /** Target value to auto-complete a weekly mission. */
+  progressTarget?: number;
+  /** What metric drives progress toward completion. */
+  progressMetric?: ProgressMetric;
 }
 
 // ──────────────────────────────────────────────
@@ -249,8 +255,8 @@ export const WEAKNESS_MISSIONS: Record<string, MissionTemplate[]> = {
     { title: 'App Timer Enforced', description: 'Set a 30-min daily limit on your most-used scroll app', type: 'no_social', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 } },
     { title: 'Lock In First, Scroll Later', description: 'Complete daily focus goal before any entertainment', type: 'focus_session', completionType: 'auto', xp: { easy: 25, medium: 30, hard: 35 } },
     { title: 'Replace Scroll with Action', description: 'Every time you catch yourself scrolling, do 10 pushups', type: 'discipline', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
-    { title: 'Screen Time Challenge', description: "Beat yesterday's screen time by 30 min", type: 'no_social', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 }, timeGate: 'After 8 PM' },
     { title: 'Airplane Mode Morning', description: 'Stay in airplane mode for 1st hour after waking', type: 'discipline', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 } },
+    { title: 'Screen Time Check', description: 'Keep social media screen time under 30 minutes today', type: 'no_social', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 }, timeGate: 'After 8 PM' },
   ],
 
   'I start strong, then fall off': [
@@ -289,11 +295,11 @@ export const WEAKNESS_MISSIONS: Record<string, MissionTemplate[]> = {
   'I lack daily consistency': [
     { title: 'Same Time, Every Day', description: 'Start your focus session at the same time as yesterday', type: 'discipline', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 } },
     { title: 'Morning Anchor', description: 'Complete one productive action within 30 min of waking', type: 'discipline', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
-    { title: 'Never Miss Twice', description: 'If you missed yesterday, show up today no matter what', type: 'focus_session', completionType: 'auto', xp: { easy: 20, medium: 20, hard: 25 } },
+    { title: 'Never Miss Twice', description: 'Maintain your streak — lock in every day this week', type: 'focus_session', completionType: 'auto', xp: { easy: 20, medium: 20, hard: 25 }, duration: 'weekly', progressTarget: 7, progressMetric: 'days_active' },
     { title: 'Evening Prep', description: "Prepare tomorrow's workspace/outfit/plan before bed", type: 'planning', completionType: 'self-report', xp: { easy: 15, medium: 15, hard: 20 }, timeGate: 'After 7 PM' },
-    { title: 'Daily Check-In', description: 'Open the app and log in before 9 AM', type: 'focus_session', completionType: 'auto', xp: { easy: 10, medium: 15, hard: 20 } },
+    { title: 'Daily Check-In', description: 'Open the app before 9 AM on 5+ days this week', type: 'focus_session', completionType: 'auto', xp: { easy: 10, medium: 15, hard: 20 }, duration: 'weekly', progressTarget: 5, progressMetric: 'first_open_before_9am' },
     { title: 'Routine Tracker', description: 'Complete your entire morning routine as planned', type: 'discipline', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 } },
     { title: 'Bedtime Alarm', description: 'Be in bed by your target time', type: 'lifestyle', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
-    { title: 'Weekly Consistency Score', description: 'Aim for 5+ days active this week', type: 'focus_session', completionType: 'auto', xp: { easy: 25, medium: 30, hard: 35 } },
+    { title: 'Weekly Consistency Score', description: 'Lock in on 5+ days this week', type: 'focus_session', completionType: 'auto', xp: { easy: 25, medium: 30, hard: 35 }, duration: 'weekly', progressTarget: 5, progressMetric: 'days_active' },
   ],
 };

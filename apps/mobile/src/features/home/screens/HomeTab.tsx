@@ -68,6 +68,7 @@ const HomeTab: React.FC = () => {
   const [tick, setTick] = useState(0);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [canRecover, setCanRecover] = useState(false);
+  const [recoveriesRemaining, setRecoveriesRemaining] = useState(0);
   const [showSignUpNudge, setShowSignUpNudge] = useState(false);
 
   useEffect(() => {
@@ -171,7 +172,10 @@ const HomeTab: React.FC = () => {
   }, [isHydrated, navigation]);
 
   useEffect(() => {
-    StreakRecoveryService.canRecover().then(setCanRecover);
+    StreakRecoveryService.getRecoveryStatus().then((status) => {
+      setCanRecover(status.available);
+      setRecoveriesRemaining(status.maxPerWeek - status.usedThisWeek);
+    });
   }, [state.consecutiveStreak, tick]);
 
   useEffect(() => {
@@ -232,14 +236,21 @@ const HomeTab: React.FC = () => {
       <StreakRecoveryModal
         visible={showRecoveryModal}
         streak={state.consecutiveStreak}
-        recoveriesRemaining={2}
+        recoveriesRemaining={recoveriesRemaining}
         onDismiss={() => {
           setShowRecoveryModal(false);
         }}
-        onSavePress={() => {
-          Analytics.track('Streak Recovered', {
-            streak_days: state.consecutiveStreak,
-          });
+        onSavePress={async () => {
+          const result = await StreakRecoveryService.useRecovery(state.consecutiveStreak);
+          if (result.recovered) {
+            Analytics.track('Streak Recovered', {
+              streak_days: state.consecutiveStreak,
+            });
+            // Re-fetch recovery status after using one
+            const status = await StreakRecoveryService.getRecoveryStatus();
+            setCanRecover(status.available);
+            setRecoveriesRemaining(status.maxPerWeek - status.usedThisWeek);
+          }
           setShowRecoveryModal(false);
           dispatch({ type: 'RESET_PHASE' });
         }}

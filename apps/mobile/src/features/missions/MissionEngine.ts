@@ -36,6 +36,8 @@ export type MissionType =
 export type CompletionType = 'auto' | 'self-report' | 'hybrid';
 export type DifficultyTier = 'easy' | 'medium' | 'hard';
 export type MissionSlot = 'core' | 'goal' | 'weakness';
+export type MissionDuration = 'daily' | 'weekly';
+export type ProgressMetric = 'days_active' | 'days_streak' | 'first_open_before_9am';
 
 export interface Mission {
   id: string;
@@ -43,11 +45,16 @@ export interface Mission {
   description: string;
   type: MissionType;
   completed: boolean;
+  failed?: boolean;
   xp: number;
   slot: MissionSlot;
   completionType: CompletionType;
   difficulty: DifficultyTier;
   timeGate?: string;
+  duration: MissionDuration;
+  progress?: number;
+  progressTarget?: number;
+  progressMetric?: ProgressMetric;
 }
 
 // ─── Helpers ────────────────────────────────────────────
@@ -102,6 +109,10 @@ const buildMission = (
     completionType: template.completionType,
     difficulty: tier,
     timeGate: template.timeGate,
+    duration: template.duration ?? 'daily',
+    progress: template.duration === 'weekly' ? 0 : undefined,
+    progressTarget: template.progressTarget,
+    progressMetric: template.progressMetric,
   };
 };
 
@@ -167,12 +178,85 @@ export const generateDailyMissions = (params: MissionGenerationParams): Mission[
 
     // Dedup: re-roll if title collides with goal mission (e.g. both "No Social Media" variants)
     if (weaknessMission.title === goalMission.title) {
-      weaknessIndex = (weaknessIndex + 1) % weaknessPool.length;
-      weaknessMission = buildMission(weaknessPool[weaknessIndex], 'weakness', tier, streak, dayOfYear, 2);
+      for (let attempt = 1; attempt < weaknessPool.length; attempt++) {
+        const nextIndex = (weaknessIndex + attempt) % weaknessPool.length;
+        const candidate = buildMission(weaknessPool[nextIndex], 'weakness', tier, streak, dayOfYear, 2);
+        if (candidate.title !== goalMission.title) {
+          weaknessMission = candidate;
+          break;
+        }
+      }
     }
   }
 
   return [coreMission, goalMission, weaknessMission];
+};
+
+/**
+ * Days remaining in the current ISO week (Mon=1 .. Sun=7).
+ * Sunday returns 0 (last day), Monday returns 6, etc.
+ */
+export const getRemainingDaysInWeek = (date: Date = new Date()): number => {
+  const day = date.getDay(); // 0=Sun, 1=Mon ... 6=Sat
+  const isoDay = day === 0 ? 7 : day; // Mon=1 ... Sun=7
+  return 7 - isoDay;
+};
+
+// ─── Weekly mission generation ─────────────────────────
+
+/** ISO week key (YYYY-Www) for the device's local date. */
+export const getMissionWeekKey = (date: Date = new Date()): string => {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+  const isoYear = d.getFullYear();
+  const yearStart = new Date(isoYear, 0, 1);
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${isoYear}-W${String(weekNo).padStart(2, '0')}`;
+};
+
+/**
+ * Collect all weekly mission templates from the user's active pools.
+ * Returns only templates with duration: 'weekly'.
+ */
+export const generateWeeklyMissions = (params: MissionGenerationParams): Mission[] => {
+  const { goal, weaknesses, date = new Date(), onboardingDate, streak = 0 } = params;
+  const dayOfYear = getDayOfYear(date);
+  const daysSinceOnboarding = onboardingDate
+    ? Math.max(0, Math.floor((date.getTime() - new Date(onboardingDate).getTime()) / 86_400_000))
+    : 0;
+  const tier = getDifficultyTier(daysSinceOnboarding);
+  const weekKey = getMissionWeekKey(date);
+
+  const weeklyTemplates: { template: MissionTemplate; slot: MissionSlot }[] = [];
+
+  // Scan weakness pools for weekly missions
+  const validWeaknesses = weaknesses.filter((w) => WEAKNESS_MISSIONS[w]);
+  for (const wk of validWeaknesses) {
+    for (const t of WEAKNESS_MISSIONS[wk]) {
+      if (t.duration === 'weekly') weeklyTemplates.push({ template: t, slot: 'weakness' });
+    }
+  }
+  // Fallback if no weaknesses selected
+  if (validWeaknesses.length === 0) {
+    for (const t of (WEAKNESS_MISSIONS['I lack daily consistency'] ?? [])) {
+      if (t.duration === 'weekly') weeklyTemplates.push({ template: t, slot: 'weakness' });
+    }
+  }
+
+  // Scan goal pool
+  const goalPool = GOAL_MISSIONS[goal] ?? GOAL_MISSIONS['Increase discipline & self-control'];
+  for (const t of goalPool) {
+    if (t.duration === 'weekly') weeklyTemplates.push({ template: t, slot: 'goal' });
+  }
+
+  return weeklyTemplates.map((entry, i) => {
+    const m = buildMission(entry.template, entry.slot, tier, streak, dayOfYear, 100 + i);
+    return {
+      ...m,
+      id: `weekly_${weekKey}_${hashStr(entry.template.title)}_${i}`,
+      progress: 0,
+    };
+  });
 };
 
 // ─── Legacy compat wrapper (used by MissionsProvider before migration) ───

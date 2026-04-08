@@ -7,26 +7,8 @@ import {
   StyleSheet,
   SafeAreaView,
 } from 'react-native';
-
-const Colors = {
-  background: '#0E1116',
-  backgroundSecondary: '#151A21',
-  surface: '#2C3440',
-  primary: '#3A66FF',
-  accent: '#00C2FF',
-  textPrimary: '#FFFFFF',
-  textSecondary: '#9CA3AF',
-  textMuted: '#6B7280',
-  danger: '#FF4757',
-};
-
-const FontFamily = {
-  headingBold: 'InterTight_800ExtraBold',
-  heading: 'InterTight_700Bold',
-  headingSemiBold: 'InterTight_600SemiBold',
-  bodyMedium: 'Inter_500Medium',
-  body: 'Inter_400Regular',
-};
+import { Colors } from '../../../design/colors';
+import { FontFamily } from '../../../design/typography';
 
 export interface StreakRecoveryModalProps {
   visible: boolean;
@@ -64,7 +46,7 @@ export const StreakRecoveryModal: React.FC<StreakRecoveryModalProps> = ({
             {/* Recoveries Remaining */}
             <View style={styles.recoveryInfo}>
               <Text style={styles.recoveryText}>
-                {recoveriesRemaining} recovery remaining this week
+                {recoveriesRemaining} {recoveriesRemaining === 1 ? 'recovery' : 'recoveries'} remaining this week
               </Text>
             </View>
 

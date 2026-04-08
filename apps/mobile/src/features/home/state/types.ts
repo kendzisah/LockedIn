@@ -41,6 +41,9 @@ export interface SessionState {
 
   // ── Daily goal ──
   dailyGoalMetDate: DayKey | null;
+
+  // ── Weekly completion history (day keys where daily goal was met) ──
+  weekCompletedDays: DayKey[];
 }
 
 /** Subset of state that gets persisted to AsyncStorage */
@@ -67,6 +70,7 @@ export interface PersistedSessionState {
   dailyFocusedMinutes?: number;
   dailyFocusDate?: DayKey | null;
   dailyGoalMetDate?: DayKey | null;
+  weekCompletedDays?: DayKey[];
 
   // Legacy migration fields
   startDayKey?: DayKey | null;

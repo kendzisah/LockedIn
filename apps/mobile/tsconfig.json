@@ -1,7 +1,9 @@
 {
-  "extends": ["expo/tsconfig.base", "../../tsconfig.base.json"],
+  "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
     "paths": {
       "@lockedin/shared-types": ["../../packages/shared-types/src"],
       "@lockedin/supabase-client": ["../../packages/supabase-client/src"]

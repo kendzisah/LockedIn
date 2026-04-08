@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
 export type MemberRowProps = {
   rank: number;
   username: string;
+  avatarUrl?: string | null;
   focusMinutes: number;
   missionsDone: number;
   streakDays: number;
@@ -37,6 +38,7 @@ function rankIcon(rank: number): string | null {
 const MemberRow: React.FC<MemberRowProps> = ({
   rank,
   username,
+  avatarUrl,
   focusMinutes,
   missionsDone,
   streakDays,
@@ -68,7 +70,11 @@ const MemberRow: React.FC<MemberRowProps> = ({
 
       {/* Avatar + Name row */}
       <View style={[styles.avatarCircle, isCurrentUser && styles.avatarCircleCurrent]}>
-        <Text style={styles.avatarLetter}>{initial}</Text>
+        {avatarUrl ? (
+          <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+        ) : (
+          <Text style={styles.avatarLetter}>{initial}</Text>
+        )}
       </View>
 
       <View style={styles.info}>
@@ -154,6 +160,11 @@ const styles = StyleSheet.create({
   avatarCircleCurrent: {
     borderColor: 'rgba(58,102,255,0.3)',
     backgroundColor: 'rgba(58,102,255,0.1)',
+  },
+  avatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
   },
   avatarLetter: {
     fontFamily: FontFamily.headingSemiBold,
