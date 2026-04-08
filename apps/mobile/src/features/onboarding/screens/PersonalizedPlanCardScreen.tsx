@@ -260,16 +260,10 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
               const subscribed = await showPaywall();
               if (subscribed) {
                 Analytics.track('Subscription Started', { source: 'onboarding' });
-                Analytics.trackAF('af_subscribe', { af_revenue: '0', af_currency: 'USD', af_content_id: 'paywall_onboarding' });
                 Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
                   continueToAccountPrompt(true);
                 });
               } else {
-                Analytics.trackAF('paywall_dismiss', {
-                  source: 'onboarding',
-                  goal: state.primaryGoal ?? '',
-                  daily_commitment: String(state.dailyMinutes ?? ''),
-                });
                 Analytics.track('Paywall Dismissed', { source: 'onboarding' });
               }
             }}
@@ -306,11 +300,6 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
           <TouchableOpacity
             onPress={() => {
               Analytics.track('Paywall Skipped', { source: 'onboarding' });
-              Analytics.trackAF('paywall_dismiss', {
-                source: 'onboarding',
-                goal: state.primaryGoal ?? '',
-                daily_commitment: String(state.dailyMinutes ?? ''),
-              });
               continueToAccountPrompt(false);
             }}
             activeOpacity={0.7}

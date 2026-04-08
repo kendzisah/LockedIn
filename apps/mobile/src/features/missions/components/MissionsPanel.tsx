@@ -34,7 +34,7 @@ export const MissionsPanel: React.FC<MissionsPanelProps> = ({ showScrollView = f
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.title}>Daily Missions</Text>
+          <Text style={styles.title}>Missions</Text>
           {lockedInToday && <Text style={styles.flameIcon}>🔥</Text>}
         </View>
 

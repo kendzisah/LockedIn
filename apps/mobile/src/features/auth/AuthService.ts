@@ -23,6 +23,10 @@ export interface AuthError {
   code?: string;
 }
 
+/** User-facing copy for Apple sheet dismiss / cancel (avoid exposing raw system strings). */
+export const MSG_APPLE_AUTH_FAILED =
+  'There was a problem signing you in. Try again';
+
 /** Shown when email is already tied to another account (sign-up or guest→email link). */
 const MSG_EMAIL_ALREADY_REGISTERED =
   'This email already has an account. Use Sign In with your password, or open Sign In and tap Forgot password to reset it.';
@@ -30,6 +34,15 @@ const MSG_EMAIL_ALREADY_REGISTERED =
 /** After sign-up / guest→email, Supabase often returns invalid_credentials until the address is verified. */
 const MSG_CONFIRM_EMAIL_TO_FINISH =
   'Check your email and open the confirmation link to finish setting up your account. After that, sign in with this email and password.';
+
+function isAppleUserCancellation(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as { code?: string }).code;
+  if (code === 'ERR_CANCELED') return true;
+  const m = err.message.toLowerCase();
+  if (m.includes('cancel') || m.includes('canceled') || m.includes('cancelled')) return true;
+  return false;
+}
 
 function isLikelyAwaitingEmailVerification(
   userHint: User | null | undefined,
@@ -331,15 +344,11 @@ class AuthServiceImpl {
         error: null,
       };
     } catch (err) {
-      // Handle user cancellation
-      if (
-        err instanceof Error &&
-        (err as any).code === 'ERR_CANCELED'
-      ) {
+      if (isAppleUserCancellation(err)) {
         return {
           user: null,
           session: null,
-          error: { message: 'Apple Sign-In cancelled' },
+          error: { message: MSG_APPLE_AUTH_FAILED, code: 'ERR_CANCELED' },
         };
       }
 

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import Purchases from 'react-native-purchases';
+import Purchases, { type CustomerInfo } from 'react-native-purchases';
 import RevenueCatUI from 'react-native-purchases-ui';
 import { SubscriptionService } from '../../services/SubscriptionService';
 import { Analytics } from '../../services/AnalyticsService';
@@ -23,6 +23,8 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isLoading, setIsLoading] = useState(true);
   const mounted = useRef(true);
   const loggedInUserIdRef = useRef<string | null>(null);
+  const lastPeriodTypeRef = useRef<string | null>(null);
+  const prevCustomerInfoRef = useRef<CustomerInfo | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -44,12 +46,42 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch {}
 
       removeListener = SubscriptionService.addListener((info) => {
-        if (mounted.current) {
-          setIsSubscribed(SubscriptionService.hasEntitlement(info));
+        if (!mounted.current) return;
+        const wasSubscribed = SubscriptionService.hasEntitlement(prevCustomerInfoRef.current);
+        const entitled = SubscriptionService.hasEntitlement(info);
+        setIsSubscribed(entitled);
+
+        if (entitled) {
+          // Detect trial → paid conversion
+          const entitlement = info.entitlements.active[SubscriptionService.ENTITLEMENT_ID];
+          const currentPeriod = entitlement?.periodType ?? null;
+          const productId = entitlement?.productIdentifier ?? 'unknown';
+          if (lastPeriodTypeRef.current === 'TRIAL' && currentPeriod === 'NORMAL') {
+            Analytics.trackAF('af_subscribe', { af_content_id: productId });
+            Analytics.track('Subscription Converted', { product_id: productId, from_trial: true });
+          }
+          lastPeriodTypeRef.current = currentPeriod;
+        } else if (wasSubscribed && !entitled) {
+          // Lost entitlement — subscription expired or cancelled
+          const prevEntitlement = prevCustomerInfoRef.current?.entitlements.all?.[SubscriptionService.ENTITLEMENT_ID];
+          const wasTrial = lastPeriodTypeRef.current === 'TRIAL';
+          Analytics.track('Subscription Expired', {
+            product_id: prevEntitlement?.productIdentifier ?? 'unknown',
+            was_trial: wasTrial,
+          });
+          lastPeriodTypeRef.current = null;
         }
+
+        prevCustomerInfoRef.current = info;
       });
 
-      const subscribed = await SubscriptionService.checkSubscription();
+      const initInfo = await Purchases.getCustomerInfo();
+      prevCustomerInfoRef.current = initInfo;
+      const subscribed = SubscriptionService.hasEntitlement(initInfo);
+      if (subscribed) {
+        const ent = initInfo.entitlements.active[SubscriptionService.ENTITLEMENT_ID];
+        lastPeriodTypeRef.current = ent?.periodType ?? null;
+      }
       if (mounted.current) {
         setIsSubscribed(subscribed);
         setIsLoading(false);
@@ -101,17 +133,33 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const showPaywall = useCallback(async (): Promise<boolean> => {
     try {
+      const wasPreviouslySubscribed = isSubscribed;
       console.log('[SubscriptionProvider] Presenting RevenueCat paywall...');
       await RevenueCatUI.presentPaywall();
       console.log('[SubscriptionProvider] Paywall dismissed, checking subscription...');
-      const subscribed = await SubscriptionService.checkSubscription();
+      const info = await Purchases.getCustomerInfo();
+      const subscribed = SubscriptionService.hasEntitlement(info);
       if (mounted.current) setIsSubscribed(subscribed);
+
+      // Track trial vs paid subscription for new subscribers only
+      if (subscribed && !wasPreviouslySubscribed) {
+        const entitlement = info.entitlements.active[SubscriptionService.ENTITLEMENT_ID];
+        const productId = entitlement?.productIdentifier ?? 'unknown';
+        if (entitlement?.periodType === 'TRIAL') {
+          Analytics.trackAF('af_start_trial', { af_content_id: productId });
+          Analytics.track('Trial Started', { product_id: productId });
+        } else {
+          Analytics.trackAF('af_subscribe', { af_content_id: productId });
+          Analytics.track('Subscription Converted', { product_id: productId, from_trial: false });
+        }
+      }
+
       return subscribed;
     } catch (e) {
       console.warn('[SubscriptionProvider] showPaywall failed:', e);
       return false;
     }
-  }, []);
+  }, [isSubscribed]);
 
   const restorePurchases = useCallback(async (): Promise<boolean> => {
     try {

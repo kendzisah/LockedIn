@@ -47,8 +47,15 @@ const LEVEL_COLORS: Record<string, string> = {
 };
 
 const MissionsTab: React.FC = () => {
-  const { missions, completedCount, dailyXP, totalXP, completeMission, lockedInToday } =
-    useMissions();
+  const {
+    missions,
+    weeklyMissions,
+    completedCount,
+    dailyXP,
+    totalXP,
+    completeMission,
+    lockedInToday,
+  } = useMissions();
 
   useEffect(() => {
     if (lockedInToday) {
@@ -77,7 +84,7 @@ const MissionsTab: React.FC = () => {
           contentContainerStyle={styles.scroll}
         >
           {/* Header */}
-          <Text style={styles.heading}>Daily Missions</Text>
+          <Text style={styles.heading}>Missions</Text>
           <Text style={styles.subheading}>
             Complete missions to earn XP and rank up
           </Text>
@@ -149,6 +156,21 @@ const MissionsTab: React.FC = () => {
               <MissionCard key={m.id} mission={m} onComplete={completeMission} />
             ))}
           </View>
+
+          {/* Weekly challenges (same data as MissionsPanel — was missing from this tab) */}
+          {weeklyMissions.length > 0 && (
+            <>
+              <View style={styles.weeklySectionHeader}>
+                <Ionicons name="calendar-outline" size={16} color={Colors.accent} />
+                <Text style={styles.weeklySectionTitle}>Weekly Challenges</Text>
+              </View>
+              <View style={styles.missionList}>
+                {weeklyMissions.map((m) => (
+                  <MissionCard key={m.id} mission={m} onComplete={completeMission} />
+                ))}
+              </View>
+            </>
+          )}
 
           {/* Gym check-in bonus */}
           {showGymCard && (
@@ -328,6 +350,19 @@ const styles = StyleSheet.create({
   /* Mission list */
   missionList: {
     gap: 10,
+  },
+
+  weeklySectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 14,
+  },
+  weeklySectionTitle: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 16,
+    color: Colors.textPrimary,
   },
 
   /* Bonus divider */

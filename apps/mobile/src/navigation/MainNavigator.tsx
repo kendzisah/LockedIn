@@ -1,8 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import TabNavigator from './TabNavigator';
@@ -18,6 +16,7 @@ import CreateCrewScreen from '../features/leaderboard/screens/CreateCrewScreen';
 import JoinCrewScreen from '../features/leaderboard/screens/JoinCrewScreen';
 import ScrollPicker from '../features/home/components/ScrollPicker';
 import type { MainStackParamList } from '../types/navigation';
+import { rootNavigationRef } from './rootNavigationRef';
 import { Colors } from '../design/colors';
 import { FontFamily } from '../design/typography';
 import { useSubscription } from '../features/subscription/SubscriptionProvider';
@@ -145,22 +144,26 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
   onHideCustomTime,
   onClose,
 }) => {
-  const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const { isSubscribed } = useSubscription();
   const [pressedOption, setPressedOption] = useState<number | null>(null);
 
   const handleSelect = useCallback((minutes: number) => {
-    // Navigate first while the component is still mounted, then close the modal.
+    if (!rootNavigationRef.isReady()) return;
+    // Modal is mounted outside the inner stack; use container ref + nested Main routes
+    // (same pattern as App.tsx notification deep links).
     if (!isSubscribed) {
-      navigation.navigate('PaywallOffer');
+      rootNavigationRef.navigate('Main', { screen: 'PaywallOffer' });
       onClose();
       return;
     }
     Analytics.track('Lock In Started', { duration_minutes: minutes });
     LockModeService.beginSession();
-    navigation.navigate('ExecutionBlock', { durationMinutes: minutes });
+    rootNavigationRef.navigate('Main', {
+      screen: 'ExecutionBlock',
+      params: { durationMinutes: minutes },
+    });
     onClose();
-  }, [isSubscribed, navigation, onClose]);
+  }, [isSubscribed, onClose]);
 
   const formatDuration = (mins: number): { value: string; label: string } =>
     mins >= 60

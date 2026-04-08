@@ -25,7 +25,7 @@ import * as StoreReview from 'expo-store-review';
 import Constants from 'expo-constants';
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { User } from '@supabase/supabase-js';
 import type { MainStackParamList } from '../../../types/navigation';
@@ -37,6 +37,7 @@ import { useOnboarding } from '../../onboarding/state/OnboardingProvider';
 import { useSubscription } from '../../subscription/SubscriptionProvider';
 import { useMissions } from '../../missions/MissionsProvider';
 import { SupabaseService } from '../../../services/SupabaseService';
+import { LockModeService } from '../../../services/LockModeService';
 import {
   KEY_NOTIF_USER_DISABLED,
   NotificationService,
@@ -97,6 +98,7 @@ const SettingsScreen: React.FC = () => {
   const [hasCrew, setHasCrew] = useState(false);
   const [restoreErr, setRestoreErr] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [blockedAppCount, setBlockedAppCount] = useState(0);
 
   const [sheetDaily, setSheetDaily] = useState(false);
   const [sheetGoal, setSheetGoal] = useState(false);
@@ -132,21 +134,38 @@ const SettingsScreen: React.FC = () => {
     return () => sub.remove();
   }, [refreshNotifPrefs]);
 
-  useEffect(() => {
-    if (!user?.id || isAnonymous) return;
-    (async () => {
-      const client = SupabaseService.getClient();
-      const uid = SupabaseService.getCurrentUserId();
-      if (!client || !uid) return;
-      const { data } = await client
-        .from('profiles')
-        .select('display_name, avatar_url')
-        .eq('id', uid)
-        .maybeSingle();
-      if (data?.display_name) setDisplayName(String(data.display_name));
-      if (data?.avatar_url) setAvatarUrl(String(data.avatar_url));
-    })();
-  }, [user?.id, isAnonymous]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!user?.id || isAnonymous) return;
+      (async () => {
+        const client = SupabaseService.getClient();
+        const uid = SupabaseService.getCurrentUserId();
+        if (!client || !uid) return;
+        const { data } = await client
+          .from('profiles')
+          .select('display_name, avatar_url')
+          .eq('id', uid)
+          .maybeSingle();
+        if (data?.display_name) setDisplayName(String(data.display_name));
+        if (data?.avatar_url) setAvatarUrl(String(data.avatar_url));
+      })();
+      LockModeService.getSelectedAppCount().then(setBlockedAppCount).catch(() => {});
+    }, [user?.id, isAnonymous]),
+  );
+
+  const [loadingAppPicker, setLoadingAppPicker] = useState(false);
+
+  const handleBlockedApps = useCallback(async () => {
+    setLoadingAppPicker(true);
+    try {
+      const count = await LockModeService.showAppPicker();
+      setBlockedAppCount(count);
+    } catch {
+      // picker unavailable (e.g. Screen Time not authorized)
+    } finally {
+      setLoadingAppPicker(false);
+    }
+  }, []);
 
   const pushMasterOn =
     permStatus === 'granted' && !userDisabledPush;
@@ -296,6 +315,13 @@ const SettingsScreen: React.FC = () => {
               label="Focus areas"
               value={`${weaknesses.length} selected`}
               onPress={() => obHydrated && setSheetWeak(true)}
+            />
+            <SettingsRow
+              icon="block"
+              label="Blocked apps"
+              value={loadingAppPicker ? 'Loading…' : blockedAppCount > 0 ? `${blockedAppCount} app${blockedAppCount === 1 ? '' : 's'}` : 'None'}
+              onPress={handleBlockedApps}
+              disabled={loadingAppPicker}
             />
           </SettingsSection>
 

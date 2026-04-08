@@ -24,13 +24,16 @@ import { getStreakTierInfo, getFlameColorFilters } from '../../design/streakTier
 import { CrewService } from '../leaderboard/CrewService';
 import { NotificationService } from '../../services/NotificationService';
 import { Analytics } from '../../services/AnalyticsService';
-import { recordActiveDay } from '../missions/MissionsProvider';
+import { recordActiveDay, useMissions } from '../missions/MissionsProvider';
+import { useSession } from './state/SessionProvider';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'SessionComplete'>;
 
 const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
   const { phase, durationMinutes, streak } = route.params;
   const [dismissed, setDismissed] = useState(false);
+  const { checkAutoComplete } = useMissions();
+  const { state: sessionState } = useSession();
 
   const message = useRef(getCompletionMessage(phase)).current;
   const checkpoint = useRef(getStreakCheckpoint(streak)).current;
@@ -52,9 +55,17 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
   }, [streak]);
 
   useEffect(() => {
-    Analytics.track('Execution Block Completed', {
+    Analytics.track('Session Complete Viewed', {
       duration_minutes: durationMinutes,
       streak,
+    });
+
+    // Auto-complete eligible missions based on session data
+    checkAutoComplete({
+      durationMinutes,
+      dailyFocusedMinutes: sessionState.dailyFocusedMinutes,
+      streak,
+      dailyGoalMet: sessionState.dailyGoalMetDate !== null,
     });
 
     // Record this as an active day for weekly mission progress
@@ -69,11 +80,17 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
         };
         await CrewService.updateWeeklyStats(updated);
         const latest = await CrewService.getWeeklyStats();
-        await CrewService.submitScoreToAllCrews(
+
+        const result = await CrewService.completeMissionServerSide(
+          undefined,
           latest.focus_minutes,
           latest.missions_done,
           latest.streak_days,
         );
+
+        if (!result.success) {
+          console.warn('[SessionComplete] Server score submission failed:', result.error);
+        }
 
         Analytics.track('Crew Score Submitted', {
           total_score: latest.focus_minutes * 2 + latest.missions_done * 15 + latest.streak_days * 10,
