@@ -301,7 +301,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     prevExecBlocks.current = state.lifetimeExecutionBlocks;
   }, [isHydrated, state.lifetimeExecutionBlocks, state.lifetimeExecutionMinutes]);
 
-  // ── AppsFlyer: first session activation ──
+  // ── AppsFlyer: first program day completed (tutorial completion is home guide dismiss) ──
   useEffect(() => {
     if (!isHydrated || state.maxCompletedDay < 1) return;
 
@@ -309,9 +309,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         const sent = await AsyncStorage.getItem(AF_FIRST_SESSION_KEY);
         if (!sent) {
-          Analytics.trackAF('af_tutorial_completion', {
+          Analytics.trackAF('af_first_lock_in', {
             af_success: '1',
-            af_content_id: 'first_lock_in',
+            af_content_id: 'first_program_day',
           });
           await AsyncStorage.setItem(AF_FIRST_SESSION_KEY, '1');
         }

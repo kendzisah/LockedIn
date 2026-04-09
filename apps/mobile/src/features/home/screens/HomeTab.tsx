@@ -2,7 +2,7 @@
  * HomeTab — Focus + Streak. Glassmorphic dark UI with gradient background.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppState,
   type AppStateStatus,
@@ -44,6 +44,8 @@ import AppGuideSheet, { useAppGuide } from '../../../design/components/AppGuideS
 type NavProp = NativeStackNavigationProp<MainStackParamList>;
 
 const PENDING_SIGNUP_KEY = '@lockedin/pending_signup';
+/** Dedupes AppsFlyer af_tutorial_completion when the home app guide is dismissed. */
+const AF_TUTORIAL_HOME_GUIDE_KEY = '@lockedin/af_tutorial_home_guide_sent';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -67,6 +69,23 @@ const HomeTab: React.FC = () => {
 
   const { isAnonymous } = useAuth();
   const homeGuide = useAppGuide('home');
+
+  const onHomeGuideDismiss = useCallback(() => {
+    homeGuide.onDismiss();
+    void (async () => {
+      try {
+        if (await AsyncStorage.getItem(AF_TUTORIAL_HOME_GUIDE_KEY)) return;
+        Analytics.trackAF('af_tutorial_completion', {
+          af_success: '1',
+          af_content_id: 'home_guide',
+        });
+        await AsyncStorage.setItem(AF_TUTORIAL_HOME_GUIDE_KEY, 'true');
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [homeGuide.onDismiss]);
+
   const [tick, setTick] = useState(0);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [canRecover, setCanRecover] = useState(false);
@@ -263,7 +282,8 @@ const HomeTab: React.FC = () => {
         onDismiss={() => setShowSignUpNudge(false)}
       />
       <AppGuideSheet
-        {...homeGuide}
+        visible={homeGuide.visible}
+        onDismiss={onHomeGuideDismiss}
         title="You are now Locked In."
         subtitle="Here's how your home screen works."
         tips={[
