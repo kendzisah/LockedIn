@@ -308,7 +308,7 @@ const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
           <Text style={styles.label}>Display Name</Text>
           <TextInput
             style={styles.input}
-            placeholder="What should your crew call you?"
+            placeholder="What should your squad call you?"
             placeholderTextColor={Colors.textMuted}
             value={displayName}
             onChangeText={(t) => setDisplayName(t.slice(0, MAX_NAME_LEN))}
@@ -319,7 +319,7 @@ const EditProfileScreen: React.FC<Props> = ({ navigation, route }) => {
           <Text style={styles.counter}>
             {displayName.length}/{MAX_NAME_LEN}
           </Text>
-          <Text style={styles.helper}>Visible to your crew members</Text>
+          <Text style={styles.helper}>Visible to your squad members</Text>
         </View>
       </View>
 

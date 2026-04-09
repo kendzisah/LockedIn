@@ -16,8 +16,10 @@ import { FontFamily } from '../../../design/typography';
 import LeaderboardService, {
   LeaderboardEntry,
   UserRankInfo,
-  TierType,
+  type DisciplineTier,
+  disciplineTierBadgeShort,
 } from '../LeaderboardService';
+import { getCurrentSeasonId } from '../seasonDiscipline';
 import { useAuth } from '../../auth/AuthProvider';
 
 const LeaderboardScreen: React.FC = () => {
@@ -58,29 +60,35 @@ const LeaderboardScreen: React.FC = () => {
     setRefreshing(false);
   };
 
-  const getTierColor = (tier: TierType): string => {
-    switch (tier) {
-      case 'Locked In Elite':
-        return Colors.accent; // Electric Cyan
-      case 'Diamond':
-        return '#B9F2FF';
-      case 'Gold':
-        return '#FFD700';
-      case 'Silver':
-        return '#C0C0C0';
-      case 'Bronze':
-        return '#CD7F32';
-      default:
-        return Colors.textSecondary;
-    }
+  const getTierColor = (tier: DisciplineTier): string => {
+    const map: Record<DisciplineTier, string> = {
+      Recruit: '#6B7280',
+      Soldier: '#9CA3AF',
+      Vet: '#CD7F32',
+      OG: '#C0C0C0',
+      Elite: Colors.primary,
+      Legend: '#FFD700',
+      Goat: '#00D68F',
+      Immortal: '#B9F2FF',
+      'Locked In': Colors.accent,
+    };
+    return map[tier] ?? Colors.textSecondary;
   };
 
-  const TierBadge: React.FC<{ tier: TierType; size?: 'small' | 'large' }> = ({
+  const tierBadgeFg = (tier: DisciplineTier): string => {
+    if (tier === 'Locked In' || tier === 'Legend' || tier === 'Goat' || tier === 'Vet' || tier === 'Immortal') {
+      return Colors.background;
+    }
+    return Colors.textPrimary;
+  };
+
+  const TierBadge: React.FC<{ tier: DisciplineTier; size?: 'small' | 'large' }> = ({
     tier,
     size = 'small',
   }) => {
-    const badgeSize = size === 'small' ? 20 : 32;
-    const fontSize = size === 'small' ? 10 : 14;
+    const label = disciplineTierBadgeShort(tier);
+    const badgeSize = size === 'small' ? 22 : 34;
+    const fontSize = size === 'small' ? (label.length >= 2 ? 8 : 10) : label.length >= 2 ? 11 : 14;
 
     return (
       <View
@@ -88,8 +96,9 @@ const LeaderboardScreen: React.FC = () => {
           styles.tierBadge,
           {
             backgroundColor: getTierColor(tier),
-            width: badgeSize,
+            minWidth: badgeSize,
             height: badgeSize,
+            paddingHorizontal: label.length > 1 ? 3 : 0,
           },
         ]}
       >
@@ -98,14 +107,11 @@ const LeaderboardScreen: React.FC = () => {
             styles.tierBadgeText,
             {
               fontSize,
-              color:
-                tier === 'Locked In Elite' || tier === 'Gold'
-                  ? Colors.background
-                  : Colors.textPrimary,
+              color: tierBadgeFg(tier),
             },
           ]}
         >
-          {tier[0]}
+          {label}
         </Text>
       </View>
     );
@@ -165,9 +171,15 @@ const LeaderboardScreen: React.FC = () => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: Colors.background }]}>
       <View style={styles.header}>
-        <View style={styles.headerTitleContainer}>
-          <MaterialIcons name="emoji-events" size={24} color={Colors.accent} />
-          <Text style={styles.headerTitle}>Discipline Board</Text>
+        <View>
+          <View style={styles.headerTitleContainer}>
+            <MaterialIcons name="emoji-events" size={24} color={Colors.accent} />
+            <Text style={styles.headerTitle}>Discipline Board</Text>
+          </View>
+          <Text style={styles.seasonCaption}>
+            Season {getCurrentSeasonId()} · 90-day seasons (~3 mo). Locked In tier needs top score plus
+            81+ perfect mission days.
+          </Text>
         </View>
       </View>
 
@@ -229,9 +241,10 @@ const LeaderboardScreen: React.FC = () => {
                 size={48}
                 color={Colors.textSecondary}
               />
-              <Text style={styles.emptyStateTitle}>Scores update weekly</Text>
+              <Text style={styles.emptyStateTitle}>No scores this season yet</Text>
               <Text style={styles.emptyStateText}>
-                Check back next Sunday for the leaderboard update
+                The board resets each 90-day season. Complete missions and lock in sessions to climb the
+                ranks.
               </Text>
             </View>
           )}
@@ -275,6 +288,14 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontFamily: FontFamily.headingSemiBold,
     color: Colors.textPrimary,
+  },
+  seasonCaption: {
+    marginTop: 8,
+    paddingRight: 8,
+    fontSize: 12,
+    fontFamily: FontFamily.body,
+    color: Colors.textMuted,
+    lineHeight: 17,
   },
   scrollContent: {
     paddingHorizontal: 16,
@@ -338,9 +359,9 @@ const styles = StyleSheet.create({
   leaderboardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 12,
-    marginBottom: 8,
+    marginBottom: 14,
     backgroundColor: Colors.backgroundSecondary,
     borderRadius: 8,
     gap: 12,

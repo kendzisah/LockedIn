@@ -34,7 +34,7 @@ export const ENV = {
    * Falls back to app scheme if unset.
    */
   SUPABASE_PASSWORD_RESET_REDIRECT:
-    process.env.EXPO_PUBLIC_SUPABASE_PASSWORD_RESET_REDIRECT?.trim() || 'lockedin://auth/reset-password',
+    process.env.EXPO_PUBLIC_SUPABASE_PASSWORD_RESET_REDIRECT?.trim() || 'https://locked-in.co/auth/callback?next=/auth/reset-password',
 
   /** RevenueCat iOS API key */
   REVENUECAT_IOS_API_KEY: requireEnv(

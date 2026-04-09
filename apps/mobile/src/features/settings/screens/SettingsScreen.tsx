@@ -47,6 +47,7 @@ import {
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HAS_ACTIVE_CREW_STORAGE_KEY } from '../../leaderboard/CrewService';
+import AppGuideSheet, { useAppGuide } from '../../../design/components/AppGuideSheet';
 import SettingsSection from '../components/SettingsSection';
 import SettingsRow from '../components/SettingsRow';
 import DailyCommitmentSheet from '../sheets/DailyCommitmentSheet';
@@ -88,6 +89,7 @@ const SettingsScreen: React.FC = () => {
   const { isSubscribed, restorePurchases } = useSubscription();
   const { regenerateTodaysMissions } = useMissions();
 
+  const settingsGuide = useAppGuide('settings');
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [permStatus, setPermStatus] = useState<Notifications.PermissionStatus | null>(null);
@@ -353,7 +355,7 @@ const SettingsScreen: React.FC = () => {
             {hasCrew ? (
               <SettingsRow
                 icon="group"
-                label="Crew notifications"
+                label="Squad notifications"
                 toggle
                 toggleValue={crewNotifs}
                 onToggleChange={(v) => void onToggleCrew(v)}
@@ -538,6 +540,26 @@ const SettingsScreen: React.FC = () => {
         visible={feedbackOpen}
         onClose={() => setFeedbackOpen(false)}
         userEmail={user?.email ?? undefined}
+      />
+      <AppGuideSheet
+        {...settingsGuide}
+        title="Your Profile & Settings"
+        subtitle="Customize your experience."
+        tips={[
+          { icon: 'timer-outline', iconColor: Colors.primary, text: 'Set your daily commitment — the focus minutes you aim for each day.' },
+          {
+            icon: 'flag-outline',
+            iconColor: Colors.accent,
+            text: 'Changing your primary goal or focus areas changes which missions you get.',
+          },
+          {
+            icon: 'layers-outline',
+            iconColor: '#B0A0FF',
+            text: 'During Lock In, choose which apps to block so distractions stay out of reach.',
+          },
+          { icon: 'notifications-outline', iconColor: '#FFC857', text: 'Enable notifications for daily reminders and streak protection alerts.' },
+          { icon: 'person-outline', iconColor: Colors.success, text: 'Create an account to save your progress across devices.' },
+        ]}
       />
     </View>
   );

@@ -54,7 +54,7 @@ const InviteCodeCard: React.FC<InviteCodeCardProps> = ({
     Analytics.track('Crew Invite Shared', { crew_id: crewName, share_method: 'share_sheet' });
     Analytics.trackAF('af_invite', { method: 'crew_invite' });
     Share.share({
-      message: `Join my crew "${crewName}" on Locked In! 🔒\n\nMy invite code: ${inviteCode}\n\nDownload the app and enter the code to compete with me:\n${IOS_APP_STORE_PAGE_URL}`,
+      message: `Join my squad "${crewName}" on Locked In! 🔒\n\nMy invite code: ${inviteCode}\n\nDownload the app and enter the code to compete with me:\n${IOS_APP_STORE_PAGE_URL}`,
     });
   };
 

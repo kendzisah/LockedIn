@@ -23,7 +23,7 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'AccountPrompt'>;
 
 const BENEFITS: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string }[] = [
   { icon: 'sync', label: 'Sync your data across devices' },
-  { icon: 'people', label: 'Compete with friends in Crews' },
+  { icon: 'people', label: 'Compete with friends in Squads' },
   { icon: 'phone-portrait-outline', label: 'Restore your streak if you switch phones' },
   { icon: 'person-circle-outline', label: 'Choose a display name and profile pic' },
 ];

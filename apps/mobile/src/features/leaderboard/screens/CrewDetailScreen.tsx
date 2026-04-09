@@ -140,14 +140,14 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           Analytics.track('Crew Left', { crew_id, was_owner: true });
           await refreshNotificationsAfterCrewChange();
           navigation.goBack();
-        } else Alert.alert('Error', 'Failed to delete crew.');
+        } else Alert.alert('Error', 'Failed to delete squad.');
       } else {
         const ok = await CrewService.leaveCrew(crew_id);
         if (ok) {
           Analytics.track('Crew Left', { crew_id, was_owner: false });
           await refreshNotificationsAfterCrewChange();
           navigation.goBack();
-        } else Alert.alert('Error', 'Failed to leave crew.');
+        } else Alert.alert('Error', 'Failed to leave squad.');
       }
     },
     [crew_id, navigation, refreshNotificationsAfterCrewChange],
@@ -157,7 +157,7 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     (targetUserId: string, username: string) => {
       Alert.alert(
         'Remove Member',
-        `Remove ${username} from this crew? Their scores will be deleted.`,
+        `Remove ${username} from this squad? Their scores will be deleted.`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -181,9 +181,9 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const handleMore = useCallback(() => {
     const options: string[] = ['Share Invite Code'];
     if (isOwner) {
-      options.push('Delete Crew');
+      options.push('Delete Squad');
     } else {
-      options.push('Leave Crew');
+      options.push('Leave Squad');
     }
     options.push('Cancel');
 
@@ -197,12 +197,12 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         async (idx) => {
           if (idx === 0 && details) {
             Share.share({
-              message: `Join my crew "${details.name}" on Locked In! My invite code: ${details.invite_code}`,
+              message: `Join my squad "${details.name}" on Locked In! My invite code: ${details.invite_code}`,
             });
           } else if (idx === 1) {
             if (isOwner) {
               Alert.alert(
-                'Delete Crew',
+                'Delete Squad',
                 `Are you sure you want to delete "${details?.name}"? This cannot be undone.`,
                 [
                   { text: 'Cancel', style: 'cancel' },
@@ -215,7 +215,7 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
               );
             } else {
               Alert.alert(
-                'Leave Crew',
+                'Leave Squad',
                 `Are you sure you want to leave "${details?.name}"?`,
                 [
                   { text: 'Cancel', style: 'cancel' },
@@ -238,17 +238,17 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           onPress: () => {
             if (details) {
               Share.share({
-                message: `Join my crew "${details.name}" on Locked In! My invite code: ${details.invite_code}`,
+                message: `Join my squad "${details.name}" on Locked In! My invite code: ${details.invite_code}`,
               });
             }
           },
         },
         {
-          text: isOwner ? 'Delete Crew' : 'Leave Crew',
+          text: isOwner ? 'Delete Squad' : 'Leave Squad',
           style: 'destructive',
           onPress: () => {
             Alert.alert(
-              isOwner ? 'Delete Crew' : 'Leave Crew',
+              isOwner ? 'Delete Squad' : 'Leave Squad',
               isOwner
                 ? `Are you sure you want to delete "${details?.name}"? This cannot be undone.`
                 : `Are you sure you want to leave "${details?.name}"?`,

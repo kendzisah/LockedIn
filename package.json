@@ -1,7 +1,9 @@
 {
   "private": true,
   "pnpm": {
-    "onlyBuiltDependencies": ["supabase"]
+    "onlyBuiltDependencies": [
+      "supabase"
+    ]
   },
   "scripts": {
     "mobile": "pnpm --filter mobile start",
@@ -16,5 +18,8 @@
   "devDependencies": {
     "concurrently": "^9",
     "supabase": "^2.87.2"
+  },
+  "dependencies": {
+    "caniuse-lite": "^1.0.30001787"
   }
 }

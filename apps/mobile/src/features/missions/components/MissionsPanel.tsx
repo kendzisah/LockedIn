@@ -21,7 +21,15 @@ interface MissionsPanelProps {
 }
 
 export const MissionsPanel: React.FC<MissionsPanelProps> = ({ showScrollView = false }) => {
-  const { missions, weeklyMissions, completedCount, totalXP, lockedInToday, completeMission } = useMissions();
+  const {
+    missions,
+    weeklyMissions,
+    completedCount,
+    totalXP,
+    missionSeasonLabel,
+    lockedInToday,
+    completeMission,
+  } = useMissions();
 
   useEffect(() => {
     if (lockedInToday) {
@@ -79,6 +87,7 @@ export const MissionsPanel: React.FC<MissionsPanelProps> = ({ showScrollView = f
         <View style={styles.xpCounter}>
           <Text style={styles.xpValue}>{totalXP}</Text>
           <Text style={styles.xpLabel}>XP Earned</Text>
+          <Text style={styles.seasonCaption}>{missionSeasonLabel}</Text>
         </View>
 
         {/* LOCKED IN Badge */}
@@ -185,6 +194,12 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.body,
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  seasonCaption: {
+    fontSize: 10,
+    fontFamily: FontFamily.body,
+    color: Colors.textMuted,
+    marginTop: 4,
   },
   lockedInBadge: {
     flexDirection: 'row',

@@ -19,6 +19,7 @@ import CrewCard from '../components/CrewCard';
 import EmptyCrewState from '../components/EmptyCrewState';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import AppGuideSheet, { useAppGuide } from '../../../design/components/AppGuideSheet';
 
 type StackNav = NativeStackNavigationProp<MainStackParamList>;
 
@@ -28,6 +29,7 @@ const CrewListScreen: React.FC = () => {
   const [crews, setCrews] = useState<MyCrewRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const crewGuide = useAppGuide('squads');
   const initialLoadDone = useRef(false);
 
   const fetchCrews = useCallback(async () => {
@@ -35,7 +37,7 @@ const CrewListScreen: React.FC = () => {
     setCrews(data);
   }, []);
 
-  // Refetch whenever the Crews tab gains focus (create/join/leave/detail all use stack modals).
+  // Refetch whenever the Squads tab gains focus (create/join/leave/detail all use stack modals).
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -91,7 +93,7 @@ const CrewListScreen: React.FC = () => {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.title}>Crews</Text>
+            <Text style={styles.title}>Squads</Text>
             <View style={styles.titleAccent}>
               <LinearGradient
                 colors={[Colors.primary, Colors.accent]}
@@ -104,7 +106,7 @@ const CrewListScreen: React.FC = () => {
           <TouchableOpacity
             onPress={() => navigation?.navigate('CreateCrew')}
             hitSlop={10}
-            accessibilityLabel="Create crew"
+            accessibilityLabel="Create squad"
             style={styles.addBtn}
           >
             <Ionicons name="add" size={22} color={Colors.primary} />
@@ -152,11 +154,22 @@ const CrewListScreen: React.FC = () => {
               activeOpacity={0.85}
             >
               <Ionicons name="enter-outline" size={18} color={Colors.accent} />
-              <Text style={styles.joinBtnText}>Join a Crew</Text>
+              <Text style={styles.joinBtnText}>Join a Squad</Text>
             </TouchableOpacity>
           </View>
         )}
       </SafeAreaView>
+
+      <AppGuideSheet
+        {...crewGuide}
+        title="Squads"
+        subtitle="Stay accountable with friends."
+        tips={[
+          { icon: 'people-outline', iconColor: Colors.primary, text: 'Create or join a squad of up to 10 people to compete together.' },
+          { icon: 'trophy-outline', iconColor: '#FFC857', text: 'Leaderboards rank members by focus session minutes.' },
+          { icon: 'add-circle-outline', iconColor: Colors.accent, text: 'Tap + to create your own squad or join an existing one with a code.' },
+        ]}
+      />
     </View>
   );
 };

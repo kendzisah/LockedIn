@@ -57,7 +57,7 @@ const DeleteAccountSheet: React.FC<Props> = ({ visible, onClose, onDeleted }) =>
   return (
     <SettingsSheetShell visible={visible} onClose={onClose} title="Delete your account?">
       <Text style={styles.warn}>
-        This will permanently delete your account, all your data, streak history, crew
+        This will permanently delete your account, all your data, streak history, squad
         memberships, and scores. This cannot be undone.
       </Text>
       <TextInput

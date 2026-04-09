@@ -20,6 +20,12 @@ import {
   MAX_WEEKLY_CHALLENGES,
 } from './MissionEngine';
 import { CrewService } from '../leaderboard/CrewService';
+import { recordPerfectMissionDay } from '../leaderboard/seasonMissionConsistency';
+import {
+  getMissionSeasonLabel,
+  getMissionSeasonNumber,
+  KEY_MISSION_XP_SEASON,
+} from './missionXpSeason';
 import { Analytics } from '../../services/AnalyticsService';
 import { subscribeLogoutCleanup } from '../../services/logoutCleanupBus';
 
@@ -61,7 +67,7 @@ export interface MissionsState {
   completedCount: number;
   /** XP earned today (resets each day). */
   dailyXP: number;
-  /** Cumulative lifetime XP (never resets). */
+  /** Cumulative mission XP for the current global season (resets every 4 calendar months). */
   totalXP: number;
   lockedInToday: boolean;
   /** Weekly missions that persist across the week. */
@@ -79,6 +85,9 @@ export interface SessionCompleteData {
 }
 
 interface MissionsContextType extends MissionsState {
+  /** Global 4-month mission season index (1, 2, …), same for all users. */
+  missionSeasonNumber: number;
+  missionSeasonLabel: string;
   completeMission: (missionId: string) => void;
   generateDailyMissions: (goal: string) => void;
   /** Regenerate today's 3 missions (optional overrides for immediate post-settings update). */
@@ -306,6 +315,31 @@ const loadCumulativeXP = async (): Promise<number> => {
   return raw ? parseInt(raw, 10) || 0 : 0;
 };
 
+/** Aligns stored XP with the current global mission season; resets XP when the season advances. */
+const loadSeasonAwareCumulativeXP = async (): Promise<number> => {
+  const current = String(getMissionSeasonNumber());
+  const [rawXpStr, storedSeason] = await Promise.all([
+    AsyncStorage.getItem(KEY_CUMULATIVE_XP),
+    AsyncStorage.getItem(KEY_MISSION_XP_SEASON),
+  ]);
+  const rawXp = rawXpStr ? parseInt(rawXpStr, 10) || 0 : 0;
+
+  if (storedSeason === null) {
+    await AsyncStorage.setItem(KEY_MISSION_XP_SEASON, current);
+    return rawXp;
+  }
+
+  if (storedSeason !== current) {
+    await AsyncStorage.multiSet([
+      [KEY_MISSION_XP_SEASON, current],
+      [KEY_CUMULATIVE_XP, '0'],
+    ]);
+    return 0;
+  }
+
+  return rawXp;
+};
+
 // ─── Provider ───────────────────────────────────────────
 
 interface ProviderProps {
@@ -326,6 +360,7 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
   const [state, dispatch] = useReducer(missionsReducer, getInitialState());
   const midnightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const crewUpdateQueue = useRef<Promise<void>>(Promise.resolve());
+  const lastMissionSeasonHydrated = useRef(getMissionSeasonNumber());
 
   // Stable key for userWeaknesses to avoid re-creating callbacks on every render
   const weaknessesKey = userWeaknesses.join(',');
@@ -339,7 +374,7 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
         AsyncStorage.getItem(KEY_MISSIONS),
         AsyncStorage.getItem(KEY_DATE),
         AsyncStorage.getItem(KEY_DAILY_PROFILE),
-        loadCumulativeXP(),
+        loadSeasonAwareCumulativeXP(),
       ]);
 
       const today = getLocalDateString();
@@ -431,6 +466,12 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
       }
     } catch (error) {
       console.error('[MissionsProvider] Hydration failed:', error);
+      let cumulativeXP = 0;
+      try {
+        cumulativeXP = await loadSeasonAwareCumulativeXP();
+      } catch {
+        /* keep 0 */
+      }
       const newMissions = generateDailyMissions({
         goal: userGoal,
         weaknesses: stableWeaknesses,
@@ -439,12 +480,36 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
       });
       const today = getLocalDateString();
       dispatch({
-        type: 'GENERATE_DAILY',
-        payload: { missions: newMissions, date: today },
+        type: 'HYDRATE',
+        payload: {
+          missions: newMissions,
+          weeklyMissions: [],
+          weekKey: getMissionWeekKey(),
+          date: today,
+          completedCount: 0,
+          dailyXP: 0,
+          totalXP: cumulativeXP,
+          lockedInToday: false,
+        },
       });
       void persistMissions(newMissions, today, expectedProfile);
+    } finally {
+      lastMissionSeasonHydrated.current = getMissionSeasonNumber();
     }
   }, [userGoal, stableWeaknesses, onboardingDate, streak]);
+
+  // Discipline Board: count days where all daily + weekly missions were completed (season Locked In rule).
+  useEffect(() => {
+    const dailyAll =
+      state.missions.length >= 3 &&
+      getCompletedCount(state.missions) === state.missions.length;
+    const weeklyOk =
+      state.weeklyMissions.length === 0 ||
+      state.weeklyMissions.every((m) => m.completed && !m.failed);
+    if (dailyAll && weeklyOk) {
+      void recordPerfectMissionDay(getLocalDateString());
+    }
+  }, [state.missions, state.weeklyMissions]);
 
   // Initial hydration + re-hydrate when user props change
   useEffect(() => {
@@ -479,7 +544,12 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
       if (next === 'active') {
         const today = getLocalDateString();
         const currentWeekKey = getMissionWeekKey();
-        if (today !== state.date || currentWeekKey !== state.weekKey) {
+        const seasonNow = getMissionSeasonNumber();
+        if (
+          today !== state.date ||
+          currentWeekKey !== state.weekKey ||
+          seasonNow !== lastMissionSeasonHydrated.current
+        ) {
           hydrate();
         }
       }
@@ -496,11 +566,9 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
     }
   }, [state.missions, state.date, userGoal, stableWeaknesses]);
 
-  // Persist cumulative XP on change
+  // Persist cumulative XP on change (including 0 after a season reset)
   useEffect(() => {
-    if (state.totalXP > 0) {
-      persistCumulativeXP(state.totalXP).catch(() => {});
-    }
+    persistCumulativeXP(state.totalXP).catch(() => {});
   }, [state.totalXP]);
 
   // Persist weekly missions on change
@@ -781,6 +849,8 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
 
   const contextValue: MissionsContextType = useMemo(() => ({
     ...state,
+    missionSeasonNumber: getMissionSeasonNumber(),
+    missionSeasonLabel: getMissionSeasonLabel(),
     completeMission,
     generateDailyMissions: generateDailyMissionsAction,
     regenerateTodaysMissions,

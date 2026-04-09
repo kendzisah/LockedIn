@@ -212,15 +212,15 @@ async function readHasActiveCrew(): Promise<boolean> {
 async function readCrewCachedRank(): Promise<{ crew_name: string; rank: number; crew_id?: string }> {
   try {
     const raw = await AsyncStorage.getItem(KEY_CREW_CACHED_RANK);
-    if (!raw) return { crew_name: 'your crew', rank: 1 };
+    if (!raw) return { crew_name: 'your squad', rank: 1 };
     const p = JSON.parse(raw) as { crew_name?: string; rank?: number; crew_id?: string };
     return {
-      crew_name: typeof p.crew_name === 'string' ? p.crew_name : 'your crew',
+      crew_name: typeof p.crew_name === 'string' ? p.crew_name : 'your squad',
       rank: typeof p.rank === 'number' && p.rank > 0 ? p.rank : 1,
       crew_id: typeof p.crew_id === 'string' ? p.crew_id : undefined,
     };
   } catch {
-    return { crew_name: 'your crew', rank: 1 };
+    return { crew_name: 'your squad', rank: 1 };
   }
 }
 
@@ -430,9 +430,9 @@ export class NotificationService {
         await Notifications.scheduleNotificationAsync({
           identifier: ID_MISSION_REMINDER,
           content: {
-            title: useCrewCopy ? 'Your crew is watching.' : 'Unfinished business.',
+            title: useCrewCopy ? 'Your squad is watching.' : 'Unfinished business.',
             body: useCrewCopy
-              ? `${remaining} mission${s} left. Every one counts for your crew score.`
+              ? `${remaining} mission${s} left. Every one counts for your squad score.`
               : `${remaining} mission${s} left today. Don't leave points on the table.`,
             sound: 'default',
             data: {
@@ -449,13 +449,13 @@ export class NotificationService {
         });
       }
 
-      // e. Crew weekly — Sunday 6 PM
+      // e. Squad weekly — Sunday 6 PM
       if (hasCrew && crewNotifOn) {
         const { crew_name, rank, crew_id } = await readCrewCachedRank();
         await Notifications.scheduleNotificationAsync({
           identifier: ID_CREW_WEEKLY,
           content: {
-            title: 'Crew leaderboard resets tomorrow.',
+            title: 'Squad leaderboard resets tomorrow.',
             body: `You're #${rank} in ${crew_name}. Lock in tonight to finish strong.`,
             sound: 'default',
             data: {
@@ -559,7 +559,7 @@ export class NotificationService {
     await cancelById(ID_CLOSE_TO_GOAL);
   }
 
-  /** Refresh weekly crew recap (e.g. after first join). */
+  /** Refresh weekly squad recap (e.g. after first join). */
   static async scheduleCrewReminder(): Promise<void> {
     try {
       if (await readNotifUserDisabled()) return;
@@ -574,7 +574,7 @@ export class NotificationService {
       await Notifications.scheduleNotificationAsync({
         identifier: ID_CREW_WEEKLY,
         content: {
-          title: 'Crew leaderboard resets tomorrow.',
+          title: 'Squad leaderboard resets tomorrow.',
           body: `You're #${rank} in ${crew_name}. Lock in tonight to finish strong.`,
           sound: 'default',
           data: {
@@ -600,7 +600,7 @@ export class NotificationService {
     await cancelById(ID_MISSION_REMINDER);
   }
 
-  /** One-time 24h after first crew; call only when user had no crew before join/create. */
+  /** One-time 24h after first squad; call only when user had no squad before join/create. */
   static async scheduleFirstCrewNudgeIfNeeded(): Promise<void> {
     try {
       if (await readNotifUserDisabled()) return;
@@ -615,7 +615,7 @@ export class NotificationService {
       await Notifications.scheduleNotificationAsync({
         identifier: ID_CREW_FIRST_NUDGE,
         content: {
-          title: 'Your crew is waiting.',
+          title: 'Your squad is waiting.',
           body: "Lock in a session to get on the leaderboard. Don't let them win.",
           sound: 'default',
           data: {

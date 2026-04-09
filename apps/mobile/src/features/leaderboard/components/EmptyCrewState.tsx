@@ -17,9 +17,9 @@ const EmptyCrewState: React.FC<EmptyCrewStateProps> = ({
     <View style={styles.iconWrap}>
       <Ionicons name="people-outline" size={32} color={Colors.primary} />
     </View>
-    <Text style={styles.title}>No crews yet</Text>
+    <Text style={styles.title}>No squads yet</Text>
     <Text style={styles.subtitle}>
-      Create a crew with friends or join one with an invite code to climb the
+      Create a squad with friends or join one with an invite code to climb the
       leaderboard together.
     </Text>
     <View style={styles.buttons}>
@@ -29,7 +29,7 @@ const EmptyCrewState: React.FC<EmptyCrewStateProps> = ({
         activeOpacity={0.85}
       >
         <Ionicons name="add-circle-outline" size={18} color={Colors.textPrimary} />
-        <Text style={styles.btnPrimaryText}>Create a Crew</Text>
+        <Text style={styles.btnPrimaryText}>Create a Squad</Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={styles.btnOutline}

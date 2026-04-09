@@ -118,7 +118,7 @@ const JoinCrewScreen: React.FC<Props> = ({ navigation }) => {
       }, 1200);
     } else {
       triggerShake();
-      setError('Invalid invite code, crew is full, or you\'ve reached the 5 crew limit.');
+      setError('Invalid invite code, squad is full, or you\'ve reached the 5 squad limit.');
     }
   }, [chars, isFull, loading, navigation]);
 
@@ -129,7 +129,7 @@ const JoinCrewScreen: React.FC<Props> = ({ navigation }) => {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Join a Crew</Text>
+        <Text style={styles.headerTitle}>Join a Squad</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -181,7 +181,7 @@ const JoinCrewScreen: React.FC<Props> = ({ navigation }) => {
           {loading ? (
             <ActivityIndicator color={Colors.textPrimary} size="small" />
           ) : (
-            <Text style={styles.joinBtnText}>Join Crew</Text>
+            <Text style={styles.joinBtnText}>Join Squad</Text>
           )}
         </TouchableOpacity>
 

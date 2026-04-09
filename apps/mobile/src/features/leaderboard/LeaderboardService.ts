@@ -1,7 +1,81 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SupabaseService } from '../../services/SupabaseService';
+import { isLockedInMissionEligible } from './seasonMissionConsistency';
 
-export type TierType = 'Bronze' | 'Silver' | 'Gold' | 'Diamond' | 'Locked In Elite';
+/**
+ * Discipline Board tiers (seasonal 0–100 score). Top tier "Locked In" also requires
+ * ≥90% perfect mission days (81/90) in the current 90-day season — see seasonMissionConsistency.
+ */
+export const DISCIPLINE_TIERS = [
+  'Recruit',
+  'Soldier',
+  'Vet',
+  'OG',
+  'Elite',
+  'Legend',
+  'Goat',
+  'Immortal',
+  'Locked In',
+] as const;
+
+export type DisciplineTier = (typeof DISCIPLINE_TIERS)[number];
+
+/** @deprecated Use DisciplineTier; kept for existing imports */
+export type TierType = DisciplineTier;
+
+const LOCKED_IN_SCORE_MIN = 88;
+
+/** Minimum score (0–100) for each non–Locked In tier (ascending). Locked In uses score + mission rule. */
+const SCORE_FLOOR: Record<Exclude<DisciplineTier, 'Locked In'>, number> = {
+  Recruit: 0,
+  Soldier: 11,
+  Vet: 22,
+  OG: 33,
+  Elite: 44,
+  Legend: 55,
+  Goat: 66,
+  Immortal: 77,
+};
+
+/**
+ * Resolve tier from weekly/seasonal performance score. "Locked In" additionally requires
+ * mission consistency in the season (handled by caller via lockedInMissionEligible).
+ */
+/** Short label for the circular tier badge (2 chars max where needed). */
+export function disciplineTierBadgeShort(tier: DisciplineTier): string {
+  const m: Record<DisciplineTier, string> = {
+    Recruit: 'R',
+    Soldier: 'S',
+    Vet: 'V',
+    OG: 'OG',
+    Elite: 'E',
+    Legend: 'Le',
+    Goat: 'G',
+    Immortal: 'Im',
+    'Locked In': 'LI',
+  };
+  return m[tier];
+}
+
+export function resolveDisciplineTier(
+  score: number,
+  lockedInMissionEligible: boolean,
+): DisciplineTier {
+  const s = Math.min(100, Math.max(0, score));
+
+  if (s >= LOCKED_IN_SCORE_MIN && lockedInMissionEligible) {
+    return 'Locked In';
+  }
+
+  if (s >= SCORE_FLOOR.Immortal) return 'Immortal';
+  if (s >= SCORE_FLOOR.Goat) return 'Goat';
+  if (s >= SCORE_FLOOR.Legend) return 'Legend';
+  if (s >= SCORE_FLOOR.Elite) return 'Elite';
+  if (s >= SCORE_FLOOR.OG) return 'OG';
+  if (s >= SCORE_FLOOR.Vet) return 'Vet';
+  if (s >= SCORE_FLOOR.Soldier) return 'Soldier';
+  return 'Recruit';
+}
 
 export interface LeaderboardEntry {
   rank: number;
@@ -9,23 +83,15 @@ export interface LeaderboardEntry {
   username: string;
   score: number;
   grade: string;
-  tier: TierType;
+  tier: DisciplineTier;
 }
 
 export interface UserRankInfo {
   rank: number;
   percentile: number;
-  tier: TierType;
+  tier: DisciplineTier;
   score: number;
 }
-
-const TIER_THRESHOLDS = {
-  'Locked In Elite': 95,
-  Diamond: 80,
-  Gold: 60,
-  Silver: 40,
-  Bronze: 0,
-};
 
 class LeaderboardService {
   private supabase: SupabaseClient | null = null;
@@ -39,44 +105,37 @@ class LeaderboardService {
   }
 
   /**
-   * Determine tier based on score
+   * @deprecated Use resolveDisciplineTier — kept for call sites that only have score.
    */
-  getTier(score: number): TierType {
-    if (score >= 95) return 'Locked In Elite';
-    if (score >= 80) return 'Diamond';
-    if (score >= 60) return 'Gold';
-    if (score >= 40) return 'Silver';
-    return 'Bronze';
+  getTier(score: number): DisciplineTier {
+    return resolveDisciplineTier(score, false);
   }
 
   /**
-   * Submit weekly score to leaderboard
+   * Submit seasonal score to leaderboard (tier should match resolveDisciplineTier on server).
    */
   async submitWeeklyScore(
     userId: string,
     score: number,
-    grade: string
+    grade: string,
+    lockedInMissionEligible?: boolean,
   ): Promise<void> {
     try {
       const client = await this.getSupabaseClient();
-      const tier = this.getTier(score);
+      const tier = resolveDisciplineTier(score, lockedInMissionEligible ?? false);
 
-      // Upsert: update if exists, insert if not
-      const { error } = await client
-        .from('leaderboard')
-        .upsert(
-          {
-            user_id: userId,
-            score,
-            grade,
-            tier,
-            updated_at: new Date().toISOString(),
-          },
-          {
-            onConflict: 'user_id',
-          }
-        )
-        .select();
+      const { error } = await client.from('leaderboard').upsert(
+        {
+          user_id: userId,
+          score,
+          grade,
+          tier,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: 'user_id',
+        },
+      );
 
       if (error) {
         throw error;
@@ -87,9 +146,6 @@ class LeaderboardService {
     }
   }
 
-  /**
-   * Get top leaderboard entries
-   */
   async getLeaderboard(limit: number = 50): Promise<LeaderboardEntry[]> {
     try {
       const client = await this.getSupabaseClient();
@@ -104,29 +160,29 @@ class LeaderboardService {
         throw error;
       }
 
-      // Map to LeaderboardEntry with rank
-      return (data || []).map((entry, index) => ({
-        rank: index + 1,
-        user_id: entry.user_id,
-        username: `User ${entry.user_id.substring(0, 8)}`, // Anonymous username
-        score: entry.score,
-        grade: entry.grade,
-        tier: entry.tier as TierType,
-      }));
+      return (data || []).map((entry, index) => {
+        const score = Number(entry.score);
+        return {
+          rank: index + 1,
+          user_id: entry.user_id,
+          username: `User ${entry.user_id.substring(0, 8)}`,
+          score,
+          grade: entry.grade,
+          // Other users: score only (Locked In requires per-user mission data not on leaderboard rows yet).
+          tier: resolveDisciplineTier(score, false),
+        };
+      });
     } catch (error) {
       console.error('[LeaderboardService] Error fetching leaderboard:', error);
       return [];
     }
   }
 
-  /**
-   * Get user's rank and percentile
-   */
   async getUserRank(userId: string): Promise<UserRankInfo> {
     try {
       const client = await this.getSupabaseClient();
+      const lockedInEligible = await isLockedInMissionEligible();
 
-      // Get user's score
       const { data: userData, error: userError } = await client
         .from('leaderboard')
         .select('score, grade, tier')
@@ -138,22 +194,23 @@ class LeaderboardService {
         return {
           rank: 0,
           percentile: 0,
-          tier: 'Bronze',
+          tier: 'Recruit',
           score: 0,
         };
       }
 
-      // Count how many users have a higher score
+      const score = Number(userData.score);
+      const tier = resolveDisciplineTier(score, lockedInEligible);
+
       const { count: higherCount, error: countError } = await client
         .from('leaderboard')
         .select('*', { count: 'exact', head: true })
-        .gt('score', userData.score);
+        .gt('score', score);
 
       if (countError) {
         throw countError;
       }
 
-      // Get total user count for percentile
       const { count: totalCount, error: totalError } = await client
         .from('leaderboard')
         .select('*', { count: 'exact', head: true });
@@ -172,23 +229,20 @@ class LeaderboardService {
       return {
         rank,
         percentile,
-        tier: userData.tier as TierType,
-        score: userData.score,
+        tier,
+        score,
       };
     } catch (error) {
       console.error('[LeaderboardService] Error getting user rank:', error);
       return {
         rank: 0,
         percentile: 0,
-        tier: 'Bronze',
+        tier: 'Recruit',
         score: 0,
       };
     }
   }
 
-  /**
-   * Get total user count
-   */
   async getTotalUsers(): Promise<number> {
     try {
       const client = await this.getSupabaseClient();
@@ -208,12 +262,10 @@ class LeaderboardService {
     }
   }
 
-  /**
-   * Get user's entry
-   */
   async getUserEntry(userId: string): Promise<LeaderboardEntry | null> {
     try {
       const client = await this.getSupabaseClient();
+      const lockedInEligible = await isLockedInMissionEligible();
 
       const { data, error } = await client
         .from('leaderboard')
@@ -226,14 +278,16 @@ class LeaderboardService {
       }
 
       const rankInfo = await this.getUserRank(userId);
+      const score = Number(data.score);
+      const tier = resolveDisciplineTier(score, lockedInEligible);
 
       return {
         rank: rankInfo.rank,
         user_id: userId,
         username: `User ${userId.substring(0, 8)}`,
-        score: data.score,
+        score,
         grade: data.grade,
-        tier: data.tier as TierType,
+        tier,
       };
     } catch (error) {
       console.error('[LeaderboardService] Error getting user entry:', error);
@@ -241,9 +295,6 @@ class LeaderboardService {
     }
   }
 
-  /**
-   * Clear leaderboard (for testing)
-   */
   async clear(): Promise<void> {
     try {
       const client = await this.getSupabaseClient();

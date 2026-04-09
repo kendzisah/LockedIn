@@ -39,6 +39,7 @@ import StreakAtRiskBanner from '../components/StreakAtRiskBanner';
 import { StreakRecoveryModal } from '../../streak/components/StreakRecoveryModal';
 import { useAuth } from '../../auth/AuthProvider';
 import SignUpNudgeSheet from '../../auth/components/SignUpNudgeSheet';
+import AppGuideSheet, { useAppGuide } from '../../../design/components/AppGuideSheet';
 
 type NavProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -65,6 +66,7 @@ const HomeTab: React.FC = () => {
   }, [lockedInToday]);
 
   const { isAnonymous } = useAuth();
+  const homeGuide = useAppGuide('home');
   const [tick, setTick] = useState(0);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [canRecover, setCanRecover] = useState(false);
@@ -259,6 +261,17 @@ const HomeTab: React.FC = () => {
         visible={showSignUpNudge}
         streak={state.consecutiveStreak}
         onDismiss={() => setShowSignUpNudge(false)}
+      />
+      <AppGuideSheet
+        {...homeGuide}
+        title="You are now Locked In."
+        subtitle="Here's how your home screen works."
+        tips={[
+          { icon: 'flame-outline', iconColor: '#FF6B35', text: 'Your streak tracks consecutive days you hit your focus goal. Don\'t lose your streak.' },
+          { icon: 'radio-button-on-outline', iconColor: Colors.primary, text: 'The focus ring shows today\'s progress toward your daily commitment.' },
+          { icon: 'calendar-outline', iconColor: Colors.accent, text: 'Weekly Calendar shows your activity across the week at a glance.' },
+          { icon: 'lock-closed-outline', iconColor: Colors.primary, text: 'Tap the Lock In button to start a focus session and block distractions.' },
+        ]}
       />
     </View>
   );

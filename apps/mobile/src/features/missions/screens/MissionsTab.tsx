@@ -14,18 +14,33 @@ import GymCheckInCard from '../../gym/components/GymCheckInCard';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { NotificationService } from '../../../services/NotificationService';
+import AppGuideSheet, { useAppGuide } from '../../../design/components/AppGuideSheet';
+import { DISCIPLINE_TIERS, type DisciplineTier } from '../../leaderboard/LeaderboardService';
 
-const XP_LEVELS = [
-  { name: 'Apprentice', threshold: 0 },
-  { name: 'Warrior', threshold: 200 },
-  { name: 'Gladiator', threshold: 500 },
-  { name: 'Elite', threshold: 1000 },
-  { name: 'Legend', threshold: 2000 },
-];
+/**
+ * Season mission XP thresholds — same rank names as the Discipline Board.
+ * Tuned for ~50–70 XP/day when clearing dailies; XP resets each global season (~4 months).
+ */
+const MISSION_XP_THRESHOLD: Record<DisciplineTier, number> = {
+  Recruit: 0,
+  Soldier: 200,
+  Vet: 450,
+  OG: 700,
+  Elite: 1000,
+  Legend: 1350,
+  Goat: 1750,
+  Immortal: 2200,
+  'Locked In': 2800,
+};
+
+const XP_LEVELS: { name: DisciplineTier; threshold: number }[] = DISCIPLINE_TIERS.map((name) => ({
+  name,
+  threshold: MISSION_XP_THRESHOLD[name],
+}));
 
 function getLevelInfo(xp: number) {
   let current = XP_LEVELS[0];
-  let next: typeof current | null = XP_LEVELS[1];
+  let next: (typeof XP_LEVELS)[number] | null = XP_LEVELS[1];
   for (let i = XP_LEVELS.length - 1; i >= 0; i--) {
     if (xp >= XP_LEVELS[i].threshold) {
       current = XP_LEVELS[i];
@@ -33,17 +48,24 @@ function getLevelInfo(xp: number) {
       break;
     }
   }
-  const nextThreshold = next ? next.threshold : current.threshold + 1000;
-  const progress = (xp - current.threshold) / (nextThreshold - current.threshold);
-  return { level: current.name, xp, nextThreshold, progress: Math.min(1, progress) };
+  const isMax = next === null;
+  const nextThreshold = next ? next.threshold : current.threshold;
+  const progress = next
+    ? Math.min(1, (xp - current.threshold) / (next.threshold - current.threshold))
+    : 1;
+  return { level: current.name, xp, nextThreshold, progress, isMax };
 }
 
-const LEVEL_COLORS: Record<string, string> = {
-  Apprentice: Colors.accent,
-  Warrior: Colors.primary,
-  Gladiator: '#FFC857',
+const LEVEL_COLORS: Record<DisciplineTier, string> = {
+  Recruit: '#6B7280',
+  Soldier: '#9CA3AF',
+  Vet: '#CD7F32',
+  OG: '#C0C0C0',
   Elite: '#B0A0FF',
-  Legend: '#FF6B35',
+  Legend: '#FFD700',
+  Goat: '#00D68F',
+  Immortal: '#B9F2FF',
+  'Locked In': Colors.accent,
 };
 
 const MissionsTab: React.FC = () => {
@@ -53,6 +75,7 @@ const MissionsTab: React.FC = () => {
     completedCount,
     dailyXP,
     totalXP,
+    missionSeasonLabel,
     completeMission,
     lockedInToday,
   } = useMissions();
@@ -64,6 +87,7 @@ const MissionsTab: React.FC = () => {
   }, [lockedInToday]);
   const { state: onboardingState } = useOnboarding();
   const showGymCard = onboardingState.primaryGoal === 'Improve my physique';
+  const missionsGuide = useAppGuide('missions');
 
   const level = getLevelInfo(totalXP);
   const accentColor = LEVEL_COLORS[level.level] ?? Colors.accent;
@@ -86,7 +110,7 @@ const MissionsTab: React.FC = () => {
           {/* Header */}
           <Text style={styles.heading}>Missions</Text>
           <Text style={styles.subheading}>
-            Complete missions to earn XP and rank up
+            {missionSeasonLabel} · Complete missions to earn XP and rank up
           </Text>
 
           {/* XP Progress Card */}
@@ -101,7 +125,12 @@ const MissionsTab: React.FC = () => {
               </View>
               <Text style={styles.xpCount}>
                 <Text style={styles.xpCountBold}>{totalXP}</Text>
-                {' / '}{level.nextThreshold} XP
+                {level.isMax ? ' XP · max rank' : (
+                  <>
+                    {' / '}
+                    {level.nextThreshold} XP
+                  </>
+                )}
               </Text>
             </View>
 
@@ -188,6 +217,22 @@ const MissionsTab: React.FC = () => {
           )}
         </ScrollView>
       </SafeAreaView>
+
+      <AppGuideSheet
+        {...missionsGuide}
+        title="Your Missions"
+        subtitle="Complete daily tasks to level up."
+        tips={[
+          { icon: 'flash-outline', iconColor: Colors.accent, text: 'Missions are personalized tasks based on your goals. New ones appear daily.' },
+          {
+            icon: 'shield-outline',
+            iconColor: Colors.primary,
+            text: 'Earn XP to rank up from Recruit through Locked In — same ranks as the Discipline Board. Mission XP resets every four months when a new season starts.',
+          },
+          { icon: 'checkmark-circle-outline', iconColor: Colors.success, text: 'Tap a mission card to mark it complete and collect your XP.' },
+          { icon: 'calendar-outline', iconColor: '#FFC857', text: 'Weekly challenges give bonus XP for sustained effort.' },
+        ]}
+      />
     </View>
   );
 };

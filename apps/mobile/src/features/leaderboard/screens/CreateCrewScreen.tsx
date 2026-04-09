@@ -55,7 +55,7 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
       })();
       navigation.replace('CrewDetail', { crew_id: result.crew_id });
     } else {
-      setError('Failed to create crew. You may own a maximum of 3 crews.');
+      setError('Failed to create squad. You may own a maximum of 3 squads.');
     }
   };
 
@@ -72,7 +72,7 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
           <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10}>
             <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Create a Crew</Text>
+          <Text style={styles.headerTitle}>Create a Squad</Text>
           <View style={{ width: 24 }} />
         </View>
 
@@ -80,10 +80,10 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
           <View style={styles.gateIcon}>
             <Ionicons name="people" size={48} color={Colors.textMuted} />
           </View>
-          <Text style={styles.gateTitle}>Sign up to create a crew</Text>
+          <Text style={styles.gateTitle}>Sign up to create a squad</Text>
           <Text style={styles.gateSub}>
-            Crew owners need an account so your crew stays safe. You can still
-            join crews as a guest.
+            Squad owners need an account so your squad stays safe. You can still
+            join squads as a guest.
           </Text>
           <TouchableOpacity
             style={styles.createBtn}
@@ -110,12 +110,12 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create a Crew</Text>
+        <Text style={styles.headerTitle}>Create a Squad</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <View style={styles.body}>
-        <Text style={styles.label}>Crew Name</Text>
+        <Text style={styles.label}>Squad Name</Text>
         <TextInput
           style={styles.input}
           value={name}
@@ -138,7 +138,7 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
           {loading ? (
             <ActivityIndicator color={Colors.textPrimary} size="small" />
           ) : (
-            <Text style={styles.createBtnText}>Create Crew</Text>
+            <Text style={styles.createBtnText}>Create Squad</Text>
           )}
         </TouchableOpacity>
 
