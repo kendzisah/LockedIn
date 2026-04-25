@@ -246,16 +246,18 @@ const SettingsScreen: React.FC = () => {
 
   const goalShort = useMemo(() => truncate(primaryGoal, 22), [primaryGoal]);
 
+  const isGuest = isAnonymous || !user;
+
   const profileCard = (
     <Pressable
       style={styles.profileCard}
       onPress={() =>
-        isAnonymous
+        isGuest
           ? navigation?.navigate('SignUp')
           : navigation?.navigate('EditProfile', { source: 'profile' })
       }
     >
-      {isAnonymous ? (
+      {isGuest ? (
         <View style={styles.avatarPlaceholder}>
           <MaterialIcons name="person-outline" size={28} color={Colors.textMuted} />
         </View>
@@ -267,7 +269,7 @@ const SettingsScreen: React.FC = () => {
         </View>
       )}
       <View style={styles.profileText}>
-        {isAnonymous ? (
+        {isGuest ? (
           <>
             <Text style={styles.profileName}>Guest Account</Text>
             <Text style={styles.profileSub}>Sign up to save your progress</Text>
@@ -284,7 +286,7 @@ const SettingsScreen: React.FC = () => {
       <MaterialIcons
         name="chevron-right"
         size={20}
-        color={isAnonymous ? Colors.accent : Colors.textMuted}
+        color={isGuest ? Colors.accent : Colors.textMuted}
       />
     </Pressable>
   );
@@ -414,7 +416,7 @@ const SettingsScreen: React.FC = () => {
           </SettingsSection>
 
           <SettingsSection label="Account">
-            {!isAnonymous ? (
+            {!isGuest ? (
               <>
                 {hasEmailIdentity(user) ? (
                   <SettingsRow

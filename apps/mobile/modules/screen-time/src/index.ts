@@ -9,6 +9,7 @@ interface ScreenTimeNativeModule {
   requestAuthorization(): Promise<string>;
   getAuthorizationStatus(): string;
   showAppPicker(): Promise<number>;
+  beginSession(durationSeconds: number): Promise<boolean>;
   shieldApps(): void;
   removeShield(): void;
   isShielding(): boolean;
@@ -44,6 +45,16 @@ export async function showAppPicker(): Promise<number> {
 export function shieldApps(): void {
   if (!NativeModule) return;
   NativeModule.shieldApps();
+}
+
+/**
+ * Apply the shield and schedule a DeviceActivityMonitor interval ending in
+ * `durationSeconds`. The extension un-shields at interval end even if the
+ * app has been killed. Returns `true` if monitoring was scheduled.
+ */
+export async function beginSession(durationSeconds: number): Promise<boolean> {
+  if (!NativeModule) return false;
+  return NativeModule.beginSession(durationSeconds);
 }
 
 export function removeShield(): void {

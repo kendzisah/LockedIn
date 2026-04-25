@@ -34,7 +34,7 @@ export type TabParamList = {
 export type MainStackParamList = {
   Tabs: NavigatorScreenParams<TabParamList> | undefined;
   PaywallOffer: undefined;
-  ExecutionBlock: { durationMinutes: number };
+  ExecutionBlock: { durationMinutes: number; resumeEndTimestamp?: number };
   SessionComplete: {
     phase: 'execution_block';
     durationMinutes: number;

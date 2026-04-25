@@ -39,6 +39,7 @@ import StreakAtRiskBanner from '../components/StreakAtRiskBanner';
 import { StreakRecoveryModal } from '../../streak/components/StreakRecoveryModal';
 import { useAuth } from '../../auth/AuthProvider';
 import SignUpNudgeSheet from '../../auth/components/SignUpNudgeSheet';
+import * as StoreReview from 'expo-store-review';
 import AppGuideSheet, { useAppGuide } from '../../../design/components/AppGuideSheet';
 
 type NavProp = NativeStackNavigationProp<MainStackParamList>;
@@ -46,6 +47,7 @@ type NavProp = NativeStackNavigationProp<MainStackParamList>;
 const PENDING_SIGNUP_KEY = '@lockedin/pending_signup';
 /** Dedupes AppsFlyer af_tutorial_completion when the home app guide is dismissed. */
 const AF_TUTORIAL_HOME_GUIDE_KEY = '@lockedin/af_tutorial_home_guide_sent';
+const STORE_REVIEW_SHOWN_KEY = '@lockedin/store_review_after_guide';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -82,6 +84,17 @@ const HomeTab: React.FC = () => {
         await AsyncStorage.setItem(AF_TUTORIAL_HOME_GUIDE_KEY, 'true');
       } catch {
         /* ignore */
+      }
+
+      // Prompt for App Store review once, right after the first guide dismiss
+      try {
+        if (await AsyncStorage.getItem(STORE_REVIEW_SHOWN_KEY)) return;
+        if (await StoreReview.hasAction()) {
+          await StoreReview.requestReview();
+        }
+        await AsyncStorage.setItem(STORE_REVIEW_SHOWN_KEY, 'true');
+      } catch {
+        /* StoreReview unavailable */
       }
     })();
   }, [homeGuide.onDismiss]);
@@ -155,9 +168,21 @@ const HomeTab: React.FC = () => {
         const raw = await AsyncStorage.getItem(ACTIVE_EB_KEY);
         if (!raw) return;
         const info = JSON.parse(raw) as { startTimestamp: number; endTimestamp: number; durationMinutes: number };
+        if (Date.now() < info.endTimestamp) {
+          // Session is still active — the app was killed mid-session. iOS has
+          // kept the ManagedSettingsStore shield in place, so route the user
+          // back into the timer so they can see remaining time + hold-to-end.
+          const navState = navigation.getState();
+          const alreadyOnEB = navState?.routes.some((r) => r.name === 'ExecutionBlock');
+          if (alreadyOnEB) return;
+          navigation.navigate('ExecutionBlock', {
+            durationMinutes: info.durationMinutes,
+            resumeEndTimestamp: info.endTimestamp,
+          });
+          return;
+        }
         await LockModeService.endSession();
-        const now = Date.now();
-        const elapsedMs = Math.min(now, info.endTimestamp) - info.startTimestamp;
+        const elapsedMs = info.endTimestamp - info.startTimestamp;
         const elapsedMinutes = Math.ceil(Math.max(0, elapsedMs) / 60_000);
         if (elapsedMinutes >= 1) {
           dispatch({ type: 'COMPLETE_EXECUTION_BLOCK', payload: { durationMinutes: elapsedMinutes } });
@@ -170,7 +195,7 @@ const HomeTab: React.FC = () => {
       if (next === 'active') recoverOrphanedEB();
     });
     return () => sub.remove();
-  }, [isHydrated, dispatch]);
+  }, [isHydrated, dispatch, navigation]);
 
   useEffect(() => {
     if (!isHydrated) return;

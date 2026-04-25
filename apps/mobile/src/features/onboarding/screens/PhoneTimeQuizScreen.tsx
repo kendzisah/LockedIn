@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Easing,
   LayoutChangeEvent,
   PanResponder,
   Platform,
@@ -34,6 +35,8 @@ const PhoneTimeQuizScreen: React.FC<Props> = ({ navigation }) => {
   const { dispatch } = useOnboarding();
   const [hours, setHours] = useState(DEFAULT_HOURS);
   const screenOpacity = useRef(new Animated.Value(0)).current;
+  const insightOpacity = useRef(new Animated.Value(0)).current;
+  const insightVisible = useRef(false);
   const advancingRef = useRef(false);
 
   useEffect(() => {
@@ -43,6 +46,27 @@ const PhoneTimeQuizScreen: React.FC<Props> = ({ navigation }) => {
       useNativeDriver: true,
     }).start();
   }, [screenOpacity]);
+
+  // Fade insight text in/out when hours enters/leaves the 4-7 range
+  useEffect(() => {
+    const shouldShow = hours >= 4 && hours <= 7;
+    if (shouldShow && !insightVisible.current) {
+      insightVisible.current = true;
+      Animated.timing(insightOpacity, {
+        toValue: 1,
+        duration: 500,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    } else if (!shouldShow && insightVisible.current) {
+      insightVisible.current = false;
+      Animated.timing(insightOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [hours, insightOpacity]);
 
   const trackWidth = useRef(0);
   const trackPageX = useRef(0);
@@ -158,6 +182,9 @@ const PhoneTimeQuizScreen: React.FC<Props> = ({ navigation }) => {
         <View style={styles.displayArea}>
           <Text style={styles.bigNumber}>{hours}</Text>
           <Text style={styles.unitLabel}>Hours</Text>
+          <Animated.Text style={[styles.insightText, { opacity: insightOpacity }]}>
+            That's about average for most people
+          </Animated.Text>
         </View>
 
         <View style={styles.sliderRow}>
@@ -244,6 +271,12 @@ const styles = StyleSheet.create({
     fontSize: 17,
     color: Colors.textSecondary,
     marginTop: 4,
+  },
+  insightText: {
+    fontFamily: FontFamily.body,
+    fontSize: 14,
+    color: Colors.textMuted,
+    marginTop: 12,
   },
   sliderRow: {
     flexDirection: 'row',

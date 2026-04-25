@@ -21,7 +21,7 @@ import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
-import * as StoreReview from 'expo-store-review';
+
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
@@ -47,22 +47,7 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'PersonalizedPlanC
 const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
   const { state } = useOnboarding();
   const { showPaywall } = useSubscription();
-  /** Ensures at most one in-app review prompt per visit (Lock In vs Maybe Later). */
-  const prePaywallReviewRequested = useRef(false);
-
   useOnboardingTracking('PersonalizedPlanCard');
-
-  const requestPrePaywallReview = useCallback(async () => {
-    if (prePaywallReviewRequested.current) return;
-    prePaywallReviewRequested.current = true;
-    try {
-      if (await StoreReview.hasAction()) {
-        await StoreReview.requestReview();
-      }
-    } catch {
-      /* SKStoreReviewController / Play In-App Review may be unavailable */
-    }
-  }, []);
 
   useEffect(() => {
     Analytics.track('Paywall Viewed', { source: 'onboarding' });
@@ -271,7 +256,6 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
           <TouchableOpacity
             onPress={async () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              await requestPrePaywallReview();
               Analytics.track('Paywall CTA Tapped', { source: 'onboarding' });
               const subscribed = await showPaywall();
               if (subscribed) {
@@ -315,7 +299,6 @@ const PersonalizedPlanCardScreen: React.FC<Props> = ({ navigation }) => {
 
           <TouchableOpacity
             onPress={async () => {
-              await requestPrePaywallReview();
               Analytics.track('Paywall Skipped', { source: 'onboarding' });
               await continueToAccountPrompt(false);
             }}

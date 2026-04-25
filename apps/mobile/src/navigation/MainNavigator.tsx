@@ -157,7 +157,7 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
       return;
     }
     Analytics.track('Lock In Started', { duration_minutes: minutes });
-    LockModeService.beginSession();
+    LockModeService.beginSession(minutes);
     rootNavigationRef.navigate('Main', {
       screen: 'ExecutionBlock',
       params: { durationMinutes: minutes },

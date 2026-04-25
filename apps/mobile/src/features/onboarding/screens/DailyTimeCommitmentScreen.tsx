@@ -87,7 +87,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
     }, 900);
   }, [titleOpacity, titleTranslateY, knobOpacity, knobScale, buttonOpacity]);
 
-  const isInSweetSpot = selectedHours >= 4 && selectedHours <= 6;
+  const isInSweetSpot = selectedHours >= 2 && selectedHours <= 3;
 
   useEffect(() => {
     if (isInSweetSpot && !prevInRange.current) {
@@ -302,7 +302,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
           </Animated.Text>
 
           <Animated.Text style={[styles.socialProof, { opacity: socialProofOpacity }]}>
-            Most people start with 4–6 hours
+            Most people start with 2–3 hours
           </Animated.Text>
 
           <Animated.View style={[styles.buttonWrap, { opacity: buttonOpacity }]}>

@@ -10,12 +10,15 @@
 
 import { type SupabaseClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   createMobileClient,
   ensureAnonymousSession,
   type StorageAdapter,
 } from '@lockedin/supabase-client';
 import { ENV } from '../config/env';
+
+const HAS_LAUNCHED_KEY = '@lockedin/has_launched';
 
 // ── SecureStore adapter for Supabase auth persistence ──
 
@@ -46,6 +49,19 @@ async function initialize(): Promise<boolean> {
       ENV.SUPABASE_ANON_KEY,
       SecureStoreAdapter,
     );
+
+    // Detect fresh install: AsyncStorage is wiped on uninstall, but Keychain
+    // (SecureStore) survives. If the flag is missing, a stale session from a
+    // previous install may still be in the Keychain — sign out to clear it.
+    try {
+      const hasLaunched = await AsyncStorage.getItem(HAS_LAUNCHED_KEY);
+      if (!hasLaunched) {
+        await client.auth.signOut();
+        await AsyncStorage.setItem(HAS_LAUNCHED_KEY, 'true');
+      }
+    } catch (e) {
+      console.warn('[SupabaseService] Fresh install cleanup failed (continuing):', e);
+    }
 
     currentUserId = await ensureAnonymousSession(client);
 

@@ -63,13 +63,14 @@ function getPhaseText(elapsed: number, total: number): string {
 }
 
 const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { durationMinutes } = route.params;
+  const { durationMinutes, resumeEndTimestamp } = route.params;
+  const isResume = resumeEndTimestamp != null;
   const { state, dispatch } = useSession();
   const { state: onboardingState } = useOnboarding();
   useKeepAwake();
 
   const totalSeconds = durationMinutes * 60;
-  const endTimestampRef = useRef(Date.now() + totalSeconds * 1000);
+  const endTimestampRef = useRef(resumeEndTimestamp ?? Date.now() + totalSeconds * 1000);
   const [remaining, setRemaining] = useState(totalSeconds);
   const [isComplete, setIsComplete] = useState(false);
 
@@ -107,7 +108,7 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
     return Math.max(1, Math.ceil(elapsedSeconds / 60));
   }, [totalSeconds]);
 
-  const handleTimerComplete = useCallback(() => {
+  const handleTimerComplete = useCallback(async () => {
     if (completedRef.current) return;
     completedRef.current = true;
     setIsComplete(true);
@@ -115,7 +116,7 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     LockModeService.endSession();
     NotificationService.cancelExecutionBlockDone();
-    AsyncStorage.removeItem(ACTIVE_EB_KEY);
+    await AsyncStorage.removeItem(ACTIVE_EB_KEY);
 
     dispatch({
       type: 'COMPLETE_EXECUTION_BLOCK',
@@ -144,7 +145,7 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
     });
   }, [dispatch, durationMinutes, timerOpacity, navigation, computeStreakAfterCompletion, state.consecutiveStreak]);
 
-  const handleHoldComplete = useCallback(() => {
+  const handleHoldComplete = useCallback(async () => {
     if (completedRef.current) return;
     completedRef.current = true;
     setIsComplete(true);
@@ -152,7 +153,7 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     LockModeService.endSession();
     NotificationService.cancelExecutionBlockDone();
-    AsyncStorage.removeItem(ACTIVE_EB_KEY);
+    await AsyncStorage.removeItem(ACTIVE_EB_KEY);
 
     const elapsedSeconds = totalSeconds - Math.max(0, Math.ceil((endTimestampRef.current - Date.now()) / 1000));
 
@@ -193,23 +194,33 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
 
   // Persist execution block info, schedule notification, fade in timer
   useEffect(() => {
-    AsyncStorage.setItem(
-      ACTIVE_EB_KEY,
-      JSON.stringify({
-        startTimestamp: Date.now(),
-        endTimestamp: endTimestampRef.current,
-        durationMinutes,
-      }),
-    );
+    if (!isResume) {
+      AsyncStorage.setItem(
+        ACTIVE_EB_KEY,
+        JSON.stringify({
+          startTimestamp: Date.now(),
+          endTimestamp: endTimestampRef.current,
+          durationMinutes,
+        }),
+      );
 
+      Analytics.track('Session Started', {
+        type: 'execution_block',
+        duration_minutes: durationMinutes,
+        streak_day: state.consecutiveStreak,
+      });
+      Analytics.timeEvent('Session Completed');
+    } else {
+      Analytics.track('Session Resumed', {
+        type: 'execution_block',
+        duration_minutes: durationMinutes,
+        remaining_seconds: Math.max(0, Math.ceil((endTimestampRef.current - Date.now()) / 1000)),
+      });
+    }
+
+    // Idempotent — scheduleExecutionBlockDone cancels any existing notification
+    // with the same ID before scheduling, so calling on resume is safe.
     NotificationService.scheduleExecutionBlockDone(new Date(endTimestampRef.current));
-
-    Analytics.track('Session Started', {
-      type: 'execution_block',
-      duration_minutes: durationMinutes,
-      streak_day: state.consecutiveStreak,
-    });
-    Analytics.timeEvent('Session Completed');
 
     Animated.timing(timerOpacity, {
       toValue: 1,

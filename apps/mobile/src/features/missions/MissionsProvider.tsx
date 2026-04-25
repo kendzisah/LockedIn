@@ -55,7 +55,7 @@ type MissionAction =
   | { type: 'UPDATE_DAILY_PROGRESS'; payload: { missionId: string; progress: number; progressTarget: number } }
   | { type: 'SET_WEEKLY_MISSIONS'; payload: { weeklyMissions: Mission[]; weekKey: string } }
   | { type: 'APPEND_WEEKLY_MISSION'; payload: Mission }
-  | { type: 'UPDATE_WEEKLY_PROGRESS'; payload: { missionId: string; progress: number; remainingDays: number } }
+  | { type: 'UPDATE_WEEKLY_PROGRESS'; payload: { missionId: string; progress: number; remainingDays: number; todayCounted: boolean } }
   | { type: 'RESET_DAY' }
   | { type: 'FULL_LOGOUT_RESET' };
 
@@ -195,19 +195,21 @@ const missionsReducer = (state: MissionsState, action: MissionAction): MissionsS
     }
 
     case 'UPDATE_WEEKLY_PROGRESS': {
-      const remaining = action.payload.remainingDays;
+      const { remainingDays, todayCounted } = action.payload;
+      let xpGained = 0;
       const updatedWeekly = state.weeklyMissions.map((m) => {
         if (m.id !== action.payload.missionId) return m;
         if (m.completed || m.failed) return m;
         const newProgress = action.payload.progress;
         const completed = m.progressTarget != null && newProgress >= m.progressTarget;
-        // Check if it's still mathematically possible to reach the target.
-        // remaining counts days AFTER today; +1 includes today if there's still time.
-        const possibleDays = newProgress + remaining + 1;
+        // remaining counts days AFTER today. Add 1 for today only if
+        // today hasn't already been counted in progress.
+        const possibleDays = newProgress + remainingDays + (todayCounted ? 0 : 1);
         const failed = !completed && m.progressTarget != null && possibleDays < m.progressTarget;
+        if (completed) xpGained = m.xp;
         return { ...m, progress: newProgress, completed, failed };
       });
-      return { ...state, weeklyMissions: updatedWeekly };
+      return { ...state, weeklyMissions: updatedWeekly, totalXP: state.totalXP + xpGained };
     }
 
     case 'RESET_DAY':
@@ -268,15 +270,16 @@ export const recordActiveDay = async (): Promise<void> => {
   } catch (e) { console.warn('[MissionsProvider] recordActiveDay failed:', e); }
 };
 
-/** Get count of active days this week. */
-const getActiveDaysCount = async (): Promise<number> => {
+/** Get count of active days this week and whether today is included. */
+const getActiveDaysInfo = async (): Promise<{ count: number; todayCounted: boolean }> => {
   try {
     const weekKey = getMissionWeekKey();
     const raw = await AsyncStorage.getItem(KEY_ACTIVE_DAYS);
-    if (!raw) return 0;
+    if (!raw) return { count: 0, todayCounted: false };
     const stored = JSON.parse(raw) as { weekKey: string; days: string[] };
-    return stored.weekKey === weekKey ? stored.days.length : 0;
-  } catch { return 0; }
+    if (stored.weekKey !== weekKey) return { count: 0, todayCounted: false };
+    return { count: stored.days.length, todayCounted: stored.days.includes(getLocalDateString()) };
+  } catch { return { count: 0, todayCounted: false }; }
 };
 
 /** Record that the app was opened before 9 AM today. */
@@ -299,15 +302,16 @@ export const recordEarlyOpen = async (): Promise<void> => {
   } catch (e) { console.warn('[MissionsProvider] recordEarlyOpen failed:', e); }
 };
 
-/** Get count of early opens this week. */
-const getEarlyOpensCount = async (): Promise<number> => {
+/** Get count of early opens this week and whether today is included. */
+const getEarlyOpensInfo = async (): Promise<{ count: number; todayCounted: boolean }> => {
   try {
     const weekKey = getMissionWeekKey();
     const raw = await AsyncStorage.getItem(KEY_EARLY_OPENS);
-    if (!raw) return 0;
+    if (!raw) return { count: 0, todayCounted: false };
     const stored = JSON.parse(raw) as { weekKey: string; days: string[] };
-    return stored.weekKey === weekKey ? stored.days.length : 0;
-  } catch { return 0; }
+    if (stored.weekKey !== weekKey) return { count: 0, todayCounted: false };
+    return { count: stored.days.length, todayCounted: stored.days.includes(getLocalDateString()) };
+  } catch { return { count: 0, todayCounted: false }; }
 };
 
 const loadCumulativeXP = async (): Promise<number> => {
@@ -505,7 +509,7 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
       getCompletedCount(state.missions) === state.missions.length;
     const weeklyOk =
       state.weeklyMissions.length === 0 ||
-      state.weeklyMissions.every((m) => m.completed && !m.failed);
+      state.weeklyMissions.every((m) => !m.failed);
     if (dailyAll && weeklyOk) {
       void recordPerfectMissionDay(getLocalDateString());
     }
@@ -601,13 +605,20 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
       if (m.completed || !m.progressMetric || m.progressTarget == null) continue;
 
       let progress = 0;
+      let todayCounted = false;
       switch (m.progressMetric) {
-        case 'days_active':
-          progress = await getActiveDaysCount();
+        case 'days_active': {
+          const info = await getActiveDaysInfo();
+          progress = info.count;
+          todayCounted = info.todayCounted;
           break;
-        case 'first_open_before_9am':
-          progress = await getEarlyOpensCount();
+        }
+        case 'first_open_before_9am': {
+          const info = await getEarlyOpensInfo();
+          progress = info.count;
+          todayCounted = info.todayCounted;
           break;
+        }
         default:
           continue;
       }
@@ -616,11 +627,11 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
       const currentProgress = m.progress ?? 0;
       const remaining = getRemainingDaysInWeek();
       const wouldComplete = m.progressTarget != null && progress >= m.progressTarget;
-      const possibleDays = progress + remaining + 1;
+      const possibleDays = progress + remaining + (todayCounted ? 0 : 1);
       const wouldFail = !wouldComplete && m.progressTarget != null && possibleDays < m.progressTarget;
 
       if (progress !== currentProgress || wouldFail !== (m.failed ?? false) || wouldComplete !== m.completed) {
-        dispatch({ type: 'UPDATE_WEEKLY_PROGRESS', payload: { missionId: m.id, progress, remainingDays: remaining } });
+        dispatch({ type: 'UPDATE_WEEKLY_PROGRESS', payload: { missionId: m.id, progress, remainingDays: remaining, todayCounted } });
       }
     }
   }, [state.weeklyMissions]);
@@ -723,19 +734,23 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
       const today = getLocalDateString();
       dispatch({ type: 'GENERATE_DAILY', payload: { missions: newMissions, date: today } });
 
+      // Only regenerate weekly missions if the week has changed; preserve
+      // mid-week progress when the user updates their goal or weaknesses.
       const currentWeekKey = getMissionWeekKey();
-      const newWeekly = normalizeWeeklyMissions(
-        generateWeeklyMissions({
-          goal: g,
-          weaknesses: w,
-          onboardingDate,
-          streak,
-        }),
-      );
-      dispatch({ type: 'SET_WEEKLY_MISSIONS', payload: { weeklyMissions: newWeekly, weekKey: currentWeekKey } });
+      if (state.weekKey !== currentWeekKey || state.weeklyMissions.length === 0) {
+        const newWeekly = normalizeWeeklyMissions(
+          generateWeeklyMissions({
+            goal: g,
+            weaknesses: w,
+            onboardingDate,
+            streak,
+          }),
+        );
+        dispatch({ type: 'SET_WEEKLY_MISSIONS', payload: { weeklyMissions: newWeekly, weekKey: currentWeekKey } });
+        void persistWeeklyMissions(newWeekly, currentWeekKey, profile);
+      }
 
       void persistMissions(newMissions, today, profile);
-      void persistWeeklyMissions(newWeekly, currentWeekKey, profile);
     },
     [userGoal, stableWeaknesses, onboardingDate, streak],
   );

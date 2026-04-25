@@ -13,9 +13,11 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
 
-  s.source_files = '**/*.{h,m,swift}'
+  # Exclude the `extension/` subfolder — those sources belong to the
+  # DeviceActivityMonitor extension target, not the main app's pod.
+  s.source_files = '*.{h,m,swift}'
 
-  s.frameworks = 'FamilyControls', 'ManagedSettings'
+  s.frameworks = 'FamilyControls', 'ManagedSettings', 'DeviceActivity'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',

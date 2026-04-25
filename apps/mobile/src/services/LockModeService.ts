@@ -14,9 +14,16 @@ async function getScreenTime() {
 }
 
 export class LockModeService {
-  static async beginSession(): Promise<void> {
+  static async beginSession(durationMinutes: number): Promise<void> {
     const mod = await getScreenTime();
-    mod?.shieldApps();
+    if (!mod) return;
+    const durationSeconds = Math.max(1, Math.floor(durationMinutes * 60));
+    // Prefer the DeviceActivityMonitor-backed path so the extension
+    // un-shields if iOS kills the JS thread mid-session. Falls back to
+    // shieldApps() if monitoring fails to schedule (e.g. iOS < 16 or
+    // unsupported build).
+    const scheduled = await mod.beginSession(durationSeconds);
+    if (!scheduled) mod.shieldApps();
   }
 
   static async endSession(): Promise<void> {

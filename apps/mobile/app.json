@@ -3,7 +3,7 @@
     "name": "LockedIn",
     "slug": "LockedIn",
     "scheme": "lockedin",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -65,7 +65,9 @@
         {
           "shouldUsePurchaseConnector": true
         }
-      ]
+      ],
+      "./plugins/withDeviceActivityMonitor.js",
+      "./plugins/withResourceBundleSigningFix.js"
     ],
     "autolinking": {
       "nativeModulesDir": "modules"
