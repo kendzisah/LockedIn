@@ -24,7 +24,7 @@ const BENEFITS: string[] = [
   'Your rank and OVR are saved permanently',
   'Never lose your streak — even if you switch phones',
   'Save every XP point and achievement you earn',
-  'Compete in guild leaderboards with your squad',
+  'Compete in guild leaderboards with your guild',
   'Get personalized weekly system reports',
   'Sync your stats across multiple devices',
   'Customize your display name and avatar',

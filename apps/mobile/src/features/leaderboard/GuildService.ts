@@ -1,13 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SupabaseService } from '../../services/SupabaseService';
 
-const WEEK_STATS_KEY = '@lockedin/crew_week_stats';
+const WEEK_STATS_KEY = '@lockedin/guild_week_stats';
 
-/** Persisted flag for notification scheduling (synced from getMyCrews). */
-export const HAS_ACTIVE_CREW_STORAGE_KEY = '@lockedin/has_active_crew';
+/** Persisted flag for notification scheduling (synced from getMyGuilds). */
+export const HAS_ACTIVE_GUILD_STORAGE_KEY = '@lockedin/has_active_guild';
 
-export interface MyCrewRow {
-  crew_id: string;
+export interface MyGuildRow {
+  guild_id: string;
   name: string;
   invite_code: string;
   member_count: number;
@@ -16,7 +16,7 @@ export interface MyCrewRow {
   top_score: number;
 }
 
-export interface CrewDetails {
+export interface GuildDetails {
   name: string;
   invite_code: string;
   owner_id: string;
@@ -25,7 +25,7 @@ export interface CrewDetails {
   created_at: string;
 }
 
-export interface CrewLeaderboardEntry {
+export interface GuildLeaderboardEntry {
   user_id: string;
   username: string;
   avatar_url: string | null;
@@ -41,19 +41,19 @@ export interface CrewLeaderboardEntry {
   rank_id: string | null;
 }
 
-export interface CreateCrewResult {
-  crew_id: string;
+export interface CreateGuildResult {
+  guild_id: string;
   invite_code: string;
   name: string;
 }
 
-export interface JoinCrewResult {
-  crew_id: string;
-  crew_name: string;
+export interface JoinGuildResult {
+  guild_id: string;
+  guild_name: string;
   joined: boolean;
 }
 
-export interface WeeklyCrewStats {
+export interface WeeklyGuildStats {
   week_key: string;
   focus_minutes: number;
   missions_done: number;
@@ -80,87 +80,87 @@ function rankFromSortedScores(sortedScores: number[], myScore: number): number {
   return idx === -1 ? 0 : idx + 1;
 }
 
-export const CrewService = {
+export const GuildService = {
   getCurrentWeekKey,
 
   /**
-   * Updates {@link HAS_ACTIVE_CREW_STORAGE_KEY} from the network.
-   * `hadCrewBefore` reads storage before sync; use for first-crew detection.
+   * Updates {@link HAS_ACTIVE_GUILD_STORAGE_KEY} from the network.
+   * `hadGuildBefore` reads storage before sync; use for first-guild detection.
    */
-  async syncHasActiveCrewFlag(): Promise<{ hadCrewBefore: boolean; hasCrewNow: boolean }> {
-    const hadCrewBefore = (await AsyncStorage.getItem(HAS_ACTIVE_CREW_STORAGE_KEY)) === 'true';
+  async syncHasActiveGuildFlag(): Promise<{ hadGuildBefore: boolean; hasGuildNow: boolean }> {
+    const hadGuildBefore = (await AsyncStorage.getItem(HAS_ACTIVE_GUILD_STORAGE_KEY)) === 'true';
     try {
-      const crews = await CrewService.getMyCrews();
-      const hasCrewNow = crews.length > 0;
-      await AsyncStorage.setItem(HAS_ACTIVE_CREW_STORAGE_KEY, hasCrewNow ? 'true' : 'false');
-      return { hadCrewBefore, hasCrewNow };
+      const guilds = await GuildService.getMyGuilds();
+      const hasGuildNow = guilds.length > 0;
+      await AsyncStorage.setItem(HAS_ACTIVE_GUILD_STORAGE_KEY, hasGuildNow ? 'true' : 'false');
+      return { hadGuildBefore, hasGuildNow };
     } catch (e) {
-      console.warn('[CrewService] syncHasActiveCrewFlag failed:', e);
-      return { hadCrewBefore, hasCrewNow: hadCrewBefore };
+      console.warn('[GuildService] syncHasActiveGuildFlag failed:', e);
+      return { hadGuildBefore, hasGuildNow: hadGuildBefore };
     }
   },
 
-  async getMyCrews(): Promise<MyCrewRow[]> {
+  async getMyGuilds(): Promise<MyGuildRow[]> {
     try {
       const client = SupabaseService.getClient();
       const userId = SupabaseService.getCurrentUserId();
       if (!client || !userId) return [];
 
       const { data: memberships, error: memErr } = await client
-        .from('crew_members')
-        .select('crew_id')
+        .from('guild_members')
+        .select('guild_id')
         .eq('user_id', userId);
 
       if (memErr) throw memErr;
       if (!memberships?.length) return [];
 
-      const crewIds = [...new Set(memberships.map((m) => m.crew_id as string))];
+      const guildIds = [...new Set(memberships.map((m) => m.guild_id as string))];
 
-      const { data: crews, error: crewsErr } = await client
-        .from('crews')
+      const { data: guilds, error: guildsErr } = await client
+        .from('guilds')
         .select('id, name, invite_code')
-        .in('id', crewIds);
+        .in('id', guildIds);
 
-      if (crewsErr) throw crewsErr;
-      if (!crews?.length) return [];
+      if (guildsErr) throw guildsErr;
+      if (!guilds?.length) return [];
 
       const weekKey = getCurrentWeekKey();
 
       const { data: allMembers, error: countErr } = await client
-        .from('crew_members')
-        .select('crew_id')
-        .in('crew_id', crewIds);
+        .from('guild_members')
+        .select('guild_id')
+        .in('guild_id', guildIds);
 
       if (countErr) throw countErr;
 
-      const memberCountByCrew = new Map<string, number>();
+      const memberCountByGuild = new Map<string, number>();
       for (const row of allMembers ?? []) {
-        const cid = row.crew_id as string;
-        memberCountByCrew.set(cid, (memberCountByCrew.get(cid) ?? 0) + 1);
+        const gid = row.guild_id as string;
+        memberCountByGuild.set(gid, (memberCountByGuild.get(gid) ?? 0) + 1);
       }
 
       const { data: weekScores, error: scoresErr } = await client
-        .from('crew_scores')
-        .select('crew_id, user_id, total_score')
-        .in('crew_id', crewIds)
+        .from('guild_scores')
+        .select('guild_id, user_id, total_score')
+        .in('guild_id', guildIds)
         .eq('week_key', weekKey);
 
       if (scoresErr) throw scoresErr;
 
-      const scoresByCrew = new Map<string, { user_id: string; total_score: number }[]>();
+      const scoresByGuild = new Map<string, { user_id: string; total_score: number }[]>();
       for (const row of weekScores ?? []) {
-        const cid = row.crew_id as string;
-        const list = scoresByCrew.get(cid) ?? [];
+        const gid = row.guild_id as string;
+        const list = scoresByGuild.get(gid) ?? [];
         list.push({
           user_id: row.user_id as string,
           total_score: Number(row.total_score ?? 0),
         });
-        scoresByCrew.set(cid, list);
+        scoresByGuild.set(gid, list);
       }
 
-      return crews.map((c) => {
-        const crew_id = c.id as string;
-        const list = scoresByCrew.get(crew_id) ?? [];
+      return guilds.map((g) => {
+        const guild_id = g.id as string;
+        const list = scoresByGuild.get(guild_id) ?? [];
         const sorted = [...list].sort((a, b) => b.total_score - a.total_score);
         const orderedScores = sorted.map((s) => s.total_score);
         const mine = list.find((s) => s.user_id === userId);
@@ -170,60 +170,60 @@ export const CrewService = {
         const top_score = orderedScores.length ? Math.max(...orderedScores) : 0;
 
         return {
-          crew_id,
-          name: c.name as string,
-          invite_code: c.invite_code as string,
-          member_count: memberCountByCrew.get(crew_id) ?? 0,
+          guild_id,
+          name: g.name as string,
+          invite_code: g.invite_code as string,
+          member_count: memberCountByGuild.get(guild_id) ?? 0,
           my_rank,
           my_score,
           top_score,
         };
       });
     } catch (error) {
-      console.error('[CrewService] getMyCrews failed:', error);
+      console.error('[GuildService] getMyGuilds failed:', error);
       return [];
     }
   },
 
-  async getCrewDetails(crewId: string): Promise<CrewDetails | null> {
+  async getGuildDetails(guildId: string): Promise<GuildDetails | null> {
     try {
       const client = SupabaseService.getClient();
       if (!client) return null;
 
-      const { data: crew, error: crewErr } = await client
-        .from('crews')
+      const { data: guild, error: guildErr } = await client
+        .from('guilds')
         .select('name, invite_code, owner_id, max_members, created_at')
-        .eq('id', crewId)
+        .eq('id', guildId)
         .maybeSingle();
 
-      if (crewErr) throw crewErr;
-      if (!crew) return null;
+      if (guildErr) throw guildErr;
+      if (!guild) return null;
 
       const { count, error: countErr } = await client
-        .from('crew_members')
+        .from('guild_members')
         .select('*', { count: 'exact', head: true })
-        .eq('crew_id', crewId);
+        .eq('guild_id', guildId);
 
       if (countErr) throw countErr;
 
       return {
-        name: crew.name as string,
-        invite_code: crew.invite_code as string,
-        owner_id: crew.owner_id as string,
+        name: guild.name as string,
+        invite_code: guild.invite_code as string,
+        owner_id: guild.owner_id as string,
         member_count: count ?? 0,
-        max_members: Number(crew.max_members ?? 0),
-        created_at: crew.created_at as string,
+        max_members: Number(guild.max_members ?? 0),
+        created_at: guild.created_at as string,
       };
     } catch (error) {
-      console.error('[CrewService] getCrewDetails failed:', error);
+      console.error('[GuildService] getGuildDetails failed:', error);
       return null;
     }
   },
 
-  async getCrewLeaderboard(
-    crewId: string,
+  async getGuildLeaderboard(
+    guildId: string,
     weekKey: string
-  ): Promise<CrewLeaderboardEntry[]> {
+  ): Promise<GuildLeaderboardEntry[]> {
     try {
       const client = SupabaseService.getClient();
       const currentUserId = SupabaseService.getCurrentUserId();
@@ -231,9 +231,9 @@ export const CrewService = {
 
       // Fetch members
       const { data: members, error: memErr } = await client
-        .from('crew_members')
+        .from('guild_members')
         .select('user_id')
-        .eq('crew_id', crewId);
+        .eq('guild_id', guildId);
 
       if (memErr) throw memErr;
       if (!members?.length) return [];
@@ -270,9 +270,9 @@ export const CrewService = {
 
       // Fetch scores for the selected week
       const { data: scores, error: scoreErr } = await client
-        .from('crew_scores')
+        .from('guild_scores')
         .select('user_id, focus_minutes, missions_done, streak_days, total_score')
-        .eq('crew_id', crewId)
+        .eq('guild_id', guildId)
         .eq('week_key', weekKey);
 
       if (scoreErr) throw scoreErr;
@@ -323,136 +323,136 @@ export const CrewService = {
         rank_id: row.rank_id,
       }));
     } catch (error) {
-      console.error('[CrewService] getCrewLeaderboard failed:', error);
+      console.error('[GuildService] getGuildLeaderboard failed:', error);
       return [];
     }
   },
 
-  async createCrew(name: string): Promise<CreateCrewResult | null> {
+  async createGuild(name: string): Promise<CreateGuildResult | null> {
     try {
       const client = SupabaseService.getClient();
       if (!client) return null;
 
-      const { data, error } = await client.rpc('create_crew', { crew_name: name });
+      const { data, error } = await client.rpc('create_guild', { guild_name: name });
 
       if (error) throw error;
       if (data == null || typeof data !== 'object') return null;
 
       const row = data as Record<string, unknown>;
-      const crew_id = row.crew_id ?? row.id;
-      if (typeof crew_id !== 'string') return null;
+      const guild_id = row.guild_id ?? row.id;
+      if (typeof guild_id !== 'string') return null;
 
       return {
-        crew_id,
+        guild_id,
         invite_code: String(row.invite_code ?? ''),
         name: String(row.name ?? name),
       };
     } catch (error) {
-      console.error('[CrewService] createCrew failed:', error);
+      console.error('[GuildService] createGuild failed:', error);
       return null;
     }
   },
 
-  async joinCrew(code: string): Promise<JoinCrewResult | null> {
+  async joinGuild(code: string): Promise<JoinGuildResult | null> {
     try {
       const client = SupabaseService.getClient();
       if (!client) return null;
 
-      const { data, error } = await client.rpc('join_crew', { code });
+      const { data, error } = await client.rpc('join_guild', { code });
 
       if (error) throw error;
       if (data == null || typeof data !== 'object') return null;
 
       const row = data as Record<string, unknown>;
-      const crew_id = row.crew_id;
-      if (typeof crew_id !== 'string') return null;
+      const guild_id = row.guild_id;
+      if (typeof guild_id !== 'string') return null;
 
       return {
-        crew_id,
-        crew_name: String(row.crew_name ?? ''),
+        guild_id,
+        guild_name: String(row.guild_name ?? ''),
         joined: Boolean(row.joined ?? true),
       };
     } catch (error) {
-      console.error('[CrewService] joinCrew failed:', error);
+      console.error('[GuildService] joinGuild failed:', error);
       return null;
     }
   },
 
-  async leaveCrew(crewId: string): Promise<boolean> {
+  async leaveGuild(guildId: string): Promise<boolean> {
     try {
       const client = SupabaseService.getClient();
       const userId = SupabaseService.getCurrentUserId();
       if (!client || !userId) return false;
 
       const { data: row, error: selErr } = await client
-        .from('crew_members')
+        .from('guild_members')
         .select('role')
-        .eq('crew_id', crewId)
+        .eq('guild_id', guildId)
         .eq('user_id', userId)
         .maybeSingle();
 
       if (selErr) throw selErr;
       if (!row) return false;
       if (row.role === 'owner') {
-        console.warn('[CrewService] leaveCrew blocked: user is owner');
+        console.warn('[GuildService] leaveGuild blocked: user is owner');
         return false;
       }
 
       const { error: delErr } = await client
-        .from('crew_members')
+        .from('guild_members')
         .delete()
-        .eq('crew_id', crewId)
+        .eq('guild_id', guildId)
         .eq('user_id', userId);
 
       if (delErr) throw delErr;
       return true;
     } catch (error) {
-      console.error('[CrewService] leaveCrew failed:', error);
+      console.error('[GuildService] leaveGuild failed:', error);
       return false;
     }
   },
 
-  async kickMember(crewId: string, targetUserId: string): Promise<boolean> {
+  async kickMember(guildId: string, targetUserId: string): Promise<boolean> {
     try {
       const client = SupabaseService.getClient();
       if (!client) return false;
 
-      const { error } = await client.rpc('kick_crew_member', {
-        target_crew_id: crewId,
+      const { error } = await client.rpc('kick_guild_member', {
+        target_guild_id: guildId,
         target_user_id: targetUserId,
       });
 
       if (error) throw error;
       return true;
     } catch (error) {
-      console.error('[CrewService] kickMember failed:', error);
+      console.error('[GuildService] kickMember failed:', error);
       return false;
     }
   },
 
-  async deleteCrew(crewId: string): Promise<boolean> {
+  async deleteGuild(guildId: string): Promise<boolean> {
     try {
       const client = SupabaseService.getClient();
       const userId = SupabaseService.getCurrentUserId();
       if (!client || !userId) return false;
 
       const { error } = await client
-        .from('crews')
+        .from('guilds')
         .delete()
-        .eq('id', crewId)
+        .eq('id', guildId)
         .eq('owner_id', userId);
 
       if (error) throw error;
       return true;
     } catch (error) {
-      console.error('[CrewService] deleteCrew failed:', error);
+      console.error('[GuildService] deleteGuild failed:', error);
       return false;
     }
   },
 
-  async getWeeklyStats(): Promise<WeeklyCrewStats> {
+  async getWeeklyStats(): Promise<WeeklyGuildStats> {
     const currentWeek = getCurrentWeekKey();
-    const empty = (): WeeklyCrewStats => ({
+    const empty = (): WeeklyGuildStats => ({
       week_key: currentWeek,
       focus_minutes: 0,
       missions_done: 0,
@@ -467,7 +467,7 @@ export const CrewService = {
         return initial;
       }
 
-      const parsed = JSON.parse(raw) as Partial<WeeklyCrewStats>;
+      const parsed = JSON.parse(raw) as Partial<WeeklyGuildStats>;
       if (
         typeof parsed.week_key !== 'string' ||
         typeof parsed.focus_minutes !== 'number' ||
@@ -492,16 +492,16 @@ export const CrewService = {
         streak_days: parsed.streak_days,
       };
     } catch (error) {
-      console.error('[CrewService] getWeeklyStats failed:', error);
+      console.error('[GuildService] getWeeklyStats failed:', error);
       return empty();
     }
   },
 
-  async updateWeeklyStats(stats: Partial<WeeklyCrewStats>): Promise<void> {
+  async updateWeeklyStats(stats: Partial<WeeklyGuildStats>): Promise<void> {
     try {
       const currentWeek = getCurrentWeekKey();
-      const existing = await CrewService.getWeeklyStats();
-      const next: WeeklyCrewStats = {
+      const existing = await GuildService.getWeeklyStats();
+      const next: WeeklyGuildStats = {
         week_key: currentWeek,
         focus_minutes: stats.focus_minutes ?? existing.focus_minutes,
         missions_done: stats.missions_done ?? existing.missions_done,
@@ -509,13 +509,13 @@ export const CrewService = {
       };
       await AsyncStorage.setItem(WEEK_STATS_KEY, JSON.stringify(next));
     } catch (error) {
-      console.error('[CrewService] updateWeeklyStats failed:', error);
+      console.error('[GuildService] updateWeeklyStats failed:', error);
     }
   },
 
   /**
    * Submit a mission completion through the server-side Edge Function.
-   * Upserts crew_scores for each crew via `upsert_crew_score` RPC.
+   * Upserts guild_scores for each guild via `upsert_guild_score` RPC.
    */
   async completeMissionServerSide(
     timeGate: string | undefined,
@@ -541,7 +541,7 @@ export const CrewService = {
 
       return { success: true };
     } catch (err) {
-      console.warn('[CrewService] Edge function failed:', err);
+      console.warn('[GuildService] Edge function failed:', err);
       return { success: false, error: 'network_error' };
     }
   },

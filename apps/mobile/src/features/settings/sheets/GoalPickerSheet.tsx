@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import SettingsSheetShell from '../components/SettingsSheetShell';
-import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { Analytics } from '../../../services/AnalyticsService';
-import { getPrimaryGoals, getStatsForGoal } from '../../missions/MissionEngine';
-import StatPills from '../components/StatPills';
+import { getPrimaryGoals } from '../../missions/MissionEngine';
+import { SystemTokens } from '../../home/systemTokens';
 
 const ORDER: string[] = [
   'Build a business or side project',
@@ -46,59 +45,72 @@ const GoalPickerSheet: React.FC<Props> = ({
   };
 
   return (
-    <SettingsSheetShell visible={visible} onClose={onClose} title="Primary goal">
-      <View style={styles.gap}>
+    <SettingsSheetShell visible={visible} onClose={onClose} title="Primary Goal">
+      <View style={styles.list}>
         {options.map((g) => {
           const active = sel === g;
           return (
             <Pressable
               key={g}
               onPress={() => setSel(g)}
-              style={[styles.opt, active && styles.optOn]}
+              style={[
+                styles.opt,
+                active && styles.optOn,
+              ]}
             >
-              <Text style={styles.optText}>{g}</Text>
-              <StatPills stats={getStatsForGoal(g)} />
+              <Text style={[styles.optText, active && styles.optTextOn]}>
+                {g}
+              </Text>
             </Pressable>
           );
         })}
       </View>
+
       <Pressable style={styles.save} onPress={handleUpdate}>
-        <Text style={styles.saveText}>Update</Text>
+        <Text style={styles.saveText}>⟐  UPDATE</Text>
       </Pressable>
     </SettingsSheetShell>
   );
 };
 
 const styles = StyleSheet.create({
-  gap: { gap: 8 },
+  list: {
+    gap: 6,
+    marginBottom: 18,
+  },
   opt: {
-    backgroundColor: Colors.surface,
-    borderRadius: 10,
     paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: 'transparent',
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255,255,255,0.06)',
   },
   optOn: {
-    backgroundColor: 'rgba(58,102,255,0.15)',
-    borderColor: Colors.primary,
+    backgroundColor: 'rgba(58,102,255,0.12)',
+    borderLeftColor: SystemTokens.glowAccent,
   },
   optText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 15,
-    color: Colors.textPrimary,
+    color: SystemTokens.textSecondary,
+    letterSpacing: -0.1,
+  },
+  optTextOn: {
+    color: SystemTokens.textPrimary,
+    fontFamily: FontFamily.headingSemiBold,
   },
   save: {
-    marginTop: 20,
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
     paddingVertical: 14,
+    backgroundColor: 'rgba(58,102,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(58,102,255,0.45)',
     alignItems: 'center',
   },
   saveText: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 16,
-    color: Colors.textPrimary,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 13,
+    letterSpacing: 1.8,
+    color: SystemTokens.glowAccent,
   },
 });
 

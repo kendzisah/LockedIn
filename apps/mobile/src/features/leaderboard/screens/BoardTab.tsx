@@ -1,6 +1,6 @@
 import React from 'react';
-import CrewListScreen from './CrewListScreen';
+import GuildListScreen from './GuildListScreen';
 
-const BoardTab: React.FC = () => <CrewListScreen />;
+const BoardTab: React.FC = () => <GuildListScreen />;
 
 export default BoardTab;

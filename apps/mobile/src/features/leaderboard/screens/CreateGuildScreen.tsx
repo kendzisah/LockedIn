@@ -12,18 +12,18 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../../types/navigation';
-import { CrewService } from '../CrewService';
+import { GuildService } from '../GuildService';
 import { NotificationService } from '../../../services/NotificationService';
 import { useAuth } from '../../auth/AuthProvider';
 import { Analytics } from '../../../services/AnalyticsService';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
-type Props = NativeStackScreenProps<MainStackParamList, 'CreateCrew'>;
+type Props = NativeStackScreenProps<MainStackParamList, 'CreateGuild'>;
 
 const MAX_NAME_LENGTH = 30;
 
-const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
+const CreateGuildScreen: React.FC<Props> = ({ navigation }) => {
   const { isAnonymous } = useAuth();
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,25 +37,25 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
     setLoading(true);
     setError(null);
 
-    const result = await CrewService.createCrew(trimmed);
+    const result = await GuildService.createGuild(trimmed);
     setLoading(false);
 
     if (result) {
-      Analytics.track('Crew Created', { crew_name: result.name, crew_id: result.crew_id });
+      Analytics.track('Guild Created', { guild_name: result.name, guild_id: result.guild_id });
       void (async () => {
         try {
-          const { hadCrewBefore, hasCrewNow } = await CrewService.syncHasActiveCrewFlag();
-          if (hasCrewNow && !hadCrewBefore) {
-            await NotificationService.scheduleFirstCrewNudgeIfNeeded();
+          const { hadGuildBefore, hasGuildNow } = await GuildService.syncHasActiveGuildFlag();
+          if (hasGuildNow && !hadGuildBefore) {
+            await NotificationService.scheduleFirstGuildNudgeIfNeeded();
           }
           await NotificationService.refreshScheduleWithStoredStreak();
         } catch {
           /* ignore */
         }
       })();
-      navigation.replace('CrewDetail', { crew_id: result.crew_id });
+      navigation.replace('GuildDetail', { guild_id: result.guild_id });
     } else {
-      setError('Failed to create squad. You may own a maximum of 3 squads.');
+      setError('Failed to create guild. You may own a maximum of 3 guilds.');
     }
   };
 
@@ -72,7 +72,7 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
           <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10}>
             <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Create a Squad</Text>
+          <Text style={styles.headerTitle}>Create a Guild</Text>
           <View style={{ width: 24 }} />
         </View>
 
@@ -80,10 +80,10 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
           <View style={styles.gateIcon}>
             <Ionicons name="people" size={48} color={Colors.textMuted} />
           </View>
-          <Text style={styles.gateTitle}>Sign up to create a squad</Text>
+          <Text style={styles.gateTitle}>Sign up to create a guild</Text>
           <Text style={styles.gateSub}>
-            Squad owners need an account so your squad stays safe. You can still
-            join squads as a guest.
+            Guild owners need an account so your guild stays safe. You can still
+            join guilds as a guest.
           </Text>
           <TouchableOpacity
             style={styles.createBtn}
@@ -110,17 +110,17 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create a Squad</Text>
+        <Text style={styles.headerTitle}>Create a Guild</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <View style={styles.body}>
-        <Text style={styles.label}>Squad Name</Text>
+        <Text style={styles.label}>Guild Name</Text>
         <TextInput
           style={styles.input}
           value={name}
           onChangeText={(t) => setName(t.slice(0, MAX_NAME_LENGTH))}
-          placeholder="e.g. Discipline Squad"
+          placeholder="e.g. Discipline Guild"
           placeholderTextColor={Colors.textMuted}
           maxLength={MAX_NAME_LENGTH}
           autoFocus
@@ -138,7 +138,7 @@ const CreateCrewScreen: React.FC<Props> = ({ navigation }) => {
           {loading ? (
             <ActivityIndicator color={Colors.textPrimary} size="small" />
           ) : (
-            <Text style={styles.createBtnText}>Create Squad</Text>
+            <Text style={styles.createBtnText}>Create Guild</Text>
           )}
         </TouchableOpacity>
 
@@ -256,4 +256,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default CreateCrewScreen;
+export default CreateGuildScreen;

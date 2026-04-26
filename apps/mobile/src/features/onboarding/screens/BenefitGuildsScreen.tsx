@@ -70,7 +70,7 @@ const BenefitGuildsScreen: React.FC<Props> = ({ navigation }) => {
       step={13}
       headline="GUILDS"
       headlineColor="#A855F7"
-      body="Create a guild. Invite your squad. Compete on a weekly leaderboard. Every session, mission, and streak day earns points. See who's actually locked in and who's just talking."
+      body="Create a guild. Invite your guild. Compete on a weekly leaderboard. Every session, mission, and streak day earns points. See who's actually locked in and who's just talking."
       graphic={<Graphic />}
       onContinue={() => navigation.navigate('BenefitReport')}
     />

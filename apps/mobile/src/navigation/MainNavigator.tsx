@@ -11,9 +11,9 @@ import SignUpScreen from '../features/auth/screens/SignUpScreen';
 import SignInScreen from '../features/auth/screens/SignInScreen';
 import EditProfileScreen from '../features/auth/screens/EditProfileScreen';
 import WeeklyReportScreen from '../features/report/screens/WeeklyReportScreen';
-import CrewDetailScreen from '../features/leaderboard/screens/CrewDetailScreen';
-import CreateCrewScreen from '../features/leaderboard/screens/CreateCrewScreen';
-import JoinCrewScreen from '../features/leaderboard/screens/JoinCrewScreen';
+import GuildDetailScreen from '../features/leaderboard/screens/GuildDetailScreen';
+import CreateGuildScreen from '../features/leaderboard/screens/CreateGuildScreen';
+import JoinGuildScreen from '../features/leaderboard/screens/JoinGuildScreen';
 import ScrollPicker from '../features/home/components/ScrollPicker';
 import type { MainStackParamList } from '../types/navigation';
 import { rootNavigationRef } from './rootNavigationRef';
@@ -89,18 +89,18 @@ const MainNavigator: React.FC = () => {
             options={{ animation: 'fade' }}
           />
           <Stack.Screen
-            name="CrewDetail"
-            component={CrewDetailScreen}
+            name="GuildDetail"
+            component={GuildDetailScreen}
             options={{ animation: 'slide_from_right' }}
           />
           <Stack.Screen
-            name="CreateCrew"
-            component={CreateCrewScreen}
+            name="CreateGuild"
+            component={CreateGuildScreen}
             options={{ animation: 'slide_from_right' }}
           />
           <Stack.Screen
-            name="JoinCrew"
-            component={JoinCrewScreen}
+            name="JoinGuild"
+            component={JoinGuildScreen}
             options={{ animation: 'slide_from_right' }}
           />
         </Stack.Navigator>

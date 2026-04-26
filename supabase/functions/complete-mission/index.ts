@@ -8,7 +8,7 @@ import { corsHeaders } from '../_shared/cors.ts';
  * Auth: Bearer token from the mobile client (anon key + user JWT).
  *
  * 1. Computes total_score server-side (prevents client-side score tampering).
- * 2. Upserts crew_scores for every crew the user belongs to, using GREATEST
+ * 2. Upserts guild_scores for every guild the user belongs to, using GREATEST
  *    to ensure scores never regress from stale client state.
  *
  * Time gates are enforced client-side only (UX feature, not a security boundary).
@@ -97,21 +97,21 @@ Deno.serve(async (req: Request) => {
     const weekKey = getWeekKey();
     const totalScore = computeTotalScore(focusMinutes, missionsDone, streakDays);
 
-    // Get all crews the user belongs to
+    // Get all guilds the user belongs to
     const { data: memberships, error: memError } = await supabase
-      .from('crew_members')
-      .select('crew_id')
+      .from('guild_members')
+      .select('guild_id')
       .eq('user_id', userId);
 
     if (memError) {
       throw memError;
     }
 
-    // Upsert score for each crew using GREATEST to prevent regression from stale client state
-    const results: { crew_id: string; ok: boolean }[] = [];
+    // Upsert score for each guild using GREATEST to prevent regression from stale client state
+    const results: { guild_id: string; ok: boolean }[] = [];
     for (const m of memberships ?? []) {
-      const { error: upsertError } = await supabase.rpc('upsert_crew_score', {
-        p_crew_id: m.crew_id,
+      const { error: upsertError } = await supabase.rpc('upsert_guild_score', {
+        p_guild_id: m.guild_id,
         p_user_id: userId,
         p_week_key: weekKey,
         p_focus_minutes: focusMinutes,
@@ -119,11 +119,11 @@ Deno.serve(async (req: Request) => {
         p_streak_days: streakDays,
         p_total_score: totalScore,
       });
-      results.push({ crew_id: m.crew_id as string, ok: !upsertError });
+      results.push({ guild_id: m.guild_id as string, ok: !upsertError });
     }
 
     return new Response(
-      JSON.stringify({ success: true, weekKey, totalScore, crews: results }),
+      JSON.stringify({ success: true, weekKey, totalScore, guilds: results }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   } catch (err) {

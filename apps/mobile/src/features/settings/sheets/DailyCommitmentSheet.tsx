@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import SettingsSheetShell from '../components/SettingsSheetShell';
-import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import { SystemTokens } from '../../home/systemTokens';
 import { Analytics } from '../../../services/AnalyticsService';
 import { NotificationService } from '../../../services/NotificationService';
 import { useSession } from '../../home/state/SessionProvider';
@@ -40,8 +40,8 @@ const DailyCommitmentSheet: React.FC<Props> = ({
   };
 
   return (
-    <SettingsSheetShell visible={visible} onClose={onClose} title="Daily commitment">
-      <View style={styles.gap}>
+    <SettingsSheetShell visible={visible} onClose={onClose} title="Daily Commitment">
+      <View style={styles.list}>
         {OPTIONS.map((m) => {
           const active = sel === m;
           return (
@@ -50,48 +50,57 @@ const DailyCommitmentSheet: React.FC<Props> = ({
               onPress={() => setSel(m)}
               style={[styles.opt, active && styles.optOn]}
             >
-              <Text style={styles.optText}>{m} minutes</Text>
+              <Text style={[styles.optText, active && styles.optTextOn]}>
+                {m} MINUTES
+              </Text>
             </Pressable>
           );
         })}
       </View>
       <Pressable style={styles.save} onPress={handleUpdate}>
-        <Text style={styles.saveText}>Update</Text>
+        <Text style={styles.saveText}>⟐  UPDATE</Text>
       </Pressable>
     </SettingsSheetShell>
   );
 };
 
 const styles = StyleSheet.create({
-  gap: { gap: 8 },
+  list: {
+    gap: 6,
+    marginBottom: 18,
+  },
   opt: {
-    backgroundColor: Colors.surface,
-    borderRadius: 10,
     paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: 'transparent',
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255,255,255,0.06)',
   },
   optOn: {
-    backgroundColor: 'rgba(58,102,255,0.15)',
-    borderColor: Colors.primary,
+    backgroundColor: 'rgba(58,102,255,0.12)',
+    borderLeftColor: SystemTokens.glowAccent,
   },
   optText: {
-    fontFamily: FontFamily.bodyMedium,
-    fontSize: 15,
-    color: Colors.textPrimary,
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 13,
+    letterSpacing: 1.2,
+    color: SystemTokens.textSecondary,
+  },
+  optTextOn: {
+    color: SystemTokens.textPrimary,
   },
   save: {
-    marginTop: 20,
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
     paddingVertical: 14,
+    backgroundColor: 'rgba(58,102,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(58,102,255,0.45)',
     alignItems: 'center',
   },
   saveText: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 16,
-    color: Colors.textPrimary,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 13,
+    letterSpacing: 1.8,
+    color: SystemTokens.glowAccent,
   },
 });
 

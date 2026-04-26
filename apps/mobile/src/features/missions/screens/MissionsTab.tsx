@@ -1,236 +1,138 @@
 /**
- * MissionsTab — The Quest Log with 3-slot mission system and glassmorphic design.
+ * MissionsTab — HUD mission log. Wraps every section in HUDPanel:
+ * daily missions (3-slot), goal-specific daily activity check-in, stat
+ * growth aggregation, and mission history.
  */
 
 import React, { useEffect } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import { useMissions } from '../MissionsProvider';
-import { MissionCard } from '../components/MissionCard';
-import { useOnboarding } from '../../onboarding/state/OnboardingProvider';
-import GymCheckInCard from '../../gym/components/GymCheckInCard';
+import { useSession } from '../../home/state/SessionProvider';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { NotificationService } from '../../../services/NotificationService';
 import AppGuideSheet, { useAppGuide } from '../../../design/components/AppGuideSheet';
-import { DISCIPLINE_TIERS, type DisciplineTier } from '../../leaderboard/LeaderboardService';
-
-/**
- * Season mission XP thresholds — same rank names as the Discipline Board.
- * Tuned for ~50–70 XP/day when clearing dailies; XP resets each global season (~4 months).
- */
-const MISSION_XP_THRESHOLD: Record<DisciplineTier, number> = {
-  Recruit: 0,
-  Soldier: 200,
-  Vet: 450,
-  OG: 700,
-  Elite: 1000,
-  Legend: 1350,
-  Goat: 1750,
-  Immortal: 2200,
-  'Locked In': 2800,
-};
-
-const XP_LEVELS: { name: DisciplineTier; threshold: number }[] = DISCIPLINE_TIERS.map((name) => ({
-  name,
-  threshold: MISSION_XP_THRESHOLD[name],
-}));
-
-function getLevelInfo(xp: number) {
-  let current = XP_LEVELS[0];
-  let next: (typeof XP_LEVELS)[number] | null = XP_LEVELS[1];
-  for (let i = XP_LEVELS.length - 1; i >= 0; i--) {
-    if (xp >= XP_LEVELS[i].threshold) {
-      current = XP_LEVELS[i];
-      next = XP_LEVELS[i + 1] ?? null;
-      break;
-    }
-  }
-  const isMax = next === null;
-  const nextThreshold = next ? next.threshold : current.threshold;
-  const progress = next
-    ? Math.min(1, (xp - current.threshold) / (next.threshold - current.threshold))
-    : 1;
-  return { level: current.name, xp, nextThreshold, progress, isMax };
-}
-
-const LEVEL_COLORS: Record<DisciplineTier, string> = {
-  Recruit: '#6B7280',
-  Soldier: '#9CA3AF',
-  Vet: '#CD7F32',
-  OG: '#C0C0C0',
-  Elite: '#B0A0FF',
-  Legend: '#FFD700',
-  Goat: '#00D68F',
-  Immortal: '#B9F2FF',
-  'Locked In': Colors.accent,
-};
+import HUDPanel from '../../home/components/HUDPanel';
+import MissionLogCard from '../components/MissionLogCard';
+import DailyActivityCard from '../components/DailyActivityCard';
+import StatGrowthPanel from '../components/StatGrowthPanel';
+import MissionHistoryPanel from '../components/MissionHistoryPanel';
+import { SystemTokens } from '../../home/systemTokens';
 
 const MissionsTab: React.FC = () => {
   const {
     missions,
     weeklyMissions,
     completedCount,
-    dailyXP,
     totalXP,
-    missionSeasonLabel,
     completeMission,
     lockedInToday,
   } = useMissions();
+  const { state: session } = useSession();
+  const streak = session.consecutiveStreak;
 
   useEffect(() => {
     if (lockedInToday) {
       void NotificationService.cancelMissionReminder();
     }
   }, [lockedInToday]);
-  const { state: onboardingState } = useOnboarding();
-  const showGymCard = onboardingState.primaryGoal === 'Improve my physique';
-  const missionsGuide = useAppGuide('missions');
 
-  const level = getLevelInfo(totalXP);
-  const accentColor = LEVEL_COLORS[level.level] ?? Colors.accent;
+  const missionsGuide = useAppGuide('missions');
+  const allDone = missions.length > 0 && completedCount === missions.length;
 
   return (
     <View style={styles.root}>
       <LinearGradient
-        colors={['#0E1116', '#111922', '#0E1116']}
-        locations={[0, 0.4, 1]}
+        colors={['#0A1628', '#0E1116', '#0E1116']}
+        locations={[0, 0.55, 1]}
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.glowOrb} />
-      <View style={styles.glowOrb2} />
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scroll}
         >
-          {/* Header */}
-          <Text style={styles.heading}>Missions</Text>
-          <Text style={styles.subheading}>
-            {missionSeasonLabel} · Complete missions to earn XP and rank up
-          </Text>
+          <HUDPanel headerLabel="MISSION LOG" headerRight={`Day ${streak}`} />
 
-          {/* XP Progress Card */}
-          <View style={styles.xpCard}>
-            <View style={[styles.xpCardGlow, { backgroundColor: `${accentColor}08` }]} />
-            <View style={styles.xpHeader}>
-              <View style={[styles.levelBadge, { backgroundColor: `${accentColor}15` }]}>
-                <Ionicons name="shield" size={14} color={accentColor} />
-                <Text style={[styles.levelName, { color: accentColor }]}>
-                  {level.level}
-                </Text>
-              </View>
-              <Text style={styles.xpCount}>
-                <Text style={styles.xpCountBold}>{totalXP}</Text>
-                {level.isMax ? ' XP · max rank' : (
-                  <>
-                    {' / '}
-                    {level.nextThreshold} XP
-                  </>
-                )}
+          <HUDPanel
+            headerLabel="DAILY MISSIONS"
+            headerRight={`${completedCount}/${missions.length}`}
+          >
+            <View style={styles.list}>
+              {missions.map((m) => (
+                <MissionLogCard key={m.id} mission={m} onComplete={completeMission} />
+              ))}
+            </View>
+            <View style={styles.bonusRow}>
+              <Text
+                style={[
+                  styles.bonusText,
+                  allDone && {
+                    textShadowColor: SystemTokens.gold,
+                    textShadowRadius: 8,
+                    textShadowOffset: { width: 0, height: 0 },
+                  },
+                ]}
+              >
+                {allDone ? '✦ ALL MISSIONS CLEAR  —  +50 XP' : 'COMPLETE ALL  —  +50 XP BONUS'}
               </Text>
             </View>
+          </HUDPanel>
 
-            <View style={styles.xpTrack}>
-              <LinearGradient
-                colors={[accentColor, Colors.accent]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={[styles.xpFill, { width: `${Math.max(level.progress * 100, 2)}%` }]}
-              />
-              {level.progress > 0.05 && (
-                <View
-                  style={[
-                    styles.xpFillGlow,
-                    {
-                      left: `${level.progress * 100 - 2}%`,
-                      backgroundColor: accentColor,
-                    },
-                  ]}
-                />
-              )}
-            </View>
+          <DailyActivityCard />
 
-            {/* Daily XP earned today */}
-            {dailyXP > 0 && (
-              <Text style={styles.dailyXPNote}>+{dailyXP} XP earned today</Text>
-            )}
-          </View>
+          <StatGrowthPanel missions={missions} />
 
-          {/* Section header */}
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionLeft}>
-              <Ionicons name="flash" size={16} color={Colors.accent} />
-              <Text style={styles.sectionTitle}>Today's Missions</Text>
-            </View>
-            <View style={[
-              styles.completePill,
-              completedCount === missions.length && missions.length > 0 && styles.completePillDone,
-            ]}>
-              <Text style={[
-                styles.completePillText,
-                completedCount === missions.length && missions.length > 0 && styles.completePillTextDone,
-              ]}>
-                {completedCount}/{missions.length} Complete
-              </Text>
-            </View>
-          </View>
-
-          {/* Mission cards */}
-          <View style={styles.missionList}>
-            {missions.map((m) => (
-              <MissionCard key={m.id} mission={m} onComplete={completeMission} />
-            ))}
-          </View>
-
-          {/* Weekly challenges (same data as MissionsPanel — was missing from this tab) */}
           {weeklyMissions.length > 0 && (
-            <>
-              <View style={styles.weeklySectionHeader}>
-                <Ionicons name="calendar-outline" size={16} color={Colors.accent} />
-                <Text style={styles.weeklySectionTitle}>Weekly Challenges</Text>
-              </View>
-              <View style={styles.missionList}>
+            <HUDPanel
+              headerLabel="WEEKLY CHALLENGES"
+              headerRight={`${weeklyMissions.filter((w) => w.completed).length}/${weeklyMissions.length}`}
+            >
+              <View style={styles.list}>
                 {weeklyMissions.map((m) => (
-                  <MissionCard key={m.id} mission={m} onComplete={completeMission} />
+                  <MissionLogCard key={m.id} mission={m} onComplete={completeMission} />
                 ))}
               </View>
-            </>
+            </HUDPanel>
           )}
 
-          {/* Gym check-in bonus */}
-          {showGymCard && (
-            <>
-              <View style={styles.bonusDivider}>
-                <View style={styles.dividerLine} />
-                <View style={styles.bonusBadge}>
-                  <Ionicons name="star" size={10} color={Colors.accent} />
-                  <Text style={styles.bonusLabel}>BONUS</Text>
-                </View>
-                <View style={styles.dividerLine} />
-              </View>
-              <GymCheckInCard showGym={showGymCard} />
-            </>
-          )}
+          <MissionHistoryPanel
+            completedToday={completedCount}
+            totalToday={missions.length}
+            seasonXp={totalXP}
+          />
         </ScrollView>
       </SafeAreaView>
 
       <AppGuideSheet
         {...missionsGuide}
-        title="Your Missions"
-        subtitle="Complete daily tasks to level up."
+        title="Your Mission Log"
+        subtitle="Daily missions + a signature check-in based on your goal."
         tips={[
-          { icon: 'flash-outline', iconColor: Colors.accent, text: 'Missions are personalized tasks based on your goals. New ones appear daily.' },
+          {
+            icon: 'flash-outline',
+            iconColor: Colors.accent,
+            text: 'Daily missions are personalized — tap one to mark it complete and collect XP.',
+          },
           {
             icon: 'shield-outline',
             iconColor: Colors.primary,
-            text: 'Earn XP to rank up from Recruit through Locked In — same ranks as the Discipline Board. Mission XP resets every four months when a new season starts.',
+            text: 'Your daily activity check-in is your signature ritual — same XP every day across every goal.',
           },
-          { icon: 'checkmark-circle-outline', iconColor: Colors.success, text: 'Tap a mission card to mark it complete and collect your XP.' },
-          { icon: 'calendar-outline', iconColor: '#FFC857', text: 'Weekly challenges give bonus XP for sustained effort.' },
+          {
+            icon: 'analytics-outline',
+            iconColor: Colors.success,
+            text: 'The stat growth panel shows which stats your missions target and which one is weakest right now.',
+          },
+          {
+            icon: 'calendar-outline',
+            iconColor: '#FFC857',
+            text: 'Weekly challenges and your lifetime totals live below.',
+          },
         ]}
       />
     </View>
@@ -244,201 +146,38 @@ const styles = StyleSheet.create({
   },
   glowOrb: {
     position: 'absolute',
-    top: 30,
-    left: -80,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(58,102,255,0.04)',
-  },
-  glowOrb2: {
-    position: 'absolute',
-    top: 300,
-    right: -100,
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: 'rgba(0,194,255,0.03)',
+    top: -80,
+    right: -40,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(58,102,255,0.06)',
   },
   safeArea: {
     flex: 1,
+    paddingHorizontal: 16,
   },
   scroll: {
-    paddingHorizontal: 20,
-    paddingBottom: 120,
-  },
-  heading: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 28,
-    color: Colors.textPrimary,
-    letterSpacing: -0.5,
-    marginTop: 8,
-  },
-  subheading: {
-    fontFamily: FontFamily.body,
-    fontSize: 14,
-    color: Colors.textMuted,
-    marginTop: 4,
-    marginBottom: 24,
-  },
-
-  /* XP Card */
-  xpCard: {
-    backgroundColor: 'rgba(21,26,33,0.65)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    padding: 18,
-    marginBottom: 28,
-    overflow: 'hidden',
-  },
-  xpCardGlow: {
-    position: 'absolute',
-    top: -40,
-    right: -40,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-  },
-  xpHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  levelBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  levelName: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 14,
-  },
-  xpCount: {
-    fontFamily: FontFamily.body,
-    fontSize: 13,
-    color: Colors.textMuted,
-  },
-  xpCountBold: {
-    fontFamily: FontFamily.headingSemiBold,
-    color: Colors.textSecondary,
-  },
-  xpTrack: {
-    height: 8,
-    backgroundColor: 'rgba(44,52,64,0.5)',
-    borderRadius: 4,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  xpFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  xpFillGlow: {
-    position: 'absolute',
-    top: -2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    opacity: 0.4,
-  },
-  dailyXPNote: {
-    fontFamily: FontFamily.bodyMedium,
-    fontSize: 11,
-    color: Colors.success,
-    textAlign: 'right',
-    marginTop: 8,
-  },
-
-  /* Section header */
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  sectionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  sectionTitle: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 16,
-    color: Colors.textPrimary,
-  },
-  completePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: 'rgba(44,52,64,0.4)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
-  },
-  completePillDone: {
-    backgroundColor: 'rgba(0,214,143,0.1)',
-    borderColor: 'rgba(0,214,143,0.15)',
-  },
-  completePillText: {
-    fontFamily: FontFamily.bodyMedium,
-    fontSize: 11,
-    color: Colors.accent,
-  },
-  completePillTextDone: {
-    color: Colors.success,
-  },
-
-  /* Mission list */
-  missionList: {
-    gap: 10,
-  },
-
-  weeklySectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-    marginBottom: 14,
-  },
-  weeklySectionTitle: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 16,
-    color: Colors.textPrimary,
-  },
-
-  /* Bonus divider */
-  bonusDivider: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    paddingTop: 12,
+    paddingBottom: 140,
     gap: 12,
-    marginTop: 32,
-    marginBottom: 16,
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+  list: {
+    gap: 8,
   },
-  bonusBadge: {
-    flexDirection: 'row',
+  bonusRow: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: SystemTokens.divider,
+    borderStyle: 'dashed',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(0,194,255,0.06)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0,194,255,0.1)',
   },
-  bonusLabel: {
-    fontFamily: FontFamily.bodyMedium,
-    fontSize: 10,
-    color: Colors.accent,
-    letterSpacing: 1.2,
+  bonusText: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    color: SystemTokens.gold,
   },
 });
 

@@ -2,7 +2,7 @@
  * Global mission XP seasons: fixed 4-month calendar blocks for all users.
  * Season 1 begins January 2026; season number increments forever.
  *
- * (Separate from the 90-day Discipline Board / squad season helpers.)
+ * (Separate from the 90-day Discipline Board / guild season helpers.)
  */
 
 /** First month of Season 1 (local time): January 2026. */

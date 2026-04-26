@@ -4,8 +4,8 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
-export type CrewCardProps = {
-  crewName: string;
+export type GuildCardProps = {
+  guildName: string;
   memberCount: number;
   maxMembers: number;
   myRank: number | null;
@@ -16,8 +16,8 @@ export type CrewCardProps = {
 
 const RANK_GOLD = '#FFD700';
 
-const CrewCard: React.FC<CrewCardProps> = ({
-  crewName,
+const GuildCard: React.FC<GuildCardProps> = ({
+  guildName,
   memberCount,
   maxMembers,
   myRank,
@@ -40,8 +40,8 @@ const CrewCard: React.FC<CrewCardProps> = ({
 
       <View style={styles.topRow}>
         <View style={styles.nameCol}>
-          <Text style={styles.crewName} numberOfLines={1}>
-            {crewName}
+          <Text style={styles.guildName} numberOfLines={1}>
+            {guildName}
           </Text>
           <View style={styles.memberBadge}>
             <Ionicons name="people-outline" size={12} color={Colors.textMuted} />
@@ -110,7 +110,7 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 6,
   },
-  crewName: {
+  guildName: {
     fontFamily: FontFamily.headingSemiBold,
     fontSize: 17,
     color: Colors.textPrimary,
@@ -181,4 +181,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default CrewCard;
+export default GuildCard;

@@ -132,6 +132,7 @@ export const GOAL_MISSIONS: Record<string, MissionTemplate[]> = {
     { title: 'No Eating After 8 PM', description: 'Close your eating window by 8 PM', type: 'lifestyle', completionType: 'hybrid', xp: { easy: 15, medium: 20, hard: 25 }, timeGate: 'After 8 PM' },
     { title: 'Protein Goal', description: 'Hit your daily protein target', type: 'lifestyle', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 }, timeGate: 'After 6 PM' },
     { title: 'Cardio Session', description: 'Complete 20+ min of cardio', type: 'workout_check', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 } },
+    { title: 'Accountability Partner', description: 'Share your workout or progress with someone today', type: 'social', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
   ],
 
   'Build a business or side project': [
@@ -168,6 +169,7 @@ export const GOAL_MISSIONS: Record<string, MissionTemplate[]> = {
     { title: 'Say No to One Thing', description: 'Decline a distraction or unproductive invite', type: 'discipline', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
     { title: 'Posture Check', description: 'Maintain good posture during all focus sessions', type: 'discipline', completionType: 'self-report', xp: { easy: 10, medium: 15, hard: 20 } },
     { title: 'No Complaining', description: 'Go the full day without complaining', type: 'discipline', completionType: 'hybrid', xp: { easy: 15, medium: 20, hard: 25 }, timeGate: 'After 8 PM' },
+    { title: 'Discipline Challenge', description: 'Challenge a friend to complete a discipline task with you today', type: 'social', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
   ],
 
   'Advance my career': [
@@ -222,6 +224,7 @@ export const GOAL_MISSIONS: Record<string, MissionTemplate[]> = {
     { title: 'Batch Communication', description: 'Check messages only 2 times today', type: 'discipline', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 } },
     { title: 'Unsubscribe from 3 Things', description: 'Remove 3 email lists, notifications, or follows', type: 'planning', completionType: 'self-report', xp: { easy: 15, medium: 15, hard: 20 } },
     { title: 'Grayscale Mode', description: 'Put phone in grayscale for the full day', type: 'discipline', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
+    { title: 'Screen Time Compare', description: 'Compare screen time stats with a friend — lower wins', type: 'social', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
   ],
 
   'Improve emotional control': [
@@ -257,9 +260,7 @@ export const WEAKNESS_MISSIONS: Record<string, MissionTemplate[]> = {
     { title: 'Replace Scroll with Action', description: 'Every time you catch yourself scrolling, do 10 pushups', type: 'discipline', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
     { title: 'Airplane Mode Morning', description: 'Stay in airplane mode for 1st hour after waking', type: 'discipline', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 } },
     { title: 'Screen Time Check', description: 'Keep social media screen time under 30 minutes today', type: 'no_social', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 }, timeGate: 'After 8 PM' },
-    { title: 'Never Miss Twice', description: 'Maintain your streak — lock in every day this week', type: 'focus_session', completionType: 'auto', xp: { easy: 20, medium: 20, hard: 25 }, duration: 'weekly', progressTarget: 7, progressMetric: 'days_active' },
-    { title: 'Daily Check-In', description: 'Open the app before 9 AM on 5+ days this week', type: 'focus_session', completionType: 'auto', xp: { easy: 10, medium: 15, hard: 20 }, duration: 'weekly', progressTarget: 5, progressMetric: 'first_open_before_9am' },
-    { title: 'Weekly Consistency Score', description: 'Lock in on 5+ days this week', type: 'focus_session', completionType: 'auto', xp: { easy: 25, medium: 30, hard: 35 }, duration: 'weekly', progressTarget: 5, progressMetric: 'days_active' },
+    { title: 'Scroll Swap', description: 'Every time you catch yourself scrolling, switch to a focus session instead', type: 'discipline', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
   ],
 
   'I start strong, then fall off': [
@@ -271,9 +272,7 @@ export const WEAKNESS_MISSIONS: Record<string, MissionTemplate[]> = {
     { title: 'No Zero Days', description: 'Do at least one productive thing, no matter how small', type: 'discipline', completionType: 'self-report', xp: { easy: 15, medium: 15, hard: 20 } },
     { title: 'Recommit Ritual', description: 'Re-read your goals and restate your commitment', type: 'reflection', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
     { title: 'Tell Someone Your Goal', description: "Share today's goal with a friend for accountability", type: 'social', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
-    { title: 'Never Miss Twice', description: 'Maintain your streak — lock in every day this week', type: 'focus_session', completionType: 'auto', xp: { easy: 20, medium: 20, hard: 25 }, duration: 'weekly', progressTarget: 7, progressMetric: 'days_active' },
-    { title: 'Daily Check-In', description: 'Open the app before 9 AM on 5+ days this week', type: 'focus_session', completionType: 'auto', xp: { easy: 10, medium: 15, hard: 20 }, duration: 'weekly', progressTarget: 5, progressMetric: 'first_open_before_9am' },
-    { title: 'Weekly Consistency Score', description: 'Lock in on 5+ days this week', type: 'focus_session', completionType: 'auto', xp: { easy: 25, medium: 30, hard: 35 }, duration: 'weekly', progressTarget: 5, progressMetric: 'days_active' },
+    { title: 'Finish What You Start', description: 'Complete every focus session you begin today — no early exits', type: 'focus_session', completionType: 'auto', xp: { easy: 20, medium: 25, hard: 30 } },
   ],
 
   'I get emotionally reactive': [
@@ -285,9 +284,7 @@ export const WEAKNESS_MISSIONS: Record<string, MissionTemplate[]> = {
     { title: 'Emotional Score', description: 'Rate your emotional control 1-10 at end of day', type: 'reflection', completionType: 'self-report', xp: { easy: 10, medium: 15, hard: 20 }, timeGate: 'After 7 PM' },
     { title: 'Silent Focus', description: 'Complete a focus session in total silence', type: 'focus_session', completionType: 'auto', xp: { easy: 20, medium: 25, hard: 30 } },
     { title: 'Limit Rage Content', description: 'Avoid all outrage/drama content today', type: 'no_social', completionType: 'hybrid', xp: { easy: 15, medium: 20, hard: 25 }, timeGate: 'After 8 PM' },
-    { title: 'Never Miss Twice', description: 'Maintain your streak — lock in every day this week', type: 'focus_session', completionType: 'auto', xp: { easy: 20, medium: 20, hard: 25 }, duration: 'weekly', progressTarget: 7, progressMetric: 'days_active' },
-    { title: 'Daily Check-In', description: 'Open the app before 9 AM on 5+ days this week', type: 'focus_session', completionType: 'auto', xp: { easy: 10, medium: 15, hard: 20 }, duration: 'weekly', progressTarget: 5, progressMetric: 'first_open_before_9am' },
-    { title: 'Weekly Consistency Score', description: 'Lock in on 5+ days this week', type: 'focus_session', completionType: 'auto', xp: { easy: 25, medium: 30, hard: 35 }, duration: 'weekly', progressTarget: 5, progressMetric: 'days_active' },
+    { title: 'Controlled Response', description: 'In one difficult moment today, choose your response instead of reacting', type: 'discipline', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 } },
   ],
 
   'I relapse into distractions': [
@@ -299,19 +296,79 @@ export const WEAKNESS_MISSIONS: Record<string, MissionTemplate[]> = {
     { title: 'Pre-Commitment', description: "Write out exactly when and what you'll work on today", type: 'planning', completionType: 'self-report', xp: { easy: 15, medium: 15, hard: 20 } },
     { title: 'Distraction Tally', description: 'Count every time you get distracted today', type: 'journal', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 }, timeGate: 'After 6 PM' },
     { title: 'Reward Only After Goal', description: 'No entertainment until daily focus goal is hit', type: 'focus_session', completionType: 'auto', xp: { easy: 20, medium: 25, hard: 30 } },
-    { title: 'Never Miss Twice', description: 'Maintain your streak — lock in every day this week', type: 'focus_session', completionType: 'auto', xp: { easy: 20, medium: 20, hard: 25 }, duration: 'weekly', progressTarget: 7, progressMetric: 'days_active' },
-    { title: 'Daily Check-In', description: 'Open the app before 9 AM on 5+ days this week', type: 'focus_session', completionType: 'auto', xp: { easy: 10, medium: 15, hard: 20 }, duration: 'weekly', progressTarget: 5, progressMetric: 'first_open_before_9am' },
-    { title: 'Weekly Consistency Score', description: 'Lock in on 5+ days this week', type: 'focus_session', completionType: 'auto', xp: { easy: 25, medium: 30, hard: 35 }, duration: 'weekly', progressTarget: 5, progressMetric: 'days_active' },
+    { title: 'Urge Surfing', description: 'When you feel the urge to open a blocked app, wait 5 min and write what triggered it', type: 'journal', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
   ],
 
   'I lack daily consistency': [
     { title: 'Same Time, Every Day', description: 'Start your focus session at the same time as yesterday', type: 'discipline', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 } },
     { title: 'Morning Anchor', description: 'Complete one productive action within 30 min of waking', type: 'discipline', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
-    { title: 'Never Miss Twice', description: 'Maintain your streak — lock in every day this week', type: 'focus_session', completionType: 'auto', xp: { easy: 20, medium: 20, hard: 25 }, duration: 'weekly', progressTarget: 7, progressMetric: 'days_active' },
     { title: 'Evening Prep', description: "Prepare tomorrow's workspace/outfit/plan before bed", type: 'planning', completionType: 'self-report', xp: { easy: 15, medium: 15, hard: 20 }, timeGate: 'After 7 PM' },
-    { title: 'Daily Check-In', description: 'Open the app before 9 AM on 5+ days this week', type: 'focus_session', completionType: 'auto', xp: { easy: 10, medium: 15, hard: 20 }, duration: 'weekly', progressTarget: 5, progressMetric: 'first_open_before_9am' },
     { title: 'Routine Tracker', description: 'Complete your entire morning routine as planned', type: 'discipline', completionType: 'self-report', xp: { easy: 20, medium: 25, hard: 30 } },
     { title: 'Bedtime Alarm', description: 'Be in bed by your target time', type: 'lifestyle', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
-    { title: 'Weekly Consistency Score', description: 'Lock in on 5+ days this week', type: 'focus_session', completionType: 'auto', xp: { easy: 25, medium: 30, hard: 35 }, duration: 'weekly', progressTarget: 5, progressMetric: 'days_active' },
+    { title: 'Time Block Your Day', description: 'Write out your schedule in 1-hour blocks before starting work', type: 'planning', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
+    { title: 'End-of-Day Score', description: 'Rate your consistency 1-10 and write one thing to improve tomorrow', type: 'reflection', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 }, timeGate: 'After 7 PM' },
+    { title: 'Habit Stack', description: 'Attach your focus session to an existing habit (after coffee, after lunch, etc.)', type: 'discipline', completionType: 'self-report', xp: { easy: 15, medium: 20, hard: 25 } },
   ],
 };
+
+// ──────────────────────────────────────────────
+// SLOT 4: Daily Activity Check-In (1 per goal)
+// One signature ritual per goal so every user has XP parity with the
+// physique user's "Gym Check-In". Surfaced as a dedicated slot on the
+// Missions tab — NOT mixed into the daily 3-slot rotation.
+// ──────────────────────────────────────────────
+
+export const DAILY_ACTIVITY_BY_GOAL: Record<string, MissionTemplate> = {
+  'Improve my physique': {
+    title: 'Gym Check-In',
+    description: 'Log your workout or training session',
+    type: 'workout_check',
+    completionType: 'self-report',
+    xp: { easy: 20, medium: 25, hard: 30 },
+  },
+  'Build a business or side project': {
+    title: 'Builder Check-In',
+    description: 'Log at least 1 hour of project work today',
+    type: 'focus_session',
+    completionType: 'self-report',
+    xp: { easy: 20, medium: 25, hard: 30 },
+  },
+  'Increase discipline & self-control': {
+    title: 'Discipline Check-In',
+    description: 'Complete your full morning routine as planned',
+    type: 'discipline',
+    completionType: 'self-report',
+    xp: { easy: 20, medium: 25, hard: 30 },
+  },
+  'Advance my career': {
+    title: 'Career Check-In',
+    description: 'Log your highest-impact professional task completed today',
+    type: 'planning',
+    completionType: 'self-report',
+    xp: { easy: 20, medium: 25, hard: 30 },
+  },
+  'Study with consistency': {
+    title: 'Study Check-In',
+    description: 'Log a completed study session with topic covered',
+    type: 'focus_session',
+    completionType: 'self-report',
+    xp: { easy: 20, medium: 25, hard: 30 },
+  },
+  'Reduce distractions': {
+    title: 'Screen Time Check-In',
+    description: 'Screenshot and log your screen time — must be below your target',
+    type: 'no_social',
+    completionType: 'self-report',
+    xp: { easy: 20, medium: 25, hard: 30 },
+  },
+  'Improve emotional control': {
+    title: 'Mood Check-In',
+    description: 'Log your emotional state and one trigger you managed today',
+    type: 'discipline',
+    completionType: 'self-report',
+    xp: { easy: 20, medium: 25, hard: 30 },
+  },
+};
+
+export const getDailyActivityForGoal = (goal: string): MissionTemplate | null =>
+  DAILY_ACTIVITY_BY_GOAL[goal] ?? null;

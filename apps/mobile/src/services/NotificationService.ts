@@ -16,8 +16,8 @@ const ID_EVENING = 'lockin-reminder-evening';
 const ID_CLOSE_TO_GOAL = 'close-to-goal';
 const ID_STREAK_PROTECT = 'streak-protect';
 const ID_MISSION_REMINDER = 'mission-reminder';
-const ID_CREW_WEEKLY = 'crew-weekly';
-const ID_CREW_FIRST_NUDGE = 'crew-first-nudge';
+const ID_GUILD_WEEKLY = 'guild-weekly';
+const ID_GUILD_FIRST_NUDGE = 'guild-first-nudge';
 const ID_WIN_BACK_1 = 'win-back-1';
 const ID_WIN_BACK_3 = 'win-back-3';
 const ID_WIN_BACK_7 = 'win-back-7';
@@ -28,7 +28,7 @@ const MASTER_BATCH_IDS = [
   ID_EVENING,
   ID_STREAK_PROTECT,
   ID_MISSION_REMINDER,
-  ID_CREW_WEEKLY,
+  ID_GUILD_WEEKLY,
   ID_WIN_BACK_1,
   ID_WIN_BACK_3,
   ID_WIN_BACK_7,
@@ -40,32 +40,32 @@ const KEY_SESSION = '@lockedin/session_state';
 const KEY_MISSIONS = '@lockedin/daily_missions';
 const KEY_MISSION_DATE = '@lockedin/daily_missions_date';
 const KEY_MILESTONE_SENT = '@lockedin/milestone_notifs_sent';
-const KEY_CREW_FIRST_NUDGE = '@lockedin/crew_first_nudge_sent';
+const KEY_GUILD_FIRST_NUDGE = '@lockedin/guild_first_nudge_sent';
 const KEY_LAST_APP_OPEN = '@lockedin/last_app_open';
-const KEY_CREW_CACHED_RANK = '@lockedin/crew_cached_rank';
-const KEY_HAS_ACTIVE_CREW = '@lockedin/has_active_crew';
+const KEY_GUILD_CACHED_RANK = '@lockedin/guild_cached_rank';
+const KEY_HAS_ACTIVE_GUILD = '@lockedin/has_active_guild';
 const KEY_NOTIF_PERMISSION = '@lockedin/notif_permission_granted';
 export const KEY_NOTIF_USER_DISABLED = '@lockedin/notif_user_disabled';
 const KEY_REMINDER_TIME = '@lockedin/reminder_time';
 const KEY_NOTIF_STREAK_ALERTS = '@lockedin/notif_streak_alerts';
-const KEY_NOTIF_CREW_UPDATES = '@lockedin/notif_crew_updates';
+const KEY_NOTIF_GUILD_UPDATES = '@lockedin/notif_guild_updates';
 
 const STREAK_MILESTONES = [3, 7, 14, 30, 60, 90, 180, 365] as const;
 
-export type NotificationNavScreen = 'Home' | 'CrewDetail' | 'CrewList';
+export type NotificationNavScreen = 'Home' | 'GuildDetail' | 'GuildList';
 
 export type NotificationPayload = {
   type:
     | 'lockin-reminder'
     | 'streak-protect'
     | 'mission-reminder'
-    | 'crew-weekly'
+    | 'guild-weekly'
     | 'win-back'
     | 'milestone'
     | 'close-to-goal'
-    | 'crew-first-nudge';
+    | 'guild-first-nudge';
   screen: NotificationNavScreen;
-  crew_id?: string;
+  guild_id?: string;
 };
 
 let channelReady = false;
@@ -133,9 +133,9 @@ async function readStreakAlertsEnabled(): Promise<boolean> {
   }
 }
 
-async function readCrewNotifEnabled(): Promise<boolean> {
+async function readGuildNotifEnabled(): Promise<boolean> {
   try {
-    return (await AsyncStorage.getItem(KEY_NOTIF_CREW_UPDATES)) !== 'false';
+    return (await AsyncStorage.getItem(KEY_NOTIF_GUILD_UPDATES)) !== 'false';
   } catch {
     return true;
   }
@@ -200,27 +200,27 @@ async function readMissionCompletionCount(): Promise<number> {
   }
 }
 
-async function readHasActiveCrew(): Promise<boolean> {
+async function readHasActiveGuild(): Promise<boolean> {
   try {
-    const v = await AsyncStorage.getItem(KEY_HAS_ACTIVE_CREW);
+    const v = await AsyncStorage.getItem(KEY_HAS_ACTIVE_GUILD);
     return v === 'true';
   } catch {
     return false;
   }
 }
 
-async function readCrewCachedRank(): Promise<{ crew_name: string; rank: number; crew_id?: string }> {
+async function readGuildCachedRank(): Promise<{ guild_name: string; rank: number; guild_id?: string }> {
   try {
-    const raw = await AsyncStorage.getItem(KEY_CREW_CACHED_RANK);
-    if (!raw) return { crew_name: 'your squad', rank: 1 };
-    const p = JSON.parse(raw) as { crew_name?: string; rank?: number; crew_id?: string };
+    const raw = await AsyncStorage.getItem(KEY_GUILD_CACHED_RANK);
+    if (!raw) return { guild_name: 'your guild', rank: 1 };
+    const p = JSON.parse(raw) as { guild_name?: string; rank?: number; guild_id?: string };
     return {
-      crew_name: typeof p.crew_name === 'string' ? p.crew_name : 'your squad',
+      guild_name: typeof p.guild_name === 'string' ? p.guild_name : 'your guild',
       rank: typeof p.rank === 'number' && p.rank > 0 ? p.rank : 1,
-      crew_id: typeof p.crew_id === 'string' ? p.crew_id : undefined,
+      guild_id: typeof p.guild_id === 'string' ? p.guild_id : undefined,
     };
   } catch {
-    return { crew_name: 'your squad', rank: 1 };
+    return { guild_name: 'your guild', rank: 1 };
   }
 }
 
@@ -317,7 +317,7 @@ export class NotificationService {
     }
   }
 
-  /** Re-run master scheduler using streak from persisted session (after crew join/leave). */
+  /** Re-run master scheduler using streak from persisted session (after guild join/leave). */
   static async refreshScheduleWithStoredStreak(): Promise<void> {
     let streak = 0;
     try {
@@ -334,7 +334,7 @@ export class NotificationService {
 
   /**
    * Master scheduler: refreshes recurring daily/weekly + win-back batch.
-   * Does not cancel one-shots: close-to-goal, milestones, crew-first-nudge, execution block.
+   * Does not cancel one-shots: close-to-goal, milestones, guild-first-nudge, execution block.
    */
   static async scheduleAllDailyNotifications(streak: number): Promise<void> {
     try {
@@ -350,9 +350,9 @@ export class NotificationService {
       const lastLock = await readSessionLastLockInDate();
       const sessionToday = lastLock === todayKey;
       const missionDone = await readMissionCompletionCount();
-      const hasCrew = await readHasActiveCrew();
+      const hasGuild = await readHasActiveGuild();
       const streakAlertsOn = await readStreakAlertsEnabled();
-      const crewNotifOn = await readCrewNotifEnabled();
+      const guildNotifOn = await readGuildNotifEnabled();
       const { hour: morningHour, minute: morningMinute } = await readReminderTimeHHmm();
 
       // a. Morning lock-in (time from settings)
@@ -426,13 +426,13 @@ export class NotificationService {
       if (missionDone < 3) {
         const remaining = 3 - missionDone;
         const s = remaining === 1 ? '' : 's';
-        const useCrewCopy = hasCrew && dayOfYear() % 2 === 0;
+        const useGuildCopy = hasGuild && dayOfYear() % 2 === 0;
         await Notifications.scheduleNotificationAsync({
           identifier: ID_MISSION_REMINDER,
           content: {
-            title: useCrewCopy ? 'Your squad is watching.' : 'Unfinished business.',
-            body: useCrewCopy
-              ? `${remaining} mission${s} left. Every one counts for your squad score.`
+            title: useGuildCopy ? 'Your guild is watching.' : 'Unfinished business.',
+            body: useGuildCopy
+              ? `${remaining} mission${s} left. Every one counts for your guild score.`
               : `${remaining} mission${s} left today. Don't leave points on the table.`,
             sound: 'default',
             data: {
@@ -449,19 +449,19 @@ export class NotificationService {
         });
       }
 
-      // e. Squad weekly — Sunday 6 PM
-      if (hasCrew && crewNotifOn) {
-        const { crew_name, rank, crew_id } = await readCrewCachedRank();
+      // e. Guild weekly — Sunday 6 PM
+      if (hasGuild && guildNotifOn) {
+        const { guild_name, rank, guild_id } = await readGuildCachedRank();
         await Notifications.scheduleNotificationAsync({
-          identifier: ID_CREW_WEEKLY,
+          identifier: ID_GUILD_WEEKLY,
           content: {
-            title: 'Squad leaderboard resets tomorrow.',
-            body: `You're #${rank} in ${crew_name}. Lock in tonight to finish strong.`,
+            title: 'Guild leaderboard resets tomorrow.',
+            body: `You're #${rank} in ${guild_name}. Lock in tonight to finish strong.`,
             sound: 'default',
             data: {
-              type: 'crew-weekly',
-              screen: crew_id ? 'CrewDetail' : 'CrewList',
-              ...(crew_id ? { crew_id } : {}),
+              type: 'guild-weekly',
+              screen: guild_id ? 'GuildDetail' : 'GuildList',
+              ...(guild_id ? { guild_id } : {}),
             } satisfies NotificationPayload,
             ...androidExtras,
           },
@@ -559,28 +559,28 @@ export class NotificationService {
     await cancelById(ID_CLOSE_TO_GOAL);
   }
 
-  /** Refresh weekly squad recap (e.g. after first join). */
-  static async scheduleCrewReminder(): Promise<void> {
+  /** Refresh weekly guild recap (e.g. after first join). */
+  static async scheduleGuildReminder(): Promise<void> {
     try {
       if (await readNotifUserDisabled()) return;
-      if (!(await readCrewNotifEnabled())) return;
+      if (!(await readGuildNotifEnabled())) return;
       await ensureAndroidChannel();
       const { status } = await Notifications.getPermissionsAsync();
       if (status !== 'granted') return;
-      await cancelById(ID_CREW_WEEKLY);
-      const hasCrew = await readHasActiveCrew();
-      if (!hasCrew) return;
-      const { crew_name, rank, crew_id } = await readCrewCachedRank();
+      await cancelById(ID_GUILD_WEEKLY);
+      const hasGuild = await readHasActiveGuild();
+      if (!hasGuild) return;
+      const { guild_name, rank, guild_id } = await readGuildCachedRank();
       await Notifications.scheduleNotificationAsync({
-        identifier: ID_CREW_WEEKLY,
+        identifier: ID_GUILD_WEEKLY,
         content: {
-          title: 'Squad leaderboard resets tomorrow.',
-          body: `You're #${rank} in ${crew_name}. Lock in tonight to finish strong.`,
+          title: 'Guild leaderboard resets tomorrow.',
+          body: `You're #${rank} in ${guild_name}. Lock in tonight to finish strong.`,
           sound: 'default',
           data: {
-            type: 'crew-weekly',
-            screen: crew_id ? 'CrewDetail' : 'CrewList',
-            ...(crew_id ? { crew_id } : {}),
+            type: 'guild-weekly',
+            screen: guild_id ? 'GuildDetail' : 'GuildList',
+            ...(guild_id ? { guild_id } : {}),
           } satisfies NotificationPayload,
           ...androidExtras,
         },
@@ -592,7 +592,7 @@ export class NotificationService {
         },
       });
     } catch (err) {
-      console.warn('[NotificationService] scheduleCrewReminder failed:', err);
+      console.warn('[NotificationService] scheduleGuildReminder failed:', err);
     }
   }
 
@@ -600,27 +600,27 @@ export class NotificationService {
     await cancelById(ID_MISSION_REMINDER);
   }
 
-  /** One-time 24h after first squad; call only when user had no squad before join/create. */
-  static async scheduleFirstCrewNudgeIfNeeded(): Promise<void> {
+  /** One-time 24h after first guild; call only when user had no guild before join/create. */
+  static async scheduleFirstGuildNudgeIfNeeded(): Promise<void> {
     try {
       if (await readNotifUserDisabled()) return;
-      if (!(await readCrewNotifEnabled())) return;
-      const sent = await AsyncStorage.getItem(KEY_CREW_FIRST_NUDGE);
+      if (!(await readGuildNotifEnabled())) return;
+      const sent = await AsyncStorage.getItem(KEY_GUILD_FIRST_NUDGE);
       if (sent === 'true') return;
       const { status } = await Notifications.getPermissionsAsync();
       if (status !== 'granted') return;
       await ensureAndroidChannel();
-      await cancelById(ID_CREW_FIRST_NUDGE);
+      await cancelById(ID_GUILD_FIRST_NUDGE);
 
       await Notifications.scheduleNotificationAsync({
-        identifier: ID_CREW_FIRST_NUDGE,
+        identifier: ID_GUILD_FIRST_NUDGE,
         content: {
-          title: 'Your squad is waiting.',
+          title: 'Your guild is waiting.',
           body: "Lock in a session to get on the leaderboard. Don't let them win.",
           sound: 'default',
           data: {
-            type: 'crew-first-nudge',
-            screen: 'CrewList',
+            type: 'guild-first-nudge',
+            screen: 'GuildList',
           } satisfies NotificationPayload,
           ...androidExtras,
         },
@@ -629,9 +629,9 @@ export class NotificationService {
           date: new Date(Date.now() + 24 * 60 * 60 * 1000),
         },
       });
-      await AsyncStorage.setItem(KEY_CREW_FIRST_NUDGE, 'true');
+      await AsyncStorage.setItem(KEY_GUILD_FIRST_NUDGE, 'true');
     } catch (err) {
-      console.warn('[NotificationService] scheduleFirstCrewNudgeIfNeeded failed:', err);
+      console.warn('[NotificationService] scheduleFirstGuildNudgeIfNeeded failed:', err);
     }
   }
 
@@ -794,12 +794,12 @@ export class NotificationService {
     }
   }
 
-  static async setCrewNotifPreference(enabled: boolean, streak: number): Promise<void> {
+  static async setGuildNotifPreference(enabled: boolean, streak: number): Promise<void> {
     try {
-      await AsyncStorage.setItem(KEY_NOTIF_CREW_UPDATES, enabled ? 'true' : 'false');
+      await AsyncStorage.setItem(KEY_NOTIF_GUILD_UPDATES, enabled ? 'true' : 'false');
       await this.scheduleAllDailyNotifications(streak);
     } catch (e) {
-      console.warn('[NotificationService] setCrewNotifPreference failed:', e);
+      console.warn('[NotificationService] setGuildNotifPreference failed:', e);
     }
   }
 }

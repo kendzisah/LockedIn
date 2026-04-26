@@ -12,18 +12,18 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../../types/navigation';
-import { CrewService } from '../CrewService';
+import { GuildService } from '../GuildService';
 import { Analytics } from '../../../services/AnalyticsService';
 import { NotificationService } from '../../../services/NotificationService';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
-type Props = NativeStackScreenProps<MainStackParamList, 'JoinCrew'>;
+type Props = NativeStackScreenProps<MainStackParamList, 'JoinGuild'>;
 
 const CODE_LENGTH = 6;
 const VALID_CHARS = /^[A-Z2-9]$/;
 
-const JoinCrewScreen: React.FC<Props> = ({ navigation }) => {
+const JoinGuildScreen: React.FC<Props> = ({ navigation }) => {
   const [chars, setChars] = useState<string[]>(Array(CODE_LENGTH).fill(''));
   const [focusedIdx, setFocusedIdx] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -96,17 +96,17 @@ const JoinCrewScreen: React.FC<Props> = ({ navigation }) => {
     setError(null);
 
     const code = chars.join('');
-    const result = await CrewService.joinCrew(code);
+    const result = await GuildService.joinGuild(code);
     setLoading(false);
 
     if (result) {
-      Analytics.track('Crew Joined', { crew_id: result.crew_id, crew_name: result.crew_name, method: 'invite_code' });
-      setSuccessMsg(`Joined ${result.crew_name}!`);
+      Analytics.track('Guild Joined', { guild_id: result.guild_id, guild_name: result.guild_name, method: 'invite_code' });
+      setSuccessMsg(`Joined ${result.guild_name}!`);
       void (async () => {
         try {
-          const { hadCrewBefore, hasCrewNow } = await CrewService.syncHasActiveCrewFlag();
-          if (hasCrewNow && !hadCrewBefore) {
-            await NotificationService.scheduleFirstCrewNudgeIfNeeded();
+          const { hadGuildBefore, hasGuildNow } = await GuildService.syncHasActiveGuildFlag();
+          if (hasGuildNow && !hadGuildBefore) {
+            await NotificationService.scheduleFirstGuildNudgeIfNeeded();
           }
           await NotificationService.refreshScheduleWithStoredStreak();
         } catch {
@@ -114,11 +114,11 @@ const JoinCrewScreen: React.FC<Props> = ({ navigation }) => {
         }
       })();
       setTimeout(() => {
-        navigation.replace('CrewDetail', { crew_id: result.crew_id });
+        navigation.replace('GuildDetail', { guild_id: result.guild_id });
       }, 1200);
     } else {
       triggerShake();
-      setError('Invalid invite code, squad is full, or you\'ve reached the 5 squad limit.');
+      setError('Invalid invite code, guild is full, or you\'ve reached the 5 guild limit.');
     }
   }, [chars, isFull, loading, navigation]);
 
@@ -129,7 +129,7 @@ const JoinCrewScreen: React.FC<Props> = ({ navigation }) => {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Join a Squad</Text>
+        <Text style={styles.headerTitle}>Join a Guild</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -181,7 +181,7 @@ const JoinCrewScreen: React.FC<Props> = ({ navigation }) => {
           {loading ? (
             <ActivityIndicator color={Colors.textPrimary} size="small" />
           ) : (
-            <Text style={styles.joinBtnText}>Join Squad</Text>
+            <Text style={styles.joinBtnText}>Join Guild</Text>
           )}
         </TouchableOpacity>
 
@@ -307,4 +307,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default JoinCrewScreen;
+export default JoinGuildScreen;

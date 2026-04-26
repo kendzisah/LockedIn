@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../../types/navigation';
-import { CrewService, type CrewDetails, type CrewLeaderboardEntry } from '../CrewService';
+import { GuildService, type GuildDetails, type GuildLeaderboardEntry } from '../GuildService';
 import { NotificationService } from '../../../services/NotificationService';
 import { SupabaseService } from '../../../services/SupabaseService';
 import { Analytics } from '../../../services/AnalyticsService';
@@ -28,7 +28,7 @@ import InviteCodeCard from '../components/InviteCodeCard';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 
-type Props = NativeStackScreenProps<MainStackParamList, 'CrewDetail'>;
+type Props = NativeStackScreenProps<MainStackParamList, 'GuildDetail'>;
 
 function getWeekKeyOffset(offset: number): string {
   const now = new Date();
@@ -57,13 +57,13 @@ function formatWeekLabel(weekKey: string, currentWeekKey: string): string {
   return `${fmt(startOfWeek)} – ${fmt(endOfWeek)}`;
 }
 
-const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { crew_id } = route.params;
-  const currentWeekKey = useMemo(() => CrewService.getCurrentWeekKey(), []);
+const GuildDetailScreen: React.FC<Props> = ({ navigation, route }) => {
+  const { guild_id } = route.params;
+  const currentWeekKey = useMemo(() => GuildService.getCurrentWeekKey(), []);
   const userId = SupabaseService.getCurrentUserId();
 
-  const [details, setDetails] = useState<CrewDetails | null>(null);
-  const [leaderboard, setLeaderboard] = useState<CrewLeaderboardEntry[]>([]);
+  const [details, setDetails] = useState<GuildDetails | null>(null);
+  const [leaderboard, setLeaderboard] = useState<GuildLeaderboardEntry[]>([]);
   const [weekOffset, setWeekOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -75,12 +75,12 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
 
   const fetchData = useCallback(async () => {
     const [d, lb] = await Promise.all([
-      CrewService.getCrewDetails(crew_id),
-      CrewService.getCrewLeaderboard(crew_id, selectedWeekKey),
+      GuildService.getGuildDetails(guild_id),
+      GuildService.getGuildLeaderboard(guild_id, selectedWeekKey),
     ]);
     setDetails(d);
     setLeaderboard(lb);
-  }, [crew_id, selectedWeekKey]);
+  }, [guild_id, selectedWeekKey]);
 
   useEffect(() => {
     setLoading(true);
@@ -101,8 +101,8 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   useEffect(() => {
     if (!details || !leaderboard.length || !userId) return;
     const me = leaderboard.find((e) => e.is_current_user);
-    Analytics.track('Crew Leaderboard Viewed', {
-      crew_id,
+    Analytics.track('Guild Leaderboard Viewed', {
+      guild_id,
       member_count: details.member_count,
       user_rank: me?.rank ?? 0,
     });
@@ -110,16 +110,16 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     void AsyncStorage.setItem(
       '@lockedin/crew_cached_rank',
       JSON.stringify({
-        crew_name: details.name,
+        guild_name: details.name,
         rank: me.rank,
-        crew_id,
+        guild_id,
       }),
     );
-  }, [details, leaderboard, crew_id, userId]);
+  }, [details, leaderboard, guild_id, userId]);
 
-  const refreshNotificationsAfterCrewChange = useCallback(async () => {
+  const refreshNotificationsAfterGuildChange = useCallback(async () => {
     try {
-      await CrewService.syncHasActiveCrewFlag();
+      await GuildService.syncHasActiveGuildFlag();
       await NotificationService.refreshScheduleWithStoredStreak();
     } catch {
       /* ignore */
@@ -135,36 +135,36 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const handleDeleteOrLeave = useCallback(
     async (action: 'delete' | 'leave') => {
       if (action === 'delete') {
-        const ok = await CrewService.deleteCrew(crew_id);
+        const ok = await GuildService.deleteGuild(guild_id);
         if (ok) {
-          Analytics.track('Crew Left', { crew_id, was_owner: true });
-          await refreshNotificationsAfterCrewChange();
+          Analytics.track('Guild Left', { guild_id, was_owner: true });
+          await refreshNotificationsAfterGuildChange();
           navigation.goBack();
-        } else Alert.alert('Error', 'Failed to delete squad.');
+        } else Alert.alert('Error', 'Failed to delete guild.');
       } else {
-        const ok = await CrewService.leaveCrew(crew_id);
+        const ok = await GuildService.leaveGuild(guild_id);
         if (ok) {
-          Analytics.track('Crew Left', { crew_id, was_owner: false });
-          await refreshNotificationsAfterCrewChange();
+          Analytics.track('Guild Left', { guild_id, was_owner: false });
+          await refreshNotificationsAfterGuildChange();
           navigation.goBack();
-        } else Alert.alert('Error', 'Failed to leave squad.');
+        } else Alert.alert('Error', 'Failed to leave guild.');
       }
     },
-    [crew_id, navigation, refreshNotificationsAfterCrewChange],
+    [guild_id, navigation, refreshNotificationsAfterGuildChange],
   );
 
   const handleKickMember = useCallback(
     (targetUserId: string, username: string) => {
       Alert.alert(
         'Remove Member',
-        `Remove ${username} from this squad? Their scores will be deleted.`,
+        `Remove ${username} from this guild? Their scores will be deleted.`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Remove',
             style: 'destructive',
             onPress: async () => {
-              const ok = await CrewService.kickMember(crew_id, targetUserId);
+              const ok = await GuildService.kickMember(guild_id, targetUserId);
               if (ok) {
                 await fetchData();
               } else {
@@ -175,15 +175,15 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         ],
       );
     },
-    [crew_id, fetchData],
+    [guild_id, fetchData],
   );
 
   const handleMore = useCallback(() => {
     const options: string[] = ['Share Invite Code'];
     if (isOwner) {
-      options.push('Delete Squad');
+      options.push('Delete Guild');
     } else {
-      options.push('Leave Squad');
+      options.push('Leave Guild');
     }
     options.push('Cancel');
 
@@ -197,12 +197,12 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         async (idx) => {
           if (idx === 0 && details) {
             Share.share({
-              message: `Join my squad "${details.name}" on Locked In! My invite code: ${details.invite_code}`,
+              message: `Join my guild "${details.name}" on Locked In! My invite code: ${details.invite_code}`,
             });
           } else if (idx === 1) {
             if (isOwner) {
               Alert.alert(
-                'Delete Squad',
+                'Delete Guild',
                 `Are you sure you want to delete "${details?.name}"? This cannot be undone.`,
                 [
                   { text: 'Cancel', style: 'cancel' },
@@ -215,7 +215,7 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
               );
             } else {
               Alert.alert(
-                'Leave Squad',
+                'Leave Guild',
                 `Are you sure you want to leave "${details?.name}"?`,
                 [
                   { text: 'Cancel', style: 'cancel' },
@@ -238,17 +238,17 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           onPress: () => {
             if (details) {
               Share.share({
-                message: `Join my squad "${details.name}" on Locked In! My invite code: ${details.invite_code}`,
+                message: `Join my guild "${details.name}" on Locked In! My invite code: ${details.invite_code}`,
               });
             }
           },
         },
         {
-          text: isOwner ? 'Delete Squad' : 'Leave Squad',
+          text: isOwner ? 'Delete Guild' : 'Leave Guild',
           style: 'destructive',
           onPress: () => {
             Alert.alert(
-              isOwner ? 'Delete Squad' : 'Leave Squad',
+              isOwner ? 'Delete Guild' : 'Leave Guild',
               isOwner
                 ? `Are you sure you want to delete "${details?.name}"? This cannot be undone.`
                 : `Are you sure you want to leave "${details?.name}"?`,
@@ -272,7 +272,7 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     return (
       <View style={styles.root}>
         <LinearGradient
-          colors={['#0E1116', '#111922', '#0E1116']}
+          colors={['#0A1628', '#0E1116', '#0E1116']}
           locations={[0, 0.5, 1]}
           style={StyleSheet.absoluteFill}
         />
@@ -286,12 +286,11 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   return (
     <View style={styles.root}>
       <LinearGradient
-        colors={['#0E1116', '#111922', '#0E1116']}
-        locations={[0, 0.5, 1]}
+        colors={['#0A1628', '#0E1116', '#0E1116']}
+        locations={[0, 0.55, 1]}
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.glowOrb} />
-      <View style={styles.glowOrb2} />
 
       <SafeAreaView style={styles.safe} edges={['top']}>
         {/* Header */}
@@ -395,7 +394,7 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           <View style={styles.footer}>
             <InviteCodeCard
               inviteCode={details.invite_code}
-              crewName={details.name}
+              guildName={details.name}
             />
           </View>
         )}
@@ -552,4 +551,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default CrewDetailScreen;
+export default GuildDetailScreen;

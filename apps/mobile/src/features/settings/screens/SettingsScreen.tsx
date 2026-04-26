@@ -46,10 +46,15 @@ import {
 } from '../../../services/NotificationService';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { HAS_ACTIVE_CREW_STORAGE_KEY } from '../../leaderboard/CrewService';
+import { HAS_ACTIVE_GUILD_STORAGE_KEY } from '../../leaderboard/GuildService';
 import AppGuideSheet, { useAppGuide } from '../../../design/components/AppGuideSheet';
 import SettingsSection from '../components/SettingsSection';
 import SettingsRow from '../components/SettingsRow';
+import SystemStatsCard from '../components/SystemStatsCard';
+import AchievementsRow from '../components/AchievementsRow';
+import RecordsPanel from '../components/RecordsPanel';
+import HUDPanel from '../../home/components/HUDPanel';
+import { LinearGradient } from 'expo-linear-gradient';
 import DailyCommitmentSheet from '../sheets/DailyCommitmentSheet';
 import GoalPickerSheet from '../sheets/GoalPickerSheet';
 import WeaknessPickerSheet from '../sheets/WeaknessPickerSheet';
@@ -67,7 +72,7 @@ type NavProp = NativeStackNavigationProp<MainStackParamList>;
 
 const FORMSPREE_URL = 'https://formspree.io/f/xwvwngjo';
 const KEY_NOTIF_STREAK = '@lockedin/notif_streak_alerts';
-const KEY_NOTIF_CREW = '@lockedin/notif_crew_updates';
+const KEY_NOTIF_GUILD = '@lockedin/notif_guild_updates';
 
 function hasEmailIdentity(user: User | null): boolean {
   if (!user || user.is_anonymous) return false;
@@ -95,9 +100,9 @@ const SettingsScreen: React.FC = () => {
   const [permStatus, setPermStatus] = useState<Notifications.PermissionStatus | null>(null);
   const [userDisabledPush, setUserDisabledPush] = useState(false);
   const [streakAlerts, setStreakAlerts] = useState(true);
-  const [crewNotifs, setCrewNotifs] = useState(true);
+  const [guildNotifs, setGuildNotifs] = useState(true);
   const [reminderLabel, setReminderLabel] = useState('9:00 AM');
-  const [hasCrew, setHasCrew] = useState(false);
+  const [hasGuild, setHasGuild] = useState(false);
   const [restoreErr, setRestoreErr] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [blockedAppCount, setBlockedAppCount] = useState(0);
@@ -122,10 +127,10 @@ const SettingsScreen: React.FC = () => {
     const dis = (await AsyncStorage.getItem(KEY_NOTIF_USER_DISABLED)) === 'true';
     setUserDisabledPush(dis);
     setStreakAlerts((await AsyncStorage.getItem(KEY_NOTIF_STREAK)) !== 'false');
-    setCrewNotifs((await AsyncStorage.getItem(KEY_NOTIF_CREW)) !== 'false');
+    setGuildNotifs((await AsyncStorage.getItem(KEY_NOTIF_GUILD)) !== 'false');
     const t = await readReminderTimeHHmm();
     setReminderLabel(formatReminderHHmmAs12h(t));
-    setHasCrew((await AsyncStorage.getItem(HAS_ACTIVE_CREW_STORAGE_KEY)) === 'true');
+    setHasGuild((await AsyncStorage.getItem(HAS_ACTIVE_GUILD_STORAGE_KEY)) === 'true');
   }, []);
 
   useEffect(() => {
@@ -188,9 +193,9 @@ const SettingsScreen: React.FC = () => {
     await NotificationService.setStreakAlertsPreference(on, streak);
   };
 
-  const onToggleCrew = async (on: boolean) => {
-    setCrewNotifs(on);
-    await NotificationService.setCrewNotifPreference(on, streak);
+  const onToggleGuild = async (on: boolean) => {
+    setGuildNotifs(on);
+    await NotificationService.setGuildNotifPreference(on, streak);
   };
 
   const openOsSettings = () => Linking.openSettings();
@@ -293,13 +298,27 @@ const SettingsScreen: React.FC = () => {
 
   return (
     <View style={styles.root}>
+      <LinearGradient
+        colors={['#0A1628', '#0E1116', '#0E1116']}
+        locations={[0, 0.55, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.glowOrb} />
+
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <Text style={styles.headerTitle}>Settings</Text>
         <ScrollView
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.sectionCardWrap}>{profileCard}</View>
+          <HUDPanel headerLabel="PLAYER" />
+
+          <HUDPanel headerLabel="IDENTITY">{profileCard}</HUDPanel>
+
+          <SystemStatsCard />
+
+          <AchievementsRow />
+
+          <RecordsPanel />
 
           <SettingsSection label="Your plan">
             <SettingsRow
@@ -354,13 +373,13 @@ const SettingsScreen: React.FC = () => {
               onToggleChange={(v) => void onToggleStreak(v)}
               disabled={!pushMasterOn}
             />
-            {hasCrew ? (
+            {hasGuild ? (
               <SettingsRow
                 icon="group"
-                label="Squad notifications"
+                label="Guild notifications"
                 toggle
-                toggleValue={crewNotifs}
-                onToggleChange={(v) => void onToggleCrew(v)}
+                toggleValue={guildNotifs}
+                onToggleChange={(v) => void onToggleGuild(v)}
                 disabled={!pushMasterOn}
               />
             ) : null}
@@ -569,23 +588,20 @@ const SettingsScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
-  safe: { flex: 1 },
-  headerTitle: {
-    fontFamily: FontFamily.heading,
-    fontSize: 20,
-    color: Colors.textPrimary,
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
+  safe: { flex: 1, paddingHorizontal: 16 },
+  glowOrb: {
+    position: 'absolute',
+    top: -80,
+    right: -40,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(58,102,255,0.06)',
   },
-  scroll: { paddingHorizontal: 20, paddingBottom: 120 },
-  sectionCardWrap: { marginBottom: 20 },
+  scroll: { paddingTop: 12, paddingBottom: 140, gap: 12 },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.backgroundSecondary,
-    borderRadius: 12,
-    padding: 16,
     gap: 12,
   },
   avatarImg: { width: 56, height: 56, borderRadius: 28 },

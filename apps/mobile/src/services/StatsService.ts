@@ -4,7 +4,7 @@
  * Atomic counter bumps via the `bump_user_stat` RPC; derived stats are
  * recomputed via `recompute_user_stats` (mirrors the formula in
  * 00011_user_stats.sql). All methods no-op silently if Supabase is not
- * authenticated ("timer-only mode" — same pattern as CrewService).
+ * authenticated ("timer-only mode" — same pattern as GuildService).
  */
 
 import type {

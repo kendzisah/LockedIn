@@ -180,8 +180,14 @@ export const generateDailyMissions = (params: MissionGenerationParams): Mission[
   const coreIndex = dayOfYear % CORE_MISSIONS.length;
   const coreMission = buildMission(CORE_MISSIONS[coreIndex], 'core', tier, streak, dayOfYear, 0);
 
+  // Defensive: daily slots must never serve weekly templates. Filter
+  // here so a future weekly entry accidentally added to a goal/weakness
+  // pool is silently skipped from the daily rotation.
+  const dailyOnly = (pool: MissionTemplate[]) =>
+    pool.filter((t) => t.duration !== 'weekly');
+
   // ── Slot 2: Goal ──
-  const goalPool = GOAL_MISSIONS[goal] ?? GOAL_MISSIONS['Increase discipline & self-control'];
+  const goalPool = dailyOnly(GOAL_MISSIONS[goal] ?? GOAL_MISSIONS['Increase discipline & self-control']);
   const goalIndex = hashStr(`${dayOfYear}_${goal}`) % goalPool.length;
   const goalMission = buildMission(goalPool[goalIndex], 'goal', tier, streak, dayOfYear, 1);
 
@@ -191,12 +197,12 @@ export const generateDailyMissions = (params: MissionGenerationParams): Mission[
 
   if (validWeaknesses.length === 0) {
     // Fallback: pick from default weakness pool
-    const fallbackPool = WEAKNESS_MISSIONS['I lack daily consistency'];
+    const fallbackPool = dailyOnly(WEAKNESS_MISSIONS['I lack daily consistency']);
     const fallbackIndex = hashStr(`${dayOfYear}_weakness`) % fallbackPool.length;
     weaknessMission = buildMission(fallbackPool[fallbackIndex], 'weakness', tier, streak, dayOfYear, 2);
   } else {
     const weaknessPoolKey = validWeaknesses[dayOfYear % validWeaknesses.length];
-    const weaknessPool = WEAKNESS_MISSIONS[weaknessPoolKey];
+    const weaknessPool = dailyOnly(WEAKNESS_MISSIONS[weaknessPoolKey]);
     let weaknessIndex = hashStr(`${dayOfYear}_${weaknessPoolKey}`) % weaknessPool.length;
 
     weaknessMission = buildMission(weaknessPool[weaknessIndex], 'weakness', tier, streak, dayOfYear, 2);

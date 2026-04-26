@@ -2,7 +2,7 @@
  * AnalyticsService — Thin wrapper over MixpanelService + AppsFlyerService.
  *
  * Auto-attaches default properties to every Mixpanel event:
- *   is_anonymous, is_subscribed, streak_days, crew_count, app_version
+ *   is_anonymous, is_subscribed, streak_days, guild_count, app_version
  *
  * Usage:
  *   Analytics.track('Session Started', { duration_minutes: 30 });
@@ -17,14 +17,14 @@ import { MixpanelService } from './MixpanelService';
 import { AppsFlyerService } from './AppsFlyerService';
 
 const APP_VERSION = Constants.expoConfig?.version ?? 'unknown';
-const HAS_ACTIVE_CREW_KEY = '@lockedin/has_active_crew';
+const HAS_ACTIVE_GUILD_KEY = '@lockedin/has_active_guild';
 
 // ── Mutable context updated by providers ──
 
 let _isAnonymous = true;
 let _isSubscribed = false;
 let _streakDays = 0;
-let _crewCount = 0;
+let _guildCount = 0;
 
 /**
  * Build default properties attached to every Mixpanel event.
@@ -35,7 +35,7 @@ function getDefaultProperties(): Record<string, unknown> {
     is_anonymous: _isAnonymous,
     is_subscribed: _isSubscribed,
     streak_days: _streakDays,
-    crew_count: _crewCount,
+    guild_count: _guildCount,
     app_version: APP_VERSION,
     platform: Platform.OS,
   };
@@ -57,14 +57,14 @@ export const Analytics = {
   },
 
   /**
-   * Hydrate crew count from AsyncStorage (call on boot).
+   * Hydrate guild count from AsyncStorage (call on boot).
    */
-  async hydrateCrewCount(): Promise<void> {
+  async hydrateGuildCount(): Promise<void> {
     try {
-      const raw = await AsyncStorage.getItem(HAS_ACTIVE_CREW_KEY);
+      const raw = await AsyncStorage.getItem(HAS_ACTIVE_GUILD_KEY);
       // We only store a boolean flag; estimate count as 0 or 1.
-      // Exact count is set when CrewService.getMyCrews() runs.
-      _crewCount = raw === 'true' ? 1 : 0;
+      // Exact count is set when GuildService.getMyGuilds() runs.
+      _guildCount = raw === 'true' ? 1 : 0;
     } catch {}
   },
 
@@ -136,6 +136,6 @@ export const Analytics = {
     _isAnonymous = true;
     _isSubscribed = false;
     _streakDays = 0;
-    _crewCount = 0;
+    _guildCount = 0;
   },
 };

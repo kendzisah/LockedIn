@@ -25,7 +25,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SupabaseService } from '../services/SupabaseService';
 import { NotificationService, type NotificationPayload } from '../services/NotificationService';
 import { rootNavigationRef } from '../navigation/rootNavigationRef';
-import { CrewService } from '../features/leaderboard/CrewService';
+import { GuildService } from '../features/leaderboard/GuildService';
+import { runStorageMigrations } from '../services/StorageMigrations';
 import { AppsFlyerService } from '../services/AppsFlyerService';
 import { MixpanelService } from '../services/MixpanelService';
 import { Analytics } from '../services/AnalyticsService';
@@ -86,6 +87,9 @@ const App: React.FC = () => {
         await MixpanelService.initialize();
         await SupabaseService.initialize();
 
+        // One-shot AsyncStorage key migrations (e.g. crew_* → guild_*).
+        await runStorageMigrations();
+
         // Identify user in analytics on boot
         const userId = SupabaseService.getCurrentUserId();
         if (userId) {
@@ -118,12 +122,12 @@ const App: React.FC = () => {
 
         // Hydrate analytics context
         Analytics.setStreakDays(streak);
-        await Analytics.hydrateCrewCount();
+        await Analytics.hydrateGuildCount();
 
         await NotificationService.touchLastAppOpen();
         await AsyncStorage.setItem(LAST_OPEN_KEY, new Date().toISOString());
         recordEarlyOpen().catch(() => {});
-        await CrewService.syncHasActiveCrewFlag();
+        await GuildService.syncHasActiveGuildFlag();
         await NotificationService.scheduleAllDailyNotifications(streak);
       } catch (e: any) {
         console.warn('[App] boot() failed, continuing anyway:', e);
@@ -209,15 +213,15 @@ const App: React.FC = () => {
               screen: 'Tabs',
               params: { screen: 'HomeTab' },
             });
-          } else if (data.screen === 'CrewList') {
+          } else if (data.screen === 'GuildList') {
             rootNavigationRef.navigate('Main', {
               screen: 'Tabs',
               params: { screen: 'BoardTab' },
             });
-          } else if (data.screen === 'CrewDetail' && typeof data.crew_id === 'string') {
+          } else if (data.screen === 'GuildDetail' && typeof data.guild_id === 'string') {
             rootNavigationRef.navigate('Main', {
-              screen: 'CrewDetail',
-              params: { crew_id: data.crew_id },
+              screen: 'GuildDetail',
+              params: { guild_id: data.guild_id },
             });
           }
         } catch (e) {

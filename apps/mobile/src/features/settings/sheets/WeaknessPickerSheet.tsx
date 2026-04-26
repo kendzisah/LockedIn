@@ -2,11 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import SettingsSheetShell from '../components/SettingsSheetShell';
-import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { Analytics } from '../../../services/AnalyticsService';
-import { getStatsForWeakness, getWeaknessOptions } from '../../missions/MissionEngine';
-import StatPills from '../components/StatPills';
+import { getWeaknessOptions } from '../../missions/MissionEngine';
+import { SystemTokens } from '../../home/systemTokens';
 
 interface Props {
   visible: boolean;
@@ -51,9 +50,9 @@ const WeaknessPickerSheet: React.FC<Props> = ({
   const canSave = sel.size >= 1;
 
   return (
-    <SettingsSheetShell visible={visible} onClose={onClose} title="Focus areas">
-      <Text style={styles.sub}>Select 1–3 areas</Text>
-      <View style={styles.gap}>
+    <SettingsSheetShell visible={visible} onClose={onClose} title="Focus Areas">
+      <Text style={styles.sub}>SELECT 1–3 AREAS</Text>
+      <View style={styles.list}>
         {options.map((label) => {
           const on = sel.has(label);
           const atMax = sel.size >= 3 && !on;
@@ -61,27 +60,31 @@ const WeaknessPickerSheet: React.FC<Props> = ({
             <Pressable
               key={label}
               onPress={() => !atMax && toggle(label)}
-              style={[styles.row, atMax && styles.rowDisabled]}
+              style={[
+                styles.row,
+                on && styles.rowOn,
+                atMax && styles.rowDisabled,
+              ]}
             >
               <View style={[styles.cb, on && styles.cbOn]}>
                 {on ? (
-                  <MaterialIcons name="check" size={16} color={Colors.textPrimary} />
+                  <MaterialIcons name="check" size={14} color={SystemTokens.textPrimary} />
                 ) : null}
               </View>
-              <View style={styles.rowBody}>
-                <Text style={styles.rowLabel}>{label}</Text>
-                <StatPills stats={getStatsForWeakness(label)} />
-              </View>
+              <Text style={[styles.rowLabel, on && styles.rowLabelOn]}>
+                {label}
+              </Text>
             </Pressable>
           );
         })}
       </View>
+
       <Pressable
         style={[styles.save, !canSave && styles.saveOff]}
         onPress={handleUpdate}
         disabled={!canSave}
       >
-        <Text style={styles.saveText}>Update</Text>
+        <Text style={styles.saveText}>⟐  UPDATE</Text>
       </Pressable>
     </SettingsSheetShell>
   );
@@ -89,54 +92,67 @@ const WeaknessPickerSheet: React.FC<Props> = ({
 
 const styles = StyleSheet.create({
   sub: {
-    fontFamily: FontFamily.body,
-    fontSize: 13,
-    color: Colors.textSecondary,
-    marginBottom: 16,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 10,
+    letterSpacing: 1.6,
+    color: SystemTokens.textMuted,
+    marginBottom: 12,
   },
-  gap: { gap: 10 },
+  list: {
+    gap: 6,
+    marginBottom: 18,
+  },
   row: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 12,
-    paddingVertical: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255,255,255,0.06)',
+  },
+  rowOn: {
+    backgroundColor: 'rgba(58,102,255,0.12)',
+    borderLeftColor: SystemTokens.glowAccent,
   },
   rowDisabled: { opacity: 0.35 },
-  rowBody: {
-    flex: 1,
-    paddingTop: 2,
-  },
   cb: {
-    width: 22,
-    height: 22,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: Colors.surface,
+    width: 18,
+    height: 18,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   cbOn: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: SystemTokens.glowAccent,
+    borderColor: SystemTokens.glowAccent,
   },
   rowLabel: {
     flex: 1,
     fontFamily: FontFamily.bodyMedium,
-    fontSize: 15,
-    color: Colors.textPrimary,
+    fontSize: 14,
+    color: SystemTokens.textSecondary,
+    letterSpacing: -0.1,
+  },
+  rowLabelOn: {
+    color: SystemTokens.textPrimary,
+    fontFamily: FontFamily.headingSemiBold,
   },
   save: {
-    marginTop: 20,
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
     paddingVertical: 14,
+    backgroundColor: 'rgba(58,102,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(58,102,255,0.45)',
     alignItems: 'center',
   },
   saveOff: { opacity: 0.4 },
   saveText: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 16,
-    color: Colors.textPrimary,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 13,
+    letterSpacing: 1.8,
+    color: SystemTokens.glowAccent,
   },
 });
 

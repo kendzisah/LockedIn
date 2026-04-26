@@ -19,7 +19,7 @@ import {
   calculateTotalXP,
   MAX_WEEKLY_CHALLENGES,
 } from './MissionEngine';
-import { CrewService } from '../leaderboard/CrewService';
+import { GuildService } from '../leaderboard/GuildService';
 import { recordPerfectMissionDay } from '../leaderboard/seasonMissionConsistency';
 import {
   getMissionSeasonLabel,
@@ -739,12 +739,12 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
       const retries = 2;
       for (let attempt = 0; attempt <= retries; attempt++) {
         try {
-          const stats = await CrewService.getWeeklyStats();
+          const stats = await GuildService.getWeeklyStats();
           const updated = { missions_done: stats.missions_done + 1 };
-          await CrewService.updateWeeklyStats(updated);
-          const latest = await CrewService.getWeeklyStats();
+          await GuildService.updateWeeklyStats(updated);
+          const latest = await GuildService.getWeeklyStats();
 
-          const result = await CrewService.completeMissionServerSide(
+          const result = await GuildService.completeMissionServerSide(
             mission?.timeGate,
             latest.focus_minutes,
             latest.missions_done,

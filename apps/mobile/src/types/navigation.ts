@@ -58,9 +58,9 @@ export type MainStackParamList = {
   SignIn: undefined;
   EditProfile: { source: 'signup' | 'profile' };
   WeeklyReport: undefined;
-  CrewDetail: { crew_id: string };
-  CreateCrew: undefined;
-  JoinCrew: undefined;
+  GuildDetail: { guild_id: string };
+  CreateGuild: undefined;
+  JoinGuild: undefined;
 };
 
 /**

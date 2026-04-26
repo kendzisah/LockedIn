@@ -22,7 +22,7 @@ import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
 import { getFlameColorFilters } from '../../design/streakTiers';
 import { lightenHex } from '../../design/colorUtils';
-import { CrewService } from '../leaderboard/CrewService';
+import { GuildService } from '../leaderboard/GuildService';
 import { NotificationService } from '../../services/NotificationService';
 import { Analytics } from '../../services/AnalyticsService';
 import { recordActiveDay, useMissions } from '../missions/MissionsProvider';
@@ -93,15 +93,15 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
 
     (async () => {
       try {
-        const stats = await CrewService.getWeeklyStats();
+        const stats = await GuildService.getWeeklyStats();
         const updated = {
           focus_minutes: stats.focus_minutes + durationMinutes,
           streak_days: streak,
         };
-        await CrewService.updateWeeklyStats(updated);
-        const latest = await CrewService.getWeeklyStats();
+        await GuildService.updateWeeklyStats(updated);
+        const latest = await GuildService.getWeeklyStats();
 
-        const result = await CrewService.completeMissionServerSide(
+        const result = await GuildService.completeMissionServerSide(
           undefined,
           latest.focus_minutes,
           latest.missions_done,
@@ -112,7 +112,7 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
           console.warn('[SessionComplete] Server score submission failed:', result.error);
         }
 
-        Analytics.track('Crew Score Submitted', {
+        Analytics.track('Guild Score Submitted', {
           total_score: latest.focus_minutes * 2 + latest.missions_done * 15 + latest.streak_days * 10,
           focus_minutes: latest.focus_minutes,
           missions_done: latest.missions_done,

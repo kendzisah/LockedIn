@@ -64,6 +64,7 @@ const MemberRow: React.FC<MemberRowProps> = ({
     <View
       style={[
         styles.card,
+        tier && { borderLeftColor: tier.color },
         isCurrentUser && styles.cardCurrent,
         !isLast && styles.cardSpacing,
       ]}
@@ -154,12 +155,11 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(21,26,33,0.5)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255,255,255,0.06)',
   },
   cardCurrent: {
     backgroundColor: 'rgba(58,102,255,0.08)',

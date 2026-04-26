@@ -19,7 +19,7 @@ import React, {
 } from 'react';
 import { type User } from '@supabase/supabase-js';
 import { AuthService, type AuthError } from './AuthService';
-import { CrewService } from '../leaderboard/CrewService';
+import { GuildService } from '../leaderboard/GuildService';
 import { NotificationService } from '../../services/NotificationService';
 import { clearAllLockedInStorage } from '../../services/lockedInStorage';
 import { emitLogoutCleanup } from '../../services/logoutCleanupBus';
@@ -175,7 +175,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         emitLogoutCleanup();
         try {
-          await CrewService.syncHasActiveCrewFlag();
+          await GuildService.syncHasActiveGuildFlag();
         } catch {
           /* ignore */
         }

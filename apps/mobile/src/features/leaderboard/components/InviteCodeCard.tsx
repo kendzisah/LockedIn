@@ -15,12 +15,12 @@ try {
 
 export type InviteCodeCardProps = {
   inviteCode: string;
-  crewName: string;
+  guildName: string;
 };
 
 const InviteCodeCard: React.FC<InviteCodeCardProps> = ({
   inviteCode,
-  crewName,
+  guildName,
 }) => {
   const [copied, setCopied] = useState(false);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -36,7 +36,7 @@ const InviteCodeCard: React.FC<InviteCodeCardProps> = ({
   const spacedCode = inviteCode.split('').join(' ');
 
   const handleCopy = async () => {
-    Analytics.track('Crew Invite Shared', { crew_id: crewName, share_method: 'copy' });
+    Analytics.track('Guild Invite Shared', { guild_id: guildName, share_method: 'copy' });
     if (Clipboard) {
       await Clipboard.setStringAsync(inviteCode);
     }
@@ -51,10 +51,10 @@ const InviteCodeCard: React.FC<InviteCodeCardProps> = ({
   };
 
   const handleShare = () => {
-    Analytics.track('Crew Invite Shared', { crew_id: crewName, share_method: 'share_sheet' });
+    Analytics.track('Guild Invite Shared', { guild_id: guildName, share_method: 'share_sheet' });
     Analytics.trackAF('af_invite', { method: 'crew_invite' });
     Share.share({
-      message: `Join my squad "${crewName}" on Locked In! 🔒\n\nMy invite code: ${inviteCode}\n\nDownload the app and enter the code to compete with me:\n${IOS_APP_STORE_PAGE_URL}`,
+      message: `Join my guild "${guildName}" on Locked In! 🔒\n\nMy invite code: ${inviteCode}\n\nDownload the app and enter the code to compete with me:\n${IOS_APP_STORE_PAGE_URL}`,
     });
   };
 
