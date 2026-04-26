@@ -3,6 +3,8 @@ import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'reac
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import HUDCornerBrackets from '../features/home/components/HUDCornerBrackets';
+import { SectionLabelStyle, SystemTokens } from '../features/home/systemTokens';
 import TabNavigator from './TabNavigator';
 import PaywallOfferScreen from '../features/subscription/PaywallOfferScreen';
 import ExecutionBlockScreen from '../features/home/ExecutionBlockScreen';
@@ -181,17 +183,22 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
       <View style={dp.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
         <View style={dp.card}>
-          {/* Hero icon */}
-          <View style={dp.heroIcon}>
-            <Ionicons name="lock-closed" size={24} color={Colors.primary} />
-          </View>
+          <HUDCornerBrackets color={SystemTokens.bracketColor} />
 
-          <Text style={dp.title}>Lock In</Text>
-          <Text style={dp.subtitle}>Choose your focus duration</Text>
+          {/* `// LOCK IN` header strip */}
+          <View style={dp.header}>
+            <Text style={dp.headerLabel}>// LOCK IN</Text>
+            <LinearGradient
+              colors={[SystemTokens.bracketColor, 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={dp.headerRule}
+            />
+            <Text style={dp.subtitle}>CHOOSE FOCUS DURATION</Text>
+          </View>
 
           {!showCustomTime ? (
             <>
-              {/* Duration grid */}
               <View style={dp.grid}>
                 {DURATION_OPTIONS.map((mins) => {
                   const isPressed = pressedOption === mins;
@@ -205,38 +212,29 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
                       onPressOut={() => setPressedOption(null)}
                       activeOpacity={0.9}
                     >
-                      {isPressed && (
-                        <View style={dp.optionGlow} />
-                      )}
                       <Text style={[dp.optionValue, isPressed && dp.optionValueActive]}>
                         {dur.value}
                       </Text>
                       <Text style={[dp.optionLabel, isPressed && dp.optionLabelActive]}>
-                        {dur.label}
+                        {dur.label.toUpperCase()}
                       </Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
 
-              {/* Custom button */}
-              <TouchableOpacity style={dp.customBtn} onPress={onShowCustomTime} activeOpacity={0.8}>
-                <Ionicons name="timer-outline" size={16} color={Colors.accent} />
-                <Text style={dp.customBtnText}>Custom Duration</Text>
-                <Ionicons name="chevron-forward" size={14} color={Colors.textMuted} />
+              <TouchableOpacity style={dp.customBtn} onPress={onShowCustomTime} activeOpacity={0.85}>
+                <Ionicons name="timer-outline" size={14} color={SystemTokens.cyan} />
+                <Text style={dp.customBtnText}>CUSTOM DURATION</Text>
+                <Ionicons name="chevron-forward" size={12} color={SystemTokens.textMuted} />
               </TouchableOpacity>
 
-              {/* Divider */}
-              <View style={dp.divider} />
-
-              {/* Cancel */}
               <TouchableOpacity onPress={onClose} style={dp.cancelBtn} activeOpacity={0.8}>
                 <Text style={dp.cancelText}>Cancel</Text>
               </TouchableOpacity>
             </>
           ) : (
             <View style={dp.customContainer}>
-              {/* Picker card */}
               <View style={dp.pickerCard}>
                 <View style={dp.customPickerRow}>
                   <ScrollPicker
@@ -261,9 +259,8 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
                   />
                 </View>
 
-                {/* Summary */}
                 <View style={dp.summaryRow}>
-                  <Ionicons name="time-outline" size={14} color={Colors.textMuted} />
+                  <Ionicons name="time-outline" size={12} color={SystemTokens.textMuted} />
                   <Text style={dp.summaryText}>
                     {customHours > 0 || customMinutes > 0
                       ? `${customHours > 0 ? `${customHours}h ` : ''}${customMinutes > 0 ? `${customMinutes}m` : ''}`.trim()
@@ -281,16 +278,14 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
                 activeOpacity={0.85}
                 disabled={customHours === 0 && customMinutes === 0}
               >
-                <View style={dp.startBtnInner}>
-                  <Ionicons name="lock-closed" size={16} color={Colors.primary} />
-                  <Text style={dp.startBtnText}>
-                    Start {customHours > 0 ? `${customHours}h ` : ''}{customMinutes > 0 ? `${customMinutes}m` : ''} Block
-                  </Text>
-                </View>
+                <Text style={dp.startBtnText}>
+                  ⟐  START {customHours > 0 ? `${customHours}H` : ''}
+                  {customMinutes > 0 ? ` ${customMinutes}M` : ''} BLOCK
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity onPress={onHideCustomTime} style={dp.backBtn} activeOpacity={0.8}>
-                <Ionicons name="chevron-back" size={14} color={Colors.textMuted} />
+                <Ionicons name="chevron-back" size={12} color={SystemTokens.textMuted} />
                 <Text style={dp.backBtnText}>Back</Text>
               </TouchableOpacity>
             </View>
@@ -304,122 +299,104 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
 const dp = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    backgroundColor: 'rgba(0,0,0,0.75)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
   },
   card: {
     width: '100%',
-    backgroundColor: 'rgba(18,22,28,0.97)',
-    borderRadius: 28,
-    padding: 28,
+    backgroundColor: SystemTokens.panelBg,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
+    borderColor: SystemTokens.panelBorder,
     overflow: 'hidden',
     zIndex: 1,
     elevation: 8,
   },
-  heroIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: 'rgba(58,102,255,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(58,102,255,0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'center',
+  header: {
     marginBottom: 16,
   },
-  title: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 24,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    letterSpacing: -0.3,
-    marginBottom: 4,
+  headerLabel: {
+    ...SectionLabelStyle,
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  headerRule: {
+    height: 1,
+    width: '100%',
+    marginBottom: 8,
   },
   subtitle: {
-    fontFamily: FontFamily.body,
-    fontSize: 14,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    marginBottom: 24,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 10,
+    letterSpacing: 1.6,
+    color: SystemTokens.textMuted,
   },
 
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
-    justifyContent: 'center',
-    marginBottom: 16,
+    gap: 8,
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
   option: {
-    width: 88,
-    height: 76,
-    backgroundColor: 'rgba(44,52,64,0.3)',
-    borderRadius: 16,
+    flexBasis: '31.5%',
+    height: 72,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255,255,255,0.06)',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 2,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-    overflow: 'hidden',
   },
   optionActive: {
-    backgroundColor: 'rgba(58,102,255,0.12)',
-    borderColor: 'rgba(58,102,255,0.3)',
-  },
-  optionGlow: {
-    position: 'absolute',
-    top: -20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(58,102,255,0.15)',
+    backgroundColor: 'rgba(58,102,255,0.14)',
+    borderLeftColor: SystemTokens.glowAccent,
   },
   optionValue: {
-    fontFamily: FontFamily.heading,
-    fontSize: 24,
-    color: Colors.textPrimary,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 26,
+    color: SystemTokens.textPrimary,
+    letterSpacing: -0.5,
   },
   optionValueActive: {
-    color: Colors.primary,
+    color: SystemTokens.glowAccent,
+    textShadowColor: SystemTokens.glowAccent,
+    textShadowRadius: 6,
+    textShadowOffset: { width: 0, height: 0 },
   },
   optionLabel: {
-    fontFamily: FontFamily.body,
-    fontSize: 11,
-    color: Colors.textMuted,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 9,
+    letterSpacing: 1.4,
+    color: SystemTokens.textMuted,
   },
   optionLabelActive: {
-    color: 'rgba(58,102,255,0.7)',
+    color: SystemTokens.glowAccent,
   },
 
   customBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    backgroundColor: 'rgba(44,52,64,0.25)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
-    marginBottom: 18,
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(0,194,255,0.45)',
+    marginBottom: 12,
   },
   customBtnText: {
-    fontFamily: FontFamily.bodyMedium,
-    fontSize: 13,
-    color: Colors.accent,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    color: SystemTokens.cyan,
     flex: 1,
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    marginBottom: 14,
   },
 
   cancelBtn: {
@@ -428,8 +405,8 @@ const dp = StyleSheet.create({
   },
   cancelText: {
     fontFamily: FontFamily.bodyMedium,
-    fontSize: 14,
-    color: Colors.textMuted,
+    fontSize: 13,
+    color: SystemTokens.textMuted,
   },
 
   customContainer: {
@@ -437,14 +414,13 @@ const dp = StyleSheet.create({
   },
   pickerCard: {
     width: '100%',
-    backgroundColor: 'rgba(44,52,64,0.2)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(58,102,255,0.35)',
     paddingTop: 4,
-    paddingBottom: 14,
+    paddingBottom: 12,
     paddingHorizontal: 8,
-    marginBottom: 20,
+    marginBottom: 14,
   },
   customPickerRow: {
     flexDirection: 'row',
@@ -462,10 +438,9 @@ const dp = StyleSheet.create({
     marginHorizontal: 4,
   },
   separatorDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: Colors.textMuted,
+    width: 4,
+    height: 4,
+    backgroundColor: SystemTokens.textMuted,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -474,40 +449,33 @@ const dp = StyleSheet.create({
     gap: 6,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.04)',
+    borderTopColor: SystemTokens.divider,
     marginHorizontal: 8,
   },
   summaryText: {
-    fontFamily: FontFamily.bodyMedium,
-    fontSize: 13,
-    color: Colors.textMuted,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: SystemTokens.textSecondary,
   },
 
   startBtn: {
     width: '100%',
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginBottom: 10,
-    backgroundColor: 'rgba(58,102,255,0.1)',
+    paddingVertical: 14,
+    backgroundColor: 'rgba(58,102,255,0.18)',
     borderWidth: 1,
-    borderColor: 'rgba(58,102,255,0.2)',
+    borderColor: 'rgba(58,102,255,0.45)',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   startBtnDisabled: {
-    opacity: 0.3,
-    backgroundColor: 'rgba(44,52,64,0.3)',
-    borderColor: 'rgba(255,255,255,0.04)',
-  },
-  startBtnInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
+    opacity: 0.35,
   },
   startBtnText: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 16,
-    color: Colors.primary,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 13,
+    letterSpacing: 1.6,
+    color: SystemTokens.glowAccent,
   },
 
   backBtn: {
@@ -518,8 +486,8 @@ const dp = StyleSheet.create({
   },
   backBtnText: {
     fontFamily: FontFamily.bodyMedium,
-    fontSize: 14,
-    color: Colors.textMuted,
+    fontSize: 13,
+    color: SystemTokens.textMuted,
   },
 });
 
