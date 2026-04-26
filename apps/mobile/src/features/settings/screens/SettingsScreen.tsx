@@ -48,7 +48,6 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HAS_ACTIVE_CREW_STORAGE_KEY } from '../../leaderboard/CrewService';
 import AppGuideSheet, { useAppGuide } from '../../../design/components/AppGuideSheet';
-import SystemStatsCard from '../components/SystemStatsCard';
 import SettingsSection from '../components/SettingsSection';
 import SettingsRow from '../components/SettingsRow';
 import DailyCommitmentSheet from '../sheets/DailyCommitmentSheet';
@@ -301,8 +300,6 @@ const SettingsScreen: React.FC = () => {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.sectionCardWrap}>{profileCard}</View>
-
-          <SystemStatsCard />
 
           <SettingsSection label="Your plan">
             <SettingsRow

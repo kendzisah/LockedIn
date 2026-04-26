@@ -6,11 +6,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AppState,
   type AppStateStatus,
+  ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
-import LottieView from 'lottie-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -19,7 +18,6 @@ import type { MainStackParamList } from '../../../types/navigation';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSession } from '../state/SessionProvider';
 import { useOnboarding } from '../../onboarding/state/OnboardingProvider';
-import { useSubscription } from '../../subscription/SubscriptionProvider';
 import { ClockService } from '../../../services/ClockService';
 import { NotificationService } from '../../../services/NotificationService';
 import { LockModeService } from '../../../services/LockModeService';
@@ -29,10 +27,10 @@ import WeeklyReportService from '../../report/WeeklyReportService';
 import { ACTIVE_EB_KEY } from '../ExecutionBlockScreen';
 import { useMissions } from '../../missions/MissionsProvider';
 import { Colors } from '../../../design/colors';
-import { FontFamily } from '../../../design/typography';
-import { getStreakTierInfo } from '../../../design/streakTiers';
 import StreakAtRiskBanner from '../components/StreakAtRiskBanner';
 import SystemStatusBar from '../components/SystemStatusBar';
+import FocusRing from '../components/FocusRing';
+import CompactMissions from '../components/CompactMissions';
 import StreakBreakOverlay from '../components/StreakBreakOverlay';
 import { RankService } from '../../../services/RankService';
 import type { RankId } from '@lockedin/shared-types';
@@ -49,19 +47,11 @@ const PENDING_SIGNUP_KEY = '@lockedin/pending_signup';
 const AF_TUTORIAL_HOME_GUIDE_KEY = '@lockedin/af_tutorial_home_guide_sent';
 const STORE_REVIEW_SHOWN_KEY = '@lockedin/store_review_after_guide';
 
-function getGreeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
-}
-
 const HomeTab: React.FC = () => {
   const navigation = useNavigation<NavProp>();
   const { state, dispatch, isHydrated } = useSession();
   const { state: onboardingState } = useOnboarding();
-  const { isSubscribed } = useSubscription();
-  const { completedCount, lockedInToday } = useMissions();
+  const { lockedInToday } = useMissions();
 
   useEffect(() => {
     if (lockedInToday) {
@@ -250,7 +240,6 @@ const HomeTab: React.FC = () => {
   }, [isHydrated, isAnonymous, state.consecutiveStreak]);
 
   const streak = state.consecutiveStreak;
-  const tierInfo = useMemo(() => getStreakTierInfo(streak), [streak]);
   const streakAtRisk = !dailyGoalMet && streak > 0 && !state.dailyGoalMetDate;
 
   if (!isHydrated) {
@@ -260,8 +249,8 @@ const HomeTab: React.FC = () => {
   return (
     <View style={styles.root}>
       <LinearGradient
-        colors={['#0E1116', '#111922', '#0E1116']}
-        locations={[0, 0.5, 1]}
+        colors={['#0A1628', '#0E1116', '#0E1116']}
+        locations={[0, 0.55, 1]}
         style={StyleSheet.absoluteFill}
       />
       {/* Subtle accent glow at top */}
@@ -272,12 +261,20 @@ const HomeTab: React.FC = () => {
           <StreakAtRiskBanner onPress={() => setShowRecoveryModal(true)} />
         )}
 
-        <SystemStatusBar
-          focused={dailyFocused}
-          goal={dailyCommitment}
-          streakAtRisk={streakAtRisk && !canRecover}
-          onMissionsPress={() => {}}
-        />
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <SystemStatusBar streakAtRisk={streakAtRisk && !canRecover} />
+          <FocusRing
+            focused={dailyFocused}
+            goal={dailyCommitment}
+            streakAtRisk={streakAtRisk && !canRecover}
+          />
+          <CompactMissions
+            onPress={() => navigation.navigate('MissionsTab' as never)}
+          />
+        </ScrollView>
       </SafeAreaView>
 
       <StreakRecoveryModal
@@ -351,46 +348,12 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 20,
-  },
-  greeting: {
-    fontFamily: FontFamily.body,
-    fontSize: 14,
-    color: Colors.textMuted,
-    marginBottom: 2,
-  },
-  title: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 28,
-    color: Colors.textPrimary,
-    letterSpacing: -0.5,
-  },
-  streakPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,71,87,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,71,87,0.12)',
-  },
-  streakFlame: {
-    width: 22,
-    height: 22,
-  },
-  streakNum: {
-    fontFamily: FontFamily.heading,
-    fontSize: 17,
-    color: Colors.textPrimary,
+  scrollContent: {
+    paddingTop: 12,
+    paddingBottom: 140,
+    gap: 12,
   },
 });
 

@@ -4,7 +4,8 @@ import SettingsSheetShell from '../components/SettingsSheetShell';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { Analytics } from '../../../services/AnalyticsService';
-import { getPrimaryGoals } from '../../missions/MissionEngine';
+import { getPrimaryGoals, getStatsForGoal } from '../../missions/MissionEngine';
+import StatPills from '../components/StatPills';
 
 const ORDER: string[] = [
   'Build a business or side project',
@@ -56,6 +57,7 @@ const GoalPickerSheet: React.FC<Props> = ({
               style={[styles.opt, active && styles.optOn]}
             >
               <Text style={styles.optText}>{g}</Text>
+              <StatPills stats={getStatsForGoal(g)} />
             </Pressable>
           );
         })}

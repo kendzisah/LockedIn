@@ -20,7 +20,8 @@ import type { MainStackParamList } from '../../types/navigation';
 import { getCompletionMessage, getStreakCheckpoint } from './engine/CompletionCopy';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
-import { getStreakTierInfo, getFlameColorFilters } from '../../design/streakTiers';
+import { getFlameColorFilters } from '../../design/streakTiers';
+import { lightenHex } from '../../design/colorUtils';
 import { CrewService } from '../leaderboard/CrewService';
 import { NotificationService } from '../../services/NotificationService';
 import { Analytics } from '../../services/AnalyticsService';
@@ -56,10 +57,10 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
 
   const message = useRef(getCompletionMessage(phase)).current;
   const checkpoint = useRef(getStreakCheckpoint(streak)).current;
-  const tierInfo = useMemo(() => getStreakTierInfo(streak), [streak]);
+  const rankColor = useMemo(() => RankService.rankFromStreak(streak).color, [streak]);
   const flameFilters = useMemo(
-    () => getFlameColorFilters(tierInfo.color, tierInfo.colorLight),
-    [tierInfo.color, tierInfo.colorLight],
+    () => getFlameColorFilters(rankColor, lightenHex(rankColor, 0.35)),
+    [rankColor],
   );
 
   // Animation values
@@ -193,7 +194,7 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
               style={styles.flameLottie}
               colorFilters={flameFilters}
             />
-            <Text style={[styles.streakNumber, { color: tierInfo.color }]}>{streak}</Text>
+            <Text style={[styles.streakNumber, { color: rankColor }]}>{streak}</Text>
             <Text style={styles.streakDetail}>{checkpoint.detail}</Text>
             <Text style={styles.streakHeadline}>{checkpoint.headline}</Text>
             <Text style={styles.streakSub}>{checkpoint.sub}</Text>

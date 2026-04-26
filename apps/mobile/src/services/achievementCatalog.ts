@@ -50,7 +50,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
   // ── Streak ──
   {
     id: 'streak_3',
-    name: 'Grinder',
+    name: 'Recruit',
     category: 'streak',
     description: 'Reach a 3-day streak.',
     condition: (s) => s.longest_streak_days >= 3,

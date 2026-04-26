@@ -1,13 +1,18 @@
 /**
- * CompactMissions — Glassmorphic missions preview card for the home tab.
+ * CompactMissions — Quest-log HUD panel. One row per mission with
+ * a stat-color left accent, status icon, name, description, stat
+ * pills, and XP value. Bottom row shows the +50 XP "complete all"
+ * bonus. The whole panel is the touch target (opens MissionsTab).
  */
 
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import type { Stat } from '@lockedin/shared-types';
 import { useMissions } from '../../missions/MissionsProvider';
-import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import HUDPanel from './HUDPanel';
+import { STAT_COLORS, STAT_LABELS, SystemTokens } from '../systemTokens';
 
 interface CompactMissionsProps {
   onPress: () => void;
@@ -15,120 +20,185 @@ interface CompactMissionsProps {
 
 const CompactMissions: React.FC<CompactMissionsProps> = ({ onPress }) => {
   const { missions, completedCount } = useMissions();
+  const allDone = missions.length > 0 && completedCount === missions.length;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={styles.iconWrap}>
-            <Ionicons name="flash" size={12} color={Colors.accent} />
+    <HUDPanel
+      headerLabel="MISSIONS"
+      headerRight={`${completedCount}/${missions.length}`}
+      onPress={onPress}
+      contentStyle={styles.content}
+    >
+      {missions.slice(0, 3).map((m) => {
+        const primaryStat: Stat | undefined = m.stats?.[0];
+        const accent = primaryStat ? STAT_COLORS[primaryStat] : SystemTokens.glowAccent;
+        return (
+          <View key={m.id} style={[styles.row, { borderLeftColor: accent }]}>
+            <View style={styles.rowHead}>
+              <View style={styles.statusIcon}>
+                {m.completed ? (
+                  <View style={[styles.iconFilled, { backgroundColor: SystemTokens.green }]}>
+                    <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+                  </View>
+                ) : (
+                  <View style={styles.iconHollow} />
+                )}
+              </View>
+              <Text
+                style={[
+                  styles.title,
+                  m.completed && styles.titleDone,
+                ]}
+                numberOfLines={1}
+              >
+                {m.title}
+              </Text>
+            </View>
+
+            <Text style={styles.desc} numberOfLines={2}>
+              {m.description}
+            </Text>
+
+            <View style={styles.metaRow}>
+              <View style={styles.pillRow}>
+                {(m.stats ?? []).slice(0, 2).map((s) => (
+                  <View
+                    key={s}
+                    style={[
+                      styles.pill,
+                      { backgroundColor: `${STAT_COLORS[s]}1A`, borderColor: `${STAT_COLORS[s]}55` },
+                    ]}
+                  >
+                    <Text style={[styles.pillText, { color: STAT_COLORS[s] }]}>
+                      +{STAT_LABELS[s]}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={[styles.xp, m.completed && styles.xpDone]}>+{m.xp} XP</Text>
+            </View>
           </View>
-          <Text style={styles.headerTitle}>Today's Missions</Text>
-        </View>
-        <View style={styles.pill}>
-          <Text style={styles.pillText}>{completedCount}/{missions.length}</Text>
-        </View>
+        );
+      })}
+
+      <View style={styles.bonusRow}>
+        <Text
+          style={[
+            styles.bonusText,
+            allDone && {
+              textShadowColor: SystemTokens.gold,
+              textShadowRadius: 8,
+              textShadowOffset: { width: 0, height: 0 },
+            },
+          ]}
+        >
+          {allDone ? '✦ ALL MISSIONS CLEAR  —  +50 XP' : 'COMPLETE ALL  —  +50 XP BONUS'}
+        </Text>
       </View>
-      {missions.slice(0, 3).map((m) => (
-        <View key={m.id} style={styles.row}>
-          <View style={[styles.check, m.completed && styles.checkDone]}>
-            {m.completed && <Ionicons name="checkmark" size={10} color="#FFFFFF" />}
-          </View>
-          <Text
-            style={[styles.missionName, m.completed && styles.missionDone]}
-            numberOfLines={1}
-          >
-            {m.title}
-          </Text>
-          <Text style={[styles.xp, m.completed && styles.xpDone]}>+{m.xp}</Text>
-        </View>
-      ))}
-    </TouchableOpacity>
+    </HUDPanel>
   );
 };
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: 'rgba(21,26,33,0.6)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-    padding: 16,
+  content: {
+    gap: 8,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+  row: {
+    borderLeftWidth: 2,
+    paddingLeft: 10,
+    paddingVertical: 8,
+    paddingRight: 4,
+    backgroundColor: 'rgba(255,255,255,0.02)',
   },
-  headerLeft: {
+  rowHead: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  iconWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    backgroundColor: 'rgba(0,194,255,0.1)',
-    justifyContent: 'center',
+  statusIcon: {
+    width: 16,
+    height: 16,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  headerTitle: {
+  iconHollow: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1.2,
+    borderColor: SystemTokens.textMuted,
+  },
+  iconFilled: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    flex: 1,
     fontFamily: FontFamily.headingSemiBold,
     fontSize: 14,
-    color: Colors.textPrimary,
+    color: SystemTokens.textPrimary,
+    letterSpacing: -0.1,
   },
-  pill: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(44,52,64,0.5)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
+  titleDone: {
+    color: SystemTokens.textMuted,
+    textDecorationLine: 'line-through',
   },
-  pillText: {
-    fontFamily: FontFamily.bodyMedium,
-    fontSize: 11,
-    color: Colors.accent,
+  desc: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: SystemTokens.textMuted,
+    marginTop: 3,
+    marginLeft: 24,
+    lineHeight: 16,
   },
-  row: {
+  metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 7,
-    gap: 10,
+    justifyContent: 'space-between',
+    marginTop: 6,
+    marginLeft: 24,
+    gap: 8,
   },
-  check: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+  pillRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  pill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 2,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(44,52,64,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
-  checkDone: {
-    backgroundColor: Colors.success,
-    borderColor: 'rgba(0,214,143,0.3)',
-  },
-  missionName: {
-    flex: 1,
-    fontFamily: FontFamily.body,
-    fontSize: 13,
-    color: Colors.textSecondary,
-  },
-  missionDone: {
-    textDecorationLine: 'line-through' as const,
-    color: Colors.textMuted,
+  pillText: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 9,
+    letterSpacing: 0.8,
   },
   xp: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 12,
-    color: '#FFC857',
+    fontFamily: FontFamily.headingBold,
+    fontSize: 11,
+    color: SystemTokens.cyan,
+    letterSpacing: 0.6,
   },
   xpDone: {
-    color: Colors.textMuted,
+    color: SystemTokens.textMuted,
+  },
+  bonusRow: {
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: SystemTokens.divider,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+  },
+  bonusText: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    color: SystemTokens.gold,
   },
 });
 

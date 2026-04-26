@@ -22,7 +22,7 @@ interface MemberRow {
 const ROWS: MemberRow[] = [
   { rank: 1, name: 'Marcus', ovr: 45, tier: 'Elite',   tierColor: '#FFC857', points: 1240 },
   { rank: 2, name: 'Jayden', ovr: 31, tier: 'Rising',  tierColor: '#00C2FF', points: 890 },
-  { rank: 3, name: 'Lance',  ovr: 23, tier: 'Grinder', tierColor: '#4A7FB5', points: 640 },
+  { rank: 3, name: 'Lance',  ovr: 23, tier: 'Recruit', tierColor: '#4A7FB5', points: 640 },
   { rank: 4, name: 'You',    ovr: 1,  tier: 'NPC',     tierColor: '#8B8B8B', points: 0, isYou: true },
 ];
 

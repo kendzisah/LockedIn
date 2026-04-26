@@ -3,7 +3,7 @@
  *
  * Sits between SocialProof and Paywall. Shows the user a concrete
  * preview of what 3 days inside the system delivers:
- *   - the rank climb (NPC → GRINDER on Day 3)
+ *   - the rank climb (NPC → RECRUIT on Day 3)
  *   - hours reclaimed (their phone usage * 0.8 * 3 days)
  *   - reassurance that we'll notify before the trial ends
  *

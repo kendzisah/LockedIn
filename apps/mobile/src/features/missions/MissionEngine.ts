@@ -385,3 +385,34 @@ export const getCompletedCount = (missions: Mission[]): number =>
 export const getPrimaryGoals = (): string[] => Object.keys(GOAL_MISSIONS);
 
 export const getWeaknessOptions = (): string[] => Object.keys(WEAKNESS_MISSIONS);
+
+const STAT_ORDER: Stat[] = ['discipline', 'focus', 'execution', 'consistency', 'social'];
+
+/**
+ * Aggregate the stats actually bumped when a mission from this pool
+ * completes. Mirrors the bump logic in MissionsProvider:
+ *   - every completion bumps total_missions_completed → Execution
+ *   - 'discipline'-tagged missions bump total_distractions_resisted → Discipline
+ *   - 'social'-tagged missions bump guild_check_ins → Social
+ * Focus and Consistency grow from session minutes / perfect days, not
+ * from a single mission completion, so they're intentionally excluded.
+ */
+const aggregateStats = (templates: MissionTemplate[] | undefined): Stat[] => {
+  if (!templates || templates.length === 0) return [];
+  const set = new Set<Stat>();
+  set.add('execution');
+  for (const t of templates) {
+    const tags = MISSION_TYPE_STATS[t.type] ?? [];
+    if (tags.includes('discipline')) set.add('discipline');
+    if (tags.includes('social')) set.add('social');
+  }
+  return STAT_ORDER.filter((s) => set.has(s));
+};
+
+/** Stats that completing a goal's mission pool tends to boost. */
+export const getStatsForGoal = (goal: string): Stat[] =>
+  aggregateStats(GOAL_MISSIONS[goal]);
+
+/** Stats that completing a weakness's mission pool tends to boost. */
+export const getStatsForWeakness = (weakness: string): Stat[] =>
+  aggregateStats(WEAKNESS_MISSIONS[weakness]);

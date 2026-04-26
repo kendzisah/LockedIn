@@ -1,60 +1,53 @@
 /**
- * SystemStatusBar — The single unified character HUD for HomeTab. Reads
- * like an in-game stat sheet: rank pill + OVR block, progress to next
- * rank, 5 micro stat bars, the week-at-a-glance dots, and a streak
- * counter — all in one bracketed panel.
- *
- * Subscribes to StatsService for live updates. Tap to open the full
- * character sheet on the Profile tab.
+ * SystemStatusBar — The character HUD panel. Identity (OVR + rank +
+ * progress to next), 5 animated stat bars, week-at-a-glance blocks,
+ * and a streak status readout. Subscribes to StatsService for live
+ * updates. Tap to open the full character sheet on the Profile tab.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
+  Easing,
+  Image,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
-import LottieView from 'lottie-react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { MainStackParamList, TabParamList } from '../../../types/navigation';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { Stat, UserStatsRow } from '@lockedin/shared-types';
-import { Colors } from '../../../design/colors';
+import { Ionicons } from '@expo/vector-icons';
 import { FontFamily } from '../../../design/typography';
+import type { MainStackParamList, TabParamList } from '../../../types/navigation';
 import { StatsService } from '../../../services/StatsService';
 import { RankService } from '../../../services/RankService';
+import { SupabaseService } from '../../../services/SupabaseService';
+import { useAuth } from '../../auth/AuthProvider';
 import { useSession } from '../state/SessionProvider';
 import { getTodayKey } from '../engine/SessionEngine';
+import HUDPanel from './HUDPanel';
+import StatBar from './StatBar';
 import {
-  getStreakTierInfo,
-  getFlameColorFilters,
-} from '../../../design/streakTiers';
-import FocusRing from './FocusRing';
-import CompactMissions from './CompactMissions';
+  STAT_COLORS,
+  STAT_LABELS,
+  SectionLabelStyle,
+  SystemTokens,
+} from '../systemTokens';
 
 type Nav = CompositeNavigationProp<
   BottomTabNavigationProp<TabParamList, 'HomeTab'>,
   NativeStackNavigationProp<MainStackParamList>
 >;
 
-const STAT_COLORS: Record<Stat, string> = {
-  discipline:  '#3A66FF',
-  focus:       '#00C2FF',
-  execution:   '#00D68F',
-  consistency: '#FFC857',
-  social:      '#A855F7',
-};
-
-const STAT_ROWS: { key: Stat; label: string }[] = [
-  { key: 'discipline',  label: 'DIS' },
-  { key: 'focus',       label: 'FOC' },
-  { key: 'execution',   label: 'EXE' },
-  { key: 'consistency', label: 'CON' },
-  { key: 'social',      label: 'SOC' },
+const STAT_ROWS: Stat[] = [
+  'discipline',
+  'focus',
+  'execution',
+  'consistency',
+  'social',
 ];
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -76,26 +69,48 @@ function getCurrentWeekDayKeys(): string[] {
 }
 
 interface SystemStatusBarProps {
-  focused: number;
-  goal: number;
   streakAtRisk?: boolean;
-  onMissionsPress?: () => void;
 }
 
-const SystemStatusBar: React.FC<SystemStatusBarProps> = ({
-  focused,
-  goal,
-  streakAtRisk,
-  onMissionsPress,
-}) => {
+const SystemStatusBar: React.FC<SystemStatusBarProps> = ({ streakAtRisk }) => {
   const navigation = useNavigation<Nav>();
   const { state: session } = useSession();
+  const { isAnonymous } = useAuth();
   const [stats, setStats] = useState<UserStatsRow | null>(StatsService.getCached());
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
 
   useEffect(() => {
     void StatsService.refresh();
     return StatsService.subscribe(setStats);
   }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (isAnonymous) {
+        setAvatarUrl(null);
+        setDisplayName(null);
+        return;
+      }
+      let cancelled = false;
+      (async () => {
+        const client = SupabaseService.getClient();
+        const uid = SupabaseService.getCurrentUserId();
+        if (!client || !uid) return;
+        const { data } = await client
+          .from('profiles')
+          .select('display_name, avatar_url')
+          .eq('id', uid)
+          .maybeSingle();
+        if (cancelled) return;
+        setAvatarUrl(data?.avatar_url ? String(data.avatar_url) : null);
+        setDisplayName(data?.display_name ? String(data.display_name) : null);
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [isAnonymous]),
+  );
 
   const streakDays = session.consecutiveStreak;
   const currentRank = RankService.rankFromStreak(streakDays);
@@ -104,7 +119,6 @@ const SystemStatusBar: React.FC<SystemStatusBarProps> = ({
   const ovr = stats?.ovr ?? 1;
   const totalXp = stats?.total_xp ?? 0;
 
-  // Week dot computation (mirrors DayDots logic)
   const todayKey = useMemo(() => getTodayKey(), []);
   const weekKeys = useMemo(() => getCurrentWeekDayKeys(), []);
   const completedSet = useMemo(() => {
@@ -127,53 +141,119 @@ const SystemStatusBar: React.FC<SystemStatusBarProps> = ({
     weekKeys,
   ]);
 
-  // Streak flame tinting
-  const streakTier = useMemo(() => getStreakTierInfo(streakDays), [streakDays]);
-  const flameFilters = useMemo(
-    () => getFlameColorFilters(streakTier.color, streakTier.colorLight),
-    [streakTier.color, streakTier.colorLight],
-  );
+  const ovrGlow = useRef(new Animated.Value(0.5)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(ovrGlow, {
+          toValue: 1,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+        Animated.timing(ovrGlow, {
+          toValue: 0.5,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [ovrGlow]);
+
+  const todayPulse = useRef(new Animated.Value(0.6)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(todayPulse, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(todayPulse, {
+          toValue: 0.6,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [todayPulse]);
+
+  const ovrShadowRadius = ovrGlow.interpolate({
+    inputRange: [0.5, 1],
+    outputRange: [6, 10],
+  });
+
+  const streakStatus = streakAtRisk
+    ? { label: 'STATUS: AT RISK', color: SystemTokens.red }
+    : streakDays === 0
+      ? { label: 'STATUS: INACTIVE', color: SystemTokens.textMuted }
+      : {
+          label: `STATUS: ACTIVE · ×${(1 + Math.min(streakDays / 30, 0.5)).toFixed(1)} MULT`,
+          color: SystemTokens.gold,
+        };
 
   return (
-    <View style={styles.card}>
-      {/* Glow orb tinted by current rank */}
-      <View
-        style={[
-          styles.glowOrb,
-          { backgroundColor: `${currentRank.color}10` },
-        ]}
-        pointerEvents="none"
-      />
-
-      {/* Corner brackets — give it the SAO HUD feel */}
-      <View style={[styles.corner, styles.cornerTL, { borderColor: currentRank.color }]} />
-      <View style={[styles.corner, styles.cornerTR, { borderColor: currentRank.color }]} />
-      <View style={[styles.corner, styles.cornerBL, { borderColor: currentRank.color }]} />
-      <View style={[styles.corner, styles.cornerBR, { borderColor: currentRank.color }]} />
-
-      {/* Tappable identity zone — opens character sheet */}
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => navigation.navigate('ProfileTab' as never)}
-      >
-      {/* ── Header bar ── */}
-      <View style={styles.headerBar}>
-        <Text style={styles.eyebrow}>// SYSTEM</Text>
-        <Text style={styles.eyebrowMuted}>{totalXp.toLocaleString()} XP</Text>
-      </View>
-
-      {/* ── Identity row: OVR + rank ── */}
+    <HUDPanel
+      headerLabel="STATUS"
+      headerRight={`${totalXp.toLocaleString()} XP`}
+      accentColor={currentRank.color}
+      onPress={() => navigation.navigate('ProfileTab' as never)}
+    >
+      {/* ── Identity row: Avatar · Rank · OVR ── */}
       <View style={styles.mainRow}>
-        <View style={[styles.ovrBlock, { borderColor: `${currentRank.color}55` }]}>
-          <Text style={styles.ovrLabel}>OVR</Text>
-          <Text style={styles.ovrValue}>{ovr}</Text>
+        <View style={styles.avatarCol}>
+          <Text style={styles.avatarName} numberOfLines={1}>
+            {((displayName?.trim() || 'Anonymous')).slice(0, 16)}
+          </Text>
+          <View style={[styles.avatarBlock, { borderColor: `${currentRank.color}55` }]}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarLetter}>
+                {(displayName?.trim().charAt(0) ?? 'A').toUpperCase()}
+              </Text>
+            )}
+          </View>
         </View>
 
         <View style={styles.rankCol}>
-          <Text style={[styles.rankName, { color: currentRank.color }]}>
-            {currentRank.name}
-          </Text>
-          <Text style={styles.rankSub}>Day {streakDays}</Text>
+          <View style={styles.rankRow}>
+            <Text
+              style={[
+                styles.rankName,
+                {
+                  color: currentRank.color,
+                  textShadowColor: `${currentRank.color}66`,
+                  textShadowRadius: 8,
+                  textShadowOffset: { width: 0, height: 0 },
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {currentRank.name}
+            </Text>
+            <Animated.Text
+              style={[
+                styles.ovrInline,
+                {
+                  color: currentRank.color,
+                  textShadowColor: currentRank.color,
+                  textShadowRadius: ovrShadowRadius as unknown as number,
+                  textShadowOffset: { width: 0, height: 0 },
+                },
+              ]}
+            >
+              <Text style={styles.ovrInlineLabel}>OVR </Text>
+              {ovr}
+            </Animated.Text>
+          </View>
+
+          <Text style={styles.rankSub}>DAY {streakDays}</Text>
 
           {nextRank ? (
             <View style={styles.progressBlock}>
@@ -195,7 +275,7 @@ const SystemStatusBar: React.FC<SystemStatusBarProps> = ({
                   {nextRank.name}
                 </Text>
                 <Text style={styles.progressHintMuted}>
-                  {' '}· {Math.max(0, nextRank.minDays - streakDays)}d
+                  {' '}· {Math.max(0, nextRank.minDays - streakDays)}D
                 </Text>
               </Text>
             </View>
@@ -205,39 +285,24 @@ const SystemStatusBar: React.FC<SystemStatusBarProps> = ({
         </View>
       </View>
 
-      {/* ── Stat bars ── */}
+      {/* ── // STATS ── */}
+      <SectionLabel label="STATS" />
       <View style={styles.statsBlock}>
-        {STAT_ROWS.map((row) => {
-          const value = stats?.[row.key] ?? 1;
-          const pct = (value / 99) * 100;
-          return (
-            <View key={row.key} style={styles.statRow}>
-              <Text style={[styles.statLabel, { color: STAT_COLORS[row.key] }]}>
-                {row.label}
-              </Text>
-              <View style={styles.statTrack}>
-                <View
-                  style={[
-                    styles.statFill,
-                    {
-                      width: `${Math.max(2, pct)}%`,
-                      backgroundColor: STAT_COLORS[row.key],
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.statValueText}>{value}</Text>
-            </View>
-          );
-        })}
+        {STAT_ROWS.map((key, i) => (
+          <StatBar
+            key={key}
+            label={STAT_LABELS[key]}
+            value={stats?.[key] ?? 1}
+            current={stats?.[key] ?? 1}
+            max={99}
+            color={STAT_COLORS[key]}
+            delay={i * 100}
+          />
+        ))}
       </View>
 
-      {/* ── Week section ── */}
-      <View style={styles.sectionDivider}>
-        <Text style={styles.sectionLabel}>// WEEK</Text>
-        <View style={styles.dividerLine} />
-      </View>
-
+      {/* ── // WEEK ── */}
+      <SectionLabel label="WEEK" />
       <View style={styles.weekRow}>
         {DAY_LABELS.map((label, i) => {
           const dayKey = weekKeys[i];
@@ -248,228 +313,170 @@ const SystemStatusBar: React.FC<SystemStatusBarProps> = ({
           const isMissed = isPast && !isCompleted;
           return (
             <View key={i} style={styles.dayCol}>
+              {isToday && <View style={styles.todayMarker} />}
               <Text
                 style={[
                   styles.dayLabel,
-                  isToday && styles.dayLabelToday,
-                  isCompleted && styles.dayLabelCompleted,
-                  isMissed && styles.dayLabelMissed,
+                  isToday && { color: SystemTokens.cyan },
+                  isCompleted && { color: SystemTokens.green },
+                  isMissed && { color: SystemTokens.red },
                 ]}
               >
                 {label}
               </Text>
-              <View
+              <Animated.View
                 style={[
-                  styles.dayDot,
-                  isCompleted && styles.dayDotCompleted,
-                  isMissed && styles.dayDotMissed,
-                  isToday && !isCompleted && styles.dayDotToday,
-                  isFuture && styles.dayDotFuture,
+                  styles.dayBlock,
+                  isCompleted && {
+                    backgroundColor: SystemTokens.green,
+                    borderColor: SystemTokens.green,
+                  },
+                  isMissed && {
+                    backgroundColor: 'rgba(255,71,87,0.08)',
+                    borderColor: 'rgba(255,71,87,0.6)',
+                  },
+                  isToday && !isCompleted && {
+                    borderColor: SystemTokens.cyan,
+                    borderWidth: 1.5,
+                    backgroundColor: 'rgba(0,194,255,0.08)',
+                    opacity: todayPulse,
+                  },
+                  isFuture && styles.dayBlockFuture,
                 ]}
               >
                 {isCompleted && (
                   <Ionicons name="checkmark" size={12} color="#FFFFFF" />
                 )}
                 {isMissed && (
-                  <Ionicons name="close" size={11} color={Colors.danger} />
+                  <Ionicons name="close" size={12} color={SystemTokens.red} />
                 )}
-              </View>
+              </Animated.View>
             </View>
           );
         })}
       </View>
 
-      {/* ── Streak section ── */}
-      <View style={styles.sectionDivider}>
-        <Text style={styles.sectionLabel}>// STREAK</Text>
-        <View style={styles.dividerLine} />
-      </View>
-
-      <View style={styles.streakRow}>
-        <View style={styles.flameWrap}>
-          <LottieView
-            source={require('../../../../assets/lottie/fire.json')}
-            autoPlay
-            loop
-            style={styles.flame}
-            colorFilters={streakDays > 0 ? flameFilters : undefined}
-          />
+      {/* ── // STREAK ── */}
+      <SectionLabel label="STREAK" />
+      <View style={styles.streakReadout}>
+        <View style={styles.streakLeft}>
+          <Text style={styles.streakNumeric}>
+            {String(streakDays).padStart(2, '0')}
+          </Text>
+          <Text style={styles.streakUnit}>DAYS</Text>
         </View>
-        <Text
-          style={[
-            styles.streakValue,
-            streakDays > 0 && { color: streakTier.color },
-          ]}
-        >
-          {streakDays}
-        </Text>
-        <Text style={styles.streakLabel}>
-          {streakDays === 1 ? 'DAY' : 'DAYS'}
-        </Text>
-        <View style={styles.streakSpacer} />
-        <Text style={styles.streakHint}>
-          {streakDays === 0 ? 'lock in to start' : 'don\'t break it'}
-        </Text>
+        <View style={styles.streakRight}>
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: streakStatus.color },
+            ]}
+          />
+          <Text
+            style={[styles.streakStatus, { color: streakStatus.color }]}
+            numberOfLines={1}
+          >
+            {streakStatus.label}
+          </Text>
+        </View>
       </View>
-      </TouchableOpacity>
-
-      {/* ── Focus section ── */}
-      <View style={styles.sectionDivider}>
-        <Text style={styles.sectionLabel}>// FOCUS</Text>
-        <View style={styles.dividerLine} />
-        <Text style={styles.sectionMeta}>
-          {focused}/{goal} MIN
-        </Text>
-      </View>
-
-      <View style={styles.focusSlot}>
-        <FocusRing focused={focused} goal={goal} streakAtRisk={streakAtRisk} />
-      </View>
-
-      {/* ── Missions section ── */}
-      <View style={styles.sectionDivider}>
-        <Text style={styles.sectionLabel}>// MISSIONS</Text>
-        <View style={styles.dividerLine} />
-      </View>
-
-      <View style={styles.missionsSlot}>
-        <CompactMissions onPress={onMissionsPress ?? (() => {})} />
-      </View>
-    </View>
+    </HUDPanel>
   );
 };
 
-const CORNER_SIZE = 10;
-const CORNER_THICKNESS = 1.5;
-const DAY_DOT_SIZE = 24;
+const SectionLabel: React.FC<{ label: string; right?: string }> = ({ label, right }) => (
+  <View style={styles.sectionRow}>
+    <Text style={styles.sectionLabel}>// {label}</Text>
+    <View style={styles.sectionRule} />
+    {right && <Text style={styles.sectionRight}>{right}</Text>}
+  </View>
+);
 
 const styles = StyleSheet.create({
-  card: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
-    backgroundColor: 'rgba(14,17,22,0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 6,
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 14,
-    overflow: 'hidden',
-  },
-  glowOrb: {
-    position: 'absolute',
-    top: -60,
-    right: -60,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-  },
-  corner: {
-    position: 'absolute',
-    width: CORNER_SIZE,
-    height: CORNER_SIZE,
-  },
-  cornerTL: {
-    top: -1,
-    left: -1,
-    borderTopWidth: CORNER_THICKNESS,
-    borderLeftWidth: CORNER_THICKNESS,
-  },
-  cornerTR: {
-    top: -1,
-    right: -1,
-    borderTopWidth: CORNER_THICKNESS,
-    borderRightWidth: CORNER_THICKNESS,
-  },
-  cornerBL: {
-    bottom: -1,
-    left: -1,
-    borderBottomWidth: CORNER_THICKNESS,
-    borderLeftWidth: CORNER_THICKNESS,
-  },
-  cornerBR: {
-    bottom: -1,
-    right: -1,
-    borderBottomWidth: CORNER_THICKNESS,
-    borderRightWidth: CORNER_THICKNESS,
-  },
-  headerBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-  },
-  eyebrow: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 10,
-    letterSpacing: 1.6,
-    color: Colors.accent,
-  },
-  eyebrowMuted: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 10,
-    letterSpacing: 0.8,
-    color: Colors.textMuted,
-  },
   mainRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
     gap: 14,
   },
-  ovrBlock: {
-    width: 64,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(255,255,255,0.02)',
+  avatarCol: {
+    alignItems: 'center',
+    gap: 4,
+    width: 60,
+  },
+  avatarName: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 10,
+    letterSpacing: 0.6,
+    color: SystemTokens.textSecondary,
+    maxWidth: 60,
+  },
+  avatarBlock: {
+    width: 60,
+    height: 60,
+    backgroundColor: 'rgba(58,102,255,0.06)',
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
   },
-  ovrLabel: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 10,
-    letterSpacing: 1.4,
-    color: Colors.textMuted,
+  avatarImage: {
+    width: 60,
+    height: 60,
   },
-  ovrValue: {
+  avatarLetter: {
     fontFamily: FontFamily.headingBold,
-    fontSize: 32,
-    lineHeight: 36,
-    color: Colors.textPrimary,
+    fontSize: 26,
+    color: SystemTokens.textPrimary,
+    letterSpacing: -0.5,
   },
   rankCol: {
     flex: 1,
     justifyContent: 'center',
-    gap: 4,
+    gap: 3,
+  },
+  rankRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   rankName: {
+    flex: 1,
     fontFamily: FontFamily.headingBold,
-    fontSize: 18,
+    fontSize: 20,
+    letterSpacing: 1.6,
+  },
+  ovrInline: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 22,
+    letterSpacing: 0.6,
+  },
+  ovrInlineLabel: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 11,
     letterSpacing: 1.4,
+    color: SystemTokens.textMuted,
   },
   rankSub: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 11,
-    color: Colors.textSecondary,
-    letterSpacing: 0.6,
+    color: SystemTokens.textSecondary,
+    letterSpacing: 1.2,
   },
   progressBlock: {
     marginTop: 4,
-    gap: 3,
+    gap: 4,
   },
   progressTrack: {
-    height: 4,
+    height: 3,
     backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 2,
+    borderRadius: 1,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 2,
+    borderRadius: 1,
     shadowOpacity: 0.6,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 0 },
@@ -477,10 +484,10 @@ const styles = StyleSheet.create({
   progressHint: {
     fontFamily: FontFamily.body,
     fontSize: 10,
-    letterSpacing: 0.4,
+    letterSpacing: 0.6,
   },
   progressHintMuted: {
-    color: Colors.textMuted,
+    color: SystemTokens.textMuted,
   },
   progressNextRank: {
     fontFamily: FontFamily.headingSemiBold,
@@ -488,44 +495,10 @@ const styles = StyleSheet.create({
   maxText: {
     fontFamily: FontFamily.headingBold,
     fontSize: 12,
-    letterSpacing: 1.2,
-    color: Colors.warning,
+    letterSpacing: 1.4,
+    color: SystemTokens.gold,
   },
-  statsBlock: {
-    marginTop: 12,
-    gap: 4,
-  },
-  statRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  statLabel: {
-    width: 28,
-    fontFamily: FontFamily.headingBold,
-    fontSize: 9,
-    letterSpacing: 0.8,
-  },
-  statTrack: {
-    flex: 1,
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  statFill: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  statValueText: {
-    width: 20,
-    textAlign: 'right',
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 10,
-    color: Colors.textPrimary,
-    letterSpacing: 0.3,
-  },
-  sectionDivider: {
+  sectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -533,115 +506,98 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   sectionLabel: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 9,
-    letterSpacing: 1.4,
-    color: Colors.textMuted,
+    ...SectionLabelStyle,
+    color: SystemTokens.textMuted,
+    fontSize: 10,
+    letterSpacing: 2,
   },
-  dividerLine: {
+  sectionRule: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: SystemTokens.divider,
+  },
+  sectionRight: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: SystemTokens.textMuted,
+  },
+  statsBlock: {
+    gap: 5,
   },
   weekRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
   },
   dayCol: {
     alignItems: 'center',
     gap: 4,
   },
+  todayMarker: {
+    position: 'absolute',
+    top: -6,
+    width: 1,
+    height: 4,
+    backgroundColor: 'rgba(0,194,255,0.5)',
+  },
   dayLabel: {
     fontFamily: FontFamily.headingSemiBold,
     fontSize: 10,
-    letterSpacing: 0.5,
-    color: Colors.textMuted,
+    letterSpacing: 0.8,
+    color: SystemTokens.textMuted,
   },
-  dayLabelToday: {
-    color: Colors.accent,
-  },
-  dayLabelCompleted: {
-    color: Colors.primary,
-  },
-  dayLabelMissed: {
-    color: Colors.danger,
-  },
-  dayDot: {
-    width: DAY_DOT_SIZE,
-    height: DAY_DOT_SIZE,
-    borderRadius: DAY_DOT_SIZE / 2,
+  dayBlock: {
+    width: 26,
+    height: 26,
+    borderRadius: 3,
     backgroundColor: 'rgba(255,255,255,0.04)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: SystemTokens.divider,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayDotCompleted: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+  dayBlockFuture: {
+    opacity: 0.45,
   },
-  dayDotMissed: {
-    backgroundColor: 'rgba(255,71,87,0.12)',
-    borderColor: 'rgba(255,71,87,0.5)',
-  },
-  dayDotToday: {
-    borderColor: Colors.accent,
-    borderWidth: 1.5,
-  },
-  dayDotFuture: {
-    opacity: 0.4,
-  },
-  streakRow: {
+  streakReadout: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+  },
+  streakLeft: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
     gap: 6,
   },
-  flameWrap: {
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  flame: {
-    width: 30,
-    height: 30,
-  },
-  streakValue: {
+  streakNumeric: {
     fontFamily: FontFamily.headingBold,
-    fontSize: 22,
-    color: Colors.textMuted,
-    letterSpacing: -0.3,
+    fontSize: 28,
+    color: SystemTokens.textPrimary,
+    letterSpacing: -0.5,
   },
-  streakLabel: {
+  streakUnit: {
     fontFamily: FontFamily.headingSemiBold,
-    fontSize: 10,
-    letterSpacing: 1.4,
-    color: Colors.textSecondary,
-  },
-  streakSpacer: {
-    flex: 1,
-  },
-  streakHint: {
-    fontFamily: FontFamily.body,
     fontSize: 11,
-    color: Colors.textMuted,
-    letterSpacing: 0.3,
-    fontStyle: 'italic',
+    letterSpacing: 1.6,
+    color: SystemTokens.textMuted,
   },
-  sectionMeta: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 10,
-    letterSpacing: 0.8,
-    color: Colors.textMuted,
-  },
-  focusSlot: {
+  streakRight: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: -8,
-    marginBottom: -8,
+    justifyContent: 'flex-end',
+    gap: 6,
   },
-  missionsSlot: {
-    marginHorizontal: -14,
-    marginBottom: -10,
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 1,
+  },
+  streakStatus: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 10,
+    letterSpacing: 1.2,
   },
 });
 

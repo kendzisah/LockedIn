@@ -1,15 +1,17 @@
 /**
- * XPBreakdown — Animated XP earned card for SessionCompleteScreen.
+ * XPBreakdown — Animated XP earned panel for SessionCompleteScreen.
  *
  * Computes the same breakdown that XPService.computeXP applies on the
  * server side (base + duration bonus + streak multiplier) so users see
- * exactly where their points came from. Rows stagger-fade in.
+ * exactly where their points came from. Rows stagger-fade in inside a
+ * HUDPanel.
  */
 
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
-import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import HUDPanel from './HUDPanel';
+import { SystemTokens } from '../systemTokens';
 
 interface XPBreakdownProps {
   durationMinutes: number;
@@ -116,66 +118,44 @@ const XPBreakdown: React.FC<XPBreakdownProps> = ({
 
   return (
     <Animated.View
-      style={[
-        styles.card,
-        {
-          opacity: cardOpacity,
-          transform: [{ translateY: cardTranslate }],
-        },
-      ]}
+      style={{
+        opacity: cardOpacity,
+        transform: [{ translateY: cardTranslate }],
+      }}
     >
-      <Text style={styles.heading}>XP EARNED</Text>
+      <HUDPanel headerLabel="XP EARNED">
+        {rows.map((row, idx) => (
+          <Animated.View
+            key={row.label}
+            style={[styles.row, { opacity: rowOpacities[idx] }]}
+          >
+            <Text style={styles.rowLabel} numberOfLines={1}>
+              {row.label}
+            </Text>
+            <Text style={styles.rowValue}>+{row.value}</Text>
+          </Animated.View>
+        ))}
 
-      {rows.map((row, idx) => (
+        <View style={styles.divider} />
+
         <Animated.View
-          key={row.label}
-          style={[styles.row, { opacity: rowOpacities[idx] }]}
+          style={[
+            styles.totalRow,
+            {
+              opacity: totalOpacity,
+              transform: [{ scale: totalScale }],
+            },
+          ]}
         >
-          <Text style={styles.rowLabel} numberOfLines={1}>
-            {row.label}
-          </Text>
-          <Text style={styles.rowValue}>+{row.value}</Text>
+          <Text style={styles.totalLabel}>TOTAL</Text>
+          <Text style={styles.totalValue}>+{total} XP</Text>
         </Animated.View>
-      ))}
-
-      <View style={styles.divider} />
-
-      <Animated.View
-        style={[
-          styles.totalRow,
-          {
-            opacity: totalOpacity,
-            transform: [{ scale: totalScale }],
-          },
-        ]}
-      >
-        <Text style={styles.totalLabel}>TOTAL</Text>
-        <Text style={styles.totalValue}>+{total} XP</Text>
-      </Animated.View>
+      </HUDPanel>
     </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: 'rgba(21,26,33,0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(0,194,255,0.18)',
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    shadowColor: Colors.accent,
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  heading: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: Colors.accent,
-    marginBottom: 10,
-  },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -186,19 +166,19 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.body,
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: SystemTokens.textSecondary,
   },
   rowValue: {
     fontFamily: FontFamily.headingSemiBold,
     fontSize: 13,
-    color: Colors.textPrimary,
+    color: SystemTokens.textPrimary,
     marginLeft: 12,
   },
   divider: {
     marginTop: 8,
     marginBottom: 8,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: SystemTokens.divider,
   },
   totalRow: {
     flexDirection: 'row',
@@ -209,13 +189,13 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.headingBold,
     fontSize: 13,
     letterSpacing: 1.4,
-    color: Colors.textPrimary,
+    color: SystemTokens.textPrimary,
   },
   totalValue: {
     fontFamily: FontFamily.headingBold,
     fontSize: 22,
     letterSpacing: -0.3,
-    color: Colors.success,
+    color: SystemTokens.green,
     textShadowColor: 'rgba(0,214,143,0.4)',
     textShadowRadius: 8,
     textShadowOffset: { width: 0, height: 0 },

@@ -61,7 +61,7 @@ const TabNavigator: React.FC = () => {
         name="HomeTab"
         component={HomeTab}
         options={{
-          tabBarLabel: 'Home',
+          tabBarLabel: 'HOME',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
@@ -71,7 +71,7 @@ const TabNavigator: React.FC = () => {
         name="MissionsTab"
         component={MissionsTab}
         options={{
-          tabBarLabel: 'Missions',
+          tabBarLabel: 'MISSIONS',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="flash" size={size} color={color} />
           ),
@@ -91,9 +91,9 @@ const TabNavigator: React.FC = () => {
         name="BoardTab"
         component={BoardTab}
         options={{
-          tabBarLabel: 'Squads',
+          tabBarLabel: 'GUILD',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people" size={size} color={color} />
+            <Ionicons name="shield" size={size} color={color} />
           ),
         }}
       />
@@ -101,7 +101,7 @@ const TabNavigator: React.FC = () => {
         name="ProfileTab"
         component={ProfileTab}
         options={{
-          tabBarLabel: 'Profile',
+          tabBarLabel: 'PROFILE',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size} color={color} />
           ),
@@ -114,18 +114,18 @@ const TabNavigator: React.FC = () => {
 const styles = StyleSheet.create({
   tabBar: {
     position: 'absolute',
-    backgroundColor: 'rgba(14,17,22,0.92)',
+    backgroundColor: 'rgba(14,17,22,0.95)',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.04)',
+    borderTopColor: 'rgba(58,102,255,0.08)',
     height: Platform.OS === 'ios' ? 88 : 70,
     paddingBottom: Platform.OS === 'ios' ? 24 : 8,
     paddingTop: 8,
     elevation: 0,
   },
   tabLabel: {
-    fontFamily: FontFamily.body,
+    fontFamily: FontFamily.headingSemiBold,
     fontSize: 10,
-    letterSpacing: 0.2,
+    letterSpacing: 1.6,
   },
   lockInButton: {
     top: -18,

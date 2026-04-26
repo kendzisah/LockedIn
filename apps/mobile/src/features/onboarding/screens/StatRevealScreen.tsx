@@ -34,7 +34,7 @@ const StatRevealScreen: React.FC<Props> = ({ navigation }) => {
   const { state } = useOnboarding();
 
   const startingRank = RankService.rankFromStreak(0); // NPC
-  const nextRank = RankService.nextRank(0);            // GRINDER
+  const nextRank = RankService.nextRank(0);            // RECRUIT
 
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;

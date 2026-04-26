@@ -5,7 +5,8 @@ import SettingsSheetShell from '../components/SettingsSheetShell';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { Analytics } from '../../../services/AnalyticsService';
-import { getWeaknessOptions } from '../../missions/MissionEngine';
+import { getStatsForWeakness, getWeaknessOptions } from '../../missions/MissionEngine';
+import StatPills from '../components/StatPills';
 
 interface Props {
   visible: boolean;
@@ -67,7 +68,10 @@ const WeaknessPickerSheet: React.FC<Props> = ({
                   <MaterialIcons name="check" size={16} color={Colors.textPrimary} />
                 ) : null}
               </View>
-              <Text style={styles.rowLabel}>{label}</Text>
+              <View style={styles.rowBody}>
+                <Text style={styles.rowLabel}>{label}</Text>
+                <StatPills stats={getStatsForWeakness(label)} />
+              </View>
             </Pressable>
           );
         })}
@@ -93,11 +97,15 @@ const styles = StyleSheet.create({
   gap: { gap: 10 },
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
     paddingVertical: 8,
   },
   rowDisabled: { opacity: 0.35 },
+  rowBody: {
+    flex: 1,
+    paddingTop: 2,
+  },
   cb: {
     width: 22,
     height: 22,

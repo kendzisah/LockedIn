@@ -16,7 +16,7 @@ export interface RankTier {
 
 export const RANK_TIERS: RankTier[] = [
   { id: 'npc',       name: 'NPC',       minDays: 0,   color: '#8B8B8B' },
-  { id: 'grinder',   name: 'GRINDER',   minDays: 3,   color: '#4A7FB5' },
+  { id: 'grinder',   name: 'RECRUIT',   minDays: 3,   color: '#4A7FB5' },
   { id: 'rising',    name: 'RISING',    minDays: 7,   color: '#00C2FF' },
   { id: 'chosen',    name: 'CHOSEN',    minDays: 14,  color: '#00D68F' },
   { id: 'elite',     name: 'ELITE',     minDays: 30,  color: '#FFC857' },
