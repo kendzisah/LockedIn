@@ -10,7 +10,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
-import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -140,7 +139,6 @@ const LossAversionStatScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer>
-        <ProgressIndicator current={4} total={10} />
 
         <View style={styles.body}>
           {/* Intro */}
@@ -188,7 +186,7 @@ const LossAversionStatScreen: React.FC<Props> = ({ navigation }) => {
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
-                navigation.navigate('GoalQuiz');
+                navigation.navigate('Reclaim');
               });
             }}
             activeOpacity={0.85}

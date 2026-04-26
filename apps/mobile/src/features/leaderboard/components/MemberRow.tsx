@@ -3,6 +3,8 @@ import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import { RANK_BY_ID } from '../../../design/rankTiers';
+import type { RankId } from '@lockedin/shared-types';
 
 export type MemberRowProps = {
   rank: number;
@@ -15,6 +17,10 @@ export type MemberRowProps = {
   isCurrentUser: boolean;
   isLast?: boolean;
   onRemove?: () => void;
+  /** System OVR snapshot. Null when the member has no user_stats row yet. */
+  ovr?: number | null;
+  /** System rank id from user_stats. Null when no row yet. */
+  rankId?: RankId | null;
 };
 
 const RANK_GOLD = '#FFD700';
@@ -46,10 +52,13 @@ const MemberRow: React.FC<MemberRowProps> = ({
   isCurrentUser,
   isLast,
   onRemove,
+  ovr,
+  rankId,
 }) => {
   const initial = username.trim().charAt(0).toUpperCase() || '?';
   const rColor = rankColor(rank);
   const icon = rankIcon(rank);
+  const tier = rankId ? RANK_BY_ID[rankId] : null;
 
   return (
     <View
@@ -78,11 +87,33 @@ const MemberRow: React.FC<MemberRowProps> = ({
       </View>
 
       <View style={styles.info}>
-        <Text style={styles.username} numberOfLines={1}>
-          {username}
-          {isCurrentUser && <Text style={styles.youTag}> (you)</Text>}
-        </Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.username} numberOfLines={1}>
+            {username}
+            {isCurrentUser && <Text style={styles.youTag}> (you)</Text>}
+          </Text>
+          {tier && (
+            <Text style={[styles.rankLabel, { color: tier.color }]}>
+              {tier.name}
+            </Text>
+          )}
+        </View>
         <View style={styles.statsRow}>
+          {ovr != null && (
+            <View
+              style={[
+                styles.ovrPill,
+                tier && {
+                  backgroundColor: `${tier.color}1A`,
+                  borderColor: `${tier.color}55`,
+                },
+              ]}
+            >
+              <Text style={[styles.ovrText, tier && { color: tier.color }]}>
+                OVR {ovr}
+              </Text>
+            </View>
+          )}
           <View style={styles.stat}>
             <Ionicons name="time-outline" size={11} color={Colors.textMuted} />
             <Text style={styles.statText}>{focusMinutes}m</Text>
@@ -176,11 +207,36 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     minWidth: 0,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   username: {
+    flex: 1,
     fontFamily: FontFamily.headingSemiBold,
     fontSize: 14,
     color: Colors.textPrimary,
     letterSpacing: -0.1,
+  },
+  rankLabel: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+  ovrPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  ovrText: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 10,
+    letterSpacing: 0.4,
+    color: Colors.textPrimary,
   },
   youTag: {
     fontFamily: FontFamily.body,

@@ -6,15 +6,29 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 export type OnboardingStackParamList = {
   Definition: undefined;
   PhoneTimeQuiz: undefined;
-  AgeQuiz: undefined;
   LossAversionStat: undefined;
+  Reclaim: undefined;
+  AgeQuiz: undefined;
   GoalQuiz: undefined;
   ControlQuiz: undefined;
   DailyTimeCommitment: undefined;
+  ControlLevel: undefined;
+  StatReveal: undefined;
+  Day90Preview: undefined;
+  VulnerableTime: undefined;
+  BenefitExecution: undefined;
+  BenefitMissions: undefined;
+  BenefitRanks: undefined;
+  BenefitGuilds: undefined;
+  BenefitReport: undefined;
   ScreenTimePreFrame: undefined;
   NotificationPreFrame: undefined;
-  PersonalizedPlanCard: undefined;
   AccountPrompt: undefined;
+  OnboardingAuth: { mode?: 'signup' | 'signin' } | undefined;
+  Commitment: undefined;
+  SocialProof: undefined;
+  TrialPreview: undefined;
+  Paywall: undefined;
 };
 
 /**

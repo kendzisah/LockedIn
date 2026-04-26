@@ -33,6 +33,28 @@ export type MissionType =
   | 'social'
   | 'custom';
 
+import type { Stat } from '@lockedin/shared-types';
+
+/**
+ * Map mission type → primary stat(s) it grows. Used to render the
+ * +STAT pill on each mission card AND to drive StatsService bumps when
+ * a mission is completed. Order matters when 2 stats — the first is
+ * the primary tag.
+ */
+export const MISSION_TYPE_STATS: Record<MissionType, Stat[]> = {
+  focus_session: ['focus', 'execution'],
+  workout_check: ['discipline', 'consistency'],
+  reflection:    ['discipline'],
+  no_social:     ['focus', 'discipline'],
+  journal:       ['discipline', 'consistency'],
+  reading:       ['focus'],
+  planning:      ['execution'],
+  discipline:    ['discipline'],
+  lifestyle:     ['consistency'],
+  social:        ['social'],
+  custom:        ['execution'],
+};
+
 export type CompletionType = 'auto' | 'self-report' | 'hybrid';
 export type DifficultyTier = 'easy' | 'medium' | 'hard';
 export type MissionSlot = 'core' | 'goal' | 'weakness';
@@ -55,6 +77,8 @@ export interface Mission {
   progress?: number;
   progressTarget?: number;
   progressMetric?: ProgressMetric;
+  /** Stats this mission grows when completed. Defaults from MISSION_TYPE_STATS. */
+  stats?: Stat[];
 }
 
 // ─── Helpers ────────────────────────────────────────────
@@ -113,6 +137,7 @@ const buildMission = (
     progress: template.duration === 'weekly' ? 0 : undefined,
     progressTarget: template.progressTarget,
     progressMetric: template.progressMetric,
+    stats: MISSION_TYPE_STATS[template.type],
   };
 };
 

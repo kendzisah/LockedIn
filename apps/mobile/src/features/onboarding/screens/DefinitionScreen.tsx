@@ -3,9 +3,11 @@ import {
   Animated,
   StyleSheet,
   Text,
+  TouchableOpacity,
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import ScreenContainer from '../../../design/components/ScreenContainer';
@@ -66,57 +68,81 @@ const DefinitionScreen: React.FC<Props> = ({ navigation }) => {
     });
   };
 
+  const handleSignIn = () => {
+    Haptics.selectionAsync();
+    navigation.navigate('OnboardingAuth', { mode: 'signin' });
+  };
+
   return (
-    <TouchableWithoutFeedback onPress={handleTap}>
-      <Animated.View style={[styles.root, { opacity: screenOpacity }]}>
-        <ScreenContainer>
-          <View style={styles.content}>
-            {/* Word */}
-            <Animated.Text
-              style={[
-                styles.word,
-                { opacity: wordOpacity, transform: [{ translateY: wordTranslateY }] },
-              ]}
-            >
-              locked in
-            </Animated.Text>
+    <View style={styles.root}>
+      <TouchableWithoutFeedback onPress={handleTap}>
+        <Animated.View style={[styles.root, { opacity: screenOpacity }]}>
+          <ScreenContainer>
+            <View style={styles.content}>
+              {/* Word */}
+              <Animated.Text
+                style={[
+                  styles.word,
+                  { opacity: wordOpacity, transform: [{ translateY: wordTranslateY }] },
+                ]}
+              >
+                locked in
+              </Animated.Text>
 
-            {/* Phonetic */}
-            <Animated.Text style={[styles.phonetic, { opacity: phoneticOpacity }]}>
-              /lɒkt ɪn/
-            </Animated.Text>
+              {/* Phonetic */}
+              <Animated.Text style={[styles.phonetic, { opacity: phoneticOpacity }]}>
+                /lɒkt ɪn/
+              </Animated.Text>
 
-            {/* Divider */}
-            <Animated.View
-              style={[
-                styles.divider,
-                { opacity: dividerOpacity, transform: [{ scaleX: dividerScale }] },
-              ]}
-            />
+              {/* Divider */}
+              <Animated.View
+                style={[
+                  styles.divider,
+                  { opacity: dividerOpacity, transform: [{ scaleX: dividerScale }] },
+                ]}
+              />
 
-            {/* Part of speech */}
-            <Animated.Text style={[styles.partOfSpeech, { opacity: posOpacity }]}>
-              adjective
-            </Animated.Text>
+              {/* Part of speech */}
+              <Animated.Text style={[styles.partOfSpeech, { opacity: posOpacity }]}>
+                adjective
+              </Animated.Text>
 
-            {/* Definition */}
-            <Animated.View
-              style={{ opacity: defOpacity, transform: [{ translateY: defTranslateY }] }}
-            >
-              <Text style={styles.defNumber}>1.</Text>
-              <Text style={styles.definition}>
-                To be in a state of intense focus, maximum concentration, or deep commitment to a task, often by eliminating distractions.
-              </Text>
-            </Animated.View>
+              {/* Definition */}
+              <Animated.View
+                style={{ opacity: defOpacity, transform: [{ translateY: defTranslateY }] }}
+              >
+                <Text style={styles.defNumber}>1.</Text>
+                <Text style={styles.definition}>
+                  To be in a state of intense focus, maximum concentration, or deep commitment to a task, often by eliminating distractions.
+                </Text>
+              </Animated.View>
 
-            {/* Tap prompt */}
-            <Animated.Text style={[styles.tapHint, { opacity: tapOpacity }]}>
-              Tap to continue
-            </Animated.Text>
-          </View>
-        </ScreenContainer>
-      </Animated.View>
-    </TouchableWithoutFeedback>
+              {/* Tap prompt */}
+              <Animated.Text style={[styles.tapHint, { opacity: tapOpacity }]}>
+                Tap to continue
+              </Animated.Text>
+            </View>
+          </ScreenContainer>
+        </Animated.View>
+      </TouchableWithoutFeedback>
+
+      {/* Sign-in escape hatch — absolutely positioned so the parent
+          tap-to-continue handler doesn't fire when this is pressed. */}
+      <SafeAreaView
+        style={styles.signInBar}
+        edges={['top']}
+        pointerEvents="box-none"
+      >
+        <TouchableOpacity
+          onPress={handleSignIn}
+          style={styles.signInBtn}
+          activeOpacity={0.7}
+          hitSlop={8}
+        >
+          <Text style={styles.signInText}>Sign in</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    </View>
   );
 };
 
@@ -178,6 +204,27 @@ const styles = StyleSheet.create({
     bottom: 60,
     left: 0,
     right: 0,
+  },
+  signInBar: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    paddingHorizontal: 16,
+  },
+  signInBtn: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  signInText: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 13,
+    color: Colors.accent,
+    letterSpacing: 0.2,
   },
 });
 

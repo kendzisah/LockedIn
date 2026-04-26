@@ -31,11 +31,11 @@ import { useMissions } from '../../missions/MissionsProvider';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { getStreakTierInfo } from '../../../design/streakTiers';
-import FocusRing from '../components/FocusRing';
-import DayDots from '../components/DayDots';
-import StreakBar from '../components/StreakBar';
-import CompactMissions from '../components/CompactMissions';
 import StreakAtRiskBanner from '../components/StreakAtRiskBanner';
+import SystemStatusBar from '../components/SystemStatusBar';
+import StreakBreakOverlay from '../components/StreakBreakOverlay';
+import { RankService } from '../../../services/RankService';
+import type { RankId } from '@lockedin/shared-types';
 import { StreakRecoveryModal } from '../../streak/components/StreakRecoveryModal';
 import { useAuth } from '../../auth/AuthProvider';
 import SignUpNudgeSheet from '../../auth/components/SignUpNudgeSheet';
@@ -132,6 +132,24 @@ const HomeTab: React.FC = () => {
   useEffect(() => {
     if (!isHydrated) return;
     void NotificationService.scheduleAllDailyNotifications(state.consecutiveStreak);
+  }, [isHydrated, state.consecutiveStreak]);
+
+  // Streak-break overlay: trigger when consecutiveStreak transitions
+  // from > 0 to 0 (the user just lost their streak by missing a day).
+  const [streakBreak, setStreakBreak] = useState<null | {
+    previousStreakDays: number;
+    previousRankId: RankId;
+  }>(null);
+  const prevHomeStreak = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isHydrated) return;
+    const prev = prevHomeStreak.current;
+    const next = state.consecutiveStreak;
+    if (prev !== null && prev > 0 && next === 0) {
+      const lostRank = RankService.rankFromStreak(prev);
+      setStreakBreak({ previousStreakDays: prev, previousRankId: lostRank.id });
+    }
+    prevHomeStreak.current = next;
   }, [isHydrated, state.consecutiveStreak]);
 
   // Master scheduler omits close-to-goal; re-arm only when that run happens (streak / hydrate path).
@@ -250,33 +268,16 @@ const HomeTab: React.FC = () => {
       <View style={styles.glowOrb} />
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>{getGreeting()}</Text>
-            <Text style={styles.title}>Lock In.</Text>
-          </View>
-          <View style={[styles.streakPill, streak > 0 && { backgroundColor: `${tierInfo.color}15`, borderColor: `${tierInfo.color}30` }]}>
-            <LottieView
-              source={require('../../../../assets/lottie/fire.json')}
-              autoPlay
-              loop
-              style={styles.streakFlame}
-            />
-            <Text style={[styles.streakNum, streak > 0 && { color: tierInfo.color }]}>
-              {streak}
-            </Text>
-          </View>
-        </View>
-
         {streakAtRisk && canRecover && (
           <StreakAtRiskBanner onPress={() => setShowRecoveryModal(true)} />
         )}
 
-        <DayDots />
-        <FocusRing focused={dailyFocused} goal={dailyCommitment} streakAtRisk={streakAtRisk && !canRecover} />
-        <StreakBar streak={streak} />
-        <CompactMissions onPress={() => {}} />
+        <SystemStatusBar
+          focused={dailyFocused}
+          goal={dailyCommitment}
+          streakAtRisk={streakAtRisk && !canRecover}
+          onMissionsPress={() => {}}
+        />
       </SafeAreaView>
 
       <StreakRecoveryModal
@@ -306,6 +307,14 @@ const HomeTab: React.FC = () => {
         streak={state.consecutiveStreak}
         onDismiss={() => setShowSignUpNudge(false)}
       />
+      {streakBreak && (
+        <StreakBreakOverlay
+          visible={true}
+          previousStreakDays={streakBreak.previousStreakDays}
+          previousRankId={streakBreak.previousRankId}
+          onDismiss={() => setStreakBreak(null)}
+        />
+      )}
       <AppGuideSheet
         visible={homeGuide.visible}
         onDismiss={onHomeGuideDismiss}

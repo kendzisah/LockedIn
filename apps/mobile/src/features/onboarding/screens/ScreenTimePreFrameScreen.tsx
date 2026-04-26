@@ -15,7 +15,6 @@ import { Analytics } from '../../../services/AnalyticsService';
 import { PermissionService } from '../../../services/PermissionService';
 import { LockModeService } from '../../../services/LockModeService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
-import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
@@ -101,7 +100,6 @@ const ScreenTimePreFrameScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer>
-        <ProgressIndicator current={8} total={10} />
 
         <View style={styles.body}>
           <View style={styles.lottieWrap}>

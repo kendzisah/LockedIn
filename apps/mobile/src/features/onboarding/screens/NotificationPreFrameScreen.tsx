@@ -13,7 +13,6 @@ import { useOnboarding } from '../state/OnboardingProvider';
 import { NotificationService } from '../../../services/NotificationService';
 import { Analytics } from '../../../services/AnalyticsService';
 import ScreenContainer from '../../../design/components/ScreenContainer';
-import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../../../design/colors';
@@ -61,7 +60,7 @@ const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
 
   const navigateForward = useCallback(() => {
     Animated.timing(screenOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => {
-      navigation.navigate('PersonalizedPlanCard');
+      navigation.navigate('AccountPrompt');
     });
   }, [screenOpacity, navigation]);
 
@@ -87,7 +86,6 @@ const NotificationPreFrameScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer>
-        <ProgressIndicator current={9} total={10} />
 
         <View style={styles.body}>
           <View style={styles.lottieWrap}>

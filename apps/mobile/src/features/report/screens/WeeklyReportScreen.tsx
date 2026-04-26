@@ -17,6 +17,9 @@ import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { Analytics } from '../../../services/AnalyticsService';
 import WeeklyReportService, { WeeklyReport } from '../WeeklyReportService';
+import SystemStatsCard from '../../settings/components/SystemStatsCard';
+import { StatsService } from '../../../services/StatsService';
+import type { Stat, UserStatsRow } from '@lockedin/shared-types';
 
 interface WeeklyReportScreenProps {
   report?: WeeklyReport;
@@ -37,11 +40,38 @@ const defaultReport: WeeklyReport = {
   percentile: 0,
 };
 
+const STAT_ADVICE: Record<Stat, string> = {
+  discipline:
+    'Your Discipline is lagging. Try blocking distractions during your weakest window — every resisted attempt builds it.',
+  focus:
+    'Your Focus stat needs work. Ship one extra 30+ min session this week — that single block moves the needle.',
+  execution:
+    'Execution is your weak spot. Hit all 3 daily missions for the next 3 days — perfect-day bonuses compound fast.',
+  consistency:
+    'Consistency is the gap. Don\'t miss a single day this week. Even a 5-min session keeps the streak alive.',
+  social:
+    'Social is your lowest stat. Invite a friend or check in with your guild — accountability multiplies discipline.',
+};
+
+function buildRecommendation(stats: UserStatsRow | null): string | null {
+  if (!stats) return null;
+  const entries: { key: Stat; value: number }[] = [
+    { key: 'discipline',  value: stats.discipline  },
+    { key: 'focus',       value: stats.focus       },
+    { key: 'execution',   value: stats.execution   },
+    { key: 'consistency', value: stats.consistency },
+    { key: 'social',      value: stats.social      },
+  ];
+  entries.sort((a, b) => a.value - b.value);
+  return STAT_ADVICE[entries[0].key];
+}
+
 const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({
   report = defaultReport,
   onDismiss,
 }) => {
   const navigation = useNavigation();
+  const [stats, setStats] = React.useState<UserStatsRow | null>(StatsService.getCached());
 
   useEffect(() => {
     Analytics.track('Weekly Report Viewed', {
@@ -50,6 +80,13 @@ const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({
       score: report.totalFocusMinutes,
     });
   }, [report.grade, report.streakDays, report.totalFocusMinutes]);
+
+  useEffect(() => {
+    void StatsService.refresh();
+    return StatsService.subscribe(setStats);
+  }, []);
+
+  const recommendation = React.useMemo(() => buildRecommendation(stats), [stats]);
 
   const handleDismiss = async () => {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -192,6 +229,17 @@ const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({
           </Text>
         </View>
 
+        {/* System view — current OVR + stats + achievements */}
+        <SystemStatsCard />
+
+        {/* System recommendation derived from the user's lowest stat */}
+        {recommendation && (
+          <View style={styles.recoCard}>
+            <Text style={styles.recoEyebrow}>SYSTEM RECOMMENDATION</Text>
+            <Text style={styles.recoText}>{recommendation}</Text>
+          </View>
+        )}
+
         {/* CTA Button */}
         <TouchableOpacity
           style={[styles.ctaButton, { backgroundColor: Colors.primary }]}
@@ -214,6 +262,28 @@ const WeeklyReportScreen: React.FC<WeeklyReportScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
+  recoCard: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,194,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,194,255,0.22)',
+  },
+  recoEyebrow: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    color: Colors.accent,
+    marginBottom: 8,
+  },
+  recoText: {
+    fontFamily: FontFamily.body,
+    fontSize: 14,
+    lineHeight: 20,
+    color: Colors.textPrimary,
+  },
   container: {
     flex: 1,
   },

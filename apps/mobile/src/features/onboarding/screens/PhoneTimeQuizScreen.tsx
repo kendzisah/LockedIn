@@ -14,7 +14,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
-import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import { Analytics } from '../../../services/AnalyticsService';
 import * as Haptics from 'expo-haptics';
@@ -151,7 +150,7 @@ const PhoneTimeQuizScreen: React.FC<Props> = ({ navigation }) => {
         toValue: 0,
         duration: 400,
         useNativeDriver: true,
-      }).start(() => navigation.navigate('AgeQuiz'));
+      }).start(() => navigation.navigate('LossAversionStat'));
     },
     [dispatch, screenOpacity, navigation],
   );
@@ -171,8 +170,6 @@ const PhoneTimeQuizScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer centered={false}>
-      <ProgressIndicator current={2} total={10} />
-
       <View style={styles.body}>
         <Text style={styles.title}>
           How much time do you{'\n'}spend on your phone?

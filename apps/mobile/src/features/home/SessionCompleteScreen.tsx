@@ -26,6 +26,11 @@ import { NotificationService } from '../../services/NotificationService';
 import { Analytics } from '../../services/AnalyticsService';
 import { recordActiveDay, useMissions } from '../missions/MissionsProvider';
 import { useSession } from './state/SessionProvider';
+import XPBreakdown from './components/XPBreakdown';
+import RankUpOverlay from './components/RankUpOverlay';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import { RankService } from '../../services/RankService';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'SessionComplete'>;
 
@@ -34,6 +39,20 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
   const [dismissed, setDismissed] = useState(false);
   const { checkAutoComplete } = useMissions();
   const { state: sessionState } = useSession();
+
+  // Detect rank crossings: streak just went from (streak - 1) to streak.
+  // If those map to different ranks, show the rank-up overlay.
+  const rankChange = useMemo(() => {
+    if (phase !== 'execution_block' || streak <= 0) return null;
+    return RankService.detectRankChange(Math.max(0, streak - 1), streak);
+  }, [phase, streak]);
+  const [showRankUp, setShowRankUp] = useState(false);
+
+  useEffect(() => {
+    if (rankChange?.direction === 'up') {
+      setShowRankUp(true);
+    }
+  }, [rankChange]);
 
   const message = useRef(getCompletionMessage(phase)).current;
   const checkpoint = useRef(getStreakCheckpoint(streak)).current;
@@ -185,6 +204,31 @@ const SessionCompleteScreen: React.FC<Props> = ({ navigation, route }) => {
             )}
           </Animated.View>
         )}
+
+        {/* XP breakdown card — pinned to bottom, fades in after the
+            primary message/streak animation lands. Lock In sessions only. */}
+        {phase === 'execution_block' && (
+          <SafeAreaView style={styles.xpBreakdownWrap} edges={['bottom']}>
+            <XPBreakdown
+              durationMinutes={durationMinutes}
+              streakDays={streak}
+              onTotalRevealed={() =>
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+              }
+            />
+          </SafeAreaView>
+        )}
+
+        {/* Rank-up celebration — covers the rest of the screen when a
+            session pushes the user across a rank threshold. */}
+        {rankChange && (
+          <RankUpOverlay
+            visible={showRankUp}
+            fromRank={rankChange.from}
+            toRank={rankChange.to}
+            onDismiss={() => setShowRankUp(false)}
+          />
+        )}
       </View>
     </TouchableWithoutFeedback>
   );
@@ -259,6 +303,13 @@ const styles = StyleSheet.create({
     opacity: 0.6,
     fontStyle: 'italic',
     letterSpacing: 0.2,
+  },
+  xpBreakdownWrap: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 0,
+    paddingBottom: 16,
   },
 });
 

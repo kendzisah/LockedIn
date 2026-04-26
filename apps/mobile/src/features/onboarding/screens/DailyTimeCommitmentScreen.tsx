@@ -11,7 +11,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
-import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import { Analytics } from '../../../services/AnalyticsService';
 import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import * as Haptics from 'expo-haptics';
@@ -141,7 +140,7 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
       duration: 400,
       useNativeDriver: true,
     }).start(() => {
-      navigation.navigate('ScreenTimePreFrame');
+      navigation.navigate('ControlLevel');
     });
   };
 
@@ -244,7 +243,6 @@ const DailyTimeCommitmentScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
-        <ProgressIndicator current={7} total={10} />
 
         <View style={styles.body}>
           <Animated.Text

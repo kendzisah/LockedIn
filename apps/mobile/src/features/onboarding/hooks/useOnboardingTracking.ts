@@ -7,44 +7,74 @@
  *  • Persists currentScreen to AsyncStorage so the flow can resume on restart
  *
  * Usage:
- *   useOnboardingTracking('PhoneTimeQuiz', 2);
+ *   useOnboardingTracking('PhoneTimeQuiz');
  */
 
 import { useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Analytics } from '../../../services/AnalyticsService';
 
-const TOTAL_STEPS = 11;
+export const TOTAL_STEPS = 24;
 const CURRENT_SCREEN_KEY = '@lockedin/onboarding_current_screen';
 
 export type OnboardingScreenName =
   | 'Definition'
   | 'PhoneTimeQuiz'
-  | 'AgeQuiz'
   | 'LossAversionStat'
+  | 'Reclaim'
+  | 'AgeQuiz'
   | 'GoalQuiz'
   | 'ControlQuiz'
   | 'DailyTimeCommitment'
+  | 'ControlLevel'
+  | 'StatReveal'
+  | 'Day90Preview'
+  | 'VulnerableTime'
+  | 'BenefitExecution'
+  | 'BenefitMissions'
+  | 'BenefitRanks'
+  | 'BenefitGuilds'
+  | 'BenefitReport'
   | 'ScreenTimePreFrame'
   | 'NotificationPreFrame'
-  | 'PersonalizedPlanCard'
-  | 'AccountPrompt';
+  | 'AccountPrompt'
+  | 'OnboardingAuth'
+  | 'Commitment'
+  | 'SocialProof'
+  | 'TrialPreview'
+  | 'Paywall';
 
 /**
- * Map screen names to their step number in the new 10-screen flow.
+ * Map screen names to their step number in the 24-screen "system awakening" flow.
  */
 export const SCREEN_STEP_MAP: Record<OnboardingScreenName, number> = {
   Definition: 1,
   PhoneTimeQuiz: 2,
-  AgeQuiz: 3,
-  LossAversionStat: 4,
-  GoalQuiz: 5,
-  ControlQuiz: 6,
-  DailyTimeCommitment: 7,
-  ScreenTimePreFrame: 8,
-  NotificationPreFrame: 9,
-  PersonalizedPlanCard: 10,
-  AccountPrompt: 11,
+  LossAversionStat: 3,
+  Reclaim: 4,
+  AgeQuiz: 5,
+  GoalQuiz: 6,
+  ControlQuiz: 7,
+  DailyTimeCommitment: 8,
+  ControlLevel: 9,
+  StatReveal: 10,
+  Day90Preview: 11,
+  VulnerableTime: 12,
+  BenefitExecution: 13,
+  BenefitMissions: 14,
+  BenefitRanks: 15,
+  BenefitGuilds: 16,
+  BenefitReport: 17,
+  ScreenTimePreFrame: 18,
+  NotificationPreFrame: 19,
+  AccountPrompt: 20,
+  // Auth form is a sub-screen of AccountPrompt — same step number so the
+  // progress bar doesn't jump when users tap into it.
+  OnboardingAuth: 20,
+  Commitment: 21,
+  SocialProof: 22,
+  TrialPreview: 23,
+  Paywall: 24,
 };
 
 /**
@@ -53,15 +83,28 @@ export const SCREEN_STEP_MAP: Record<OnboardingScreenName, number> = {
 export const ONBOARDING_SCREEN_ORDER: OnboardingScreenName[] = [
   'Definition',
   'PhoneTimeQuiz',
-  'AgeQuiz',
   'LossAversionStat',
+  'Reclaim',
+  'AgeQuiz',
   'GoalQuiz',
   'ControlQuiz',
   'DailyTimeCommitment',
+  'ControlLevel',
+  'StatReveal',
+  'Day90Preview',
+  'VulnerableTime',
+  'BenefitExecution',
+  'BenefitMissions',
+  'BenefitRanks',
+  'BenefitGuilds',
+  'BenefitReport',
   'ScreenTimePreFrame',
   'NotificationPreFrame',
-  'PersonalizedPlanCard',
   'AccountPrompt',
+  'Commitment',
+  'SocialProof',
+  'TrialPreview',
+  'Paywall',
 ];
 
 export function useOnboardingTracking(screen: OnboardingScreenName, step?: number): void {

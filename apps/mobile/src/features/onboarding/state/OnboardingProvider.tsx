@@ -4,6 +4,7 @@ import type { OnboardingState, OnboardingAction } from './types';
 import { Analytics } from '../../../services/AnalyticsService';
 import { clearPersistedOnboardingScreen } from '../hooks/useOnboardingTracking';
 import { subscribeLogoutCleanup } from '../../../services/logoutCleanupBus';
+import { StatsService } from '../../../services/StatsService';
 
 const STORAGE_KEY = '@lockedin/onboarding_complete';
 const ONBOARDING_DATA_KEY = '@lockedin/onboarding_data';
@@ -14,6 +15,8 @@ const initialState: OnboardingState = {
   userAge: null,
   dailyMinutes: null,
   primaryGoal: null,
+  controlLevel: null,
+  vulnerableTime: null,
   screenTimeStatus: 'not_requested',
   notificationsGranted: null,
   demoCompleted: false,
@@ -37,6 +40,10 @@ function onboardingReducer(
       return { ...state, dailyMinutes: action.payload };
     case 'SET_PRIMARY_GOAL':
       return { ...state, primaryGoal: action.payload };
+    case 'SET_CONTROL_LEVEL':
+      return { ...state, controlLevel: action.payload };
+    case 'SET_VULNERABLE_TIME':
+      return { ...state, vulnerableTime: action.payload };
     case 'SET_SCREEN_TIME_STATUS':
       return { ...state, screenTimeStatus: action.payload };
     case 'SET_NOTIFICATIONS_GRANTED':
@@ -98,6 +105,8 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
             if (typeof data.phoneUsageHours === 'string') payload.phoneUsageHours = data.phoneUsageHours;
             if (typeof data.userAge === 'number') payload.userAge = data.userAge;
             if (Array.isArray(data.selectedWeaknesses)) payload.selectedWeaknesses = data.selectedWeaknesses;
+            if (typeof data.controlLevel === 'string') payload.controlLevel = data.controlLevel;
+            if (typeof data.vulnerableTime === 'string') payload.vulnerableTime = data.vulnerableTime;
             if (typeof data.currentScreen === 'string') payload.currentScreen = data.currentScreen;
             if (typeof data.onboardingCompletedAt === 'string') payload.onboardingCompletedAt = data.onboardingCompletedAt;
           } catch {}
@@ -131,9 +140,11 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
       phoneUsageHours: state.phoneUsageHours,
       userAge: state.userAge,
       selectedWeaknesses: state.selectedWeaknesses,
+      controlLevel: state.controlLevel,
+      vulnerableTime: state.vulnerableTime,
       currentScreen: state.currentScreen,
     })).catch(() => {});
-  }, [isHydrated, state.dailyMinutes, state.primaryGoal, state.phoneUsageHours, state.userAge, state.selectedWeaknesses, state.currentScreen, state.onboardingComplete]);
+  }, [isHydrated, state.dailyMinutes, state.primaryGoal, state.phoneUsageHours, state.userAge, state.selectedWeaknesses, state.controlLevel, state.vulnerableTime, state.currentScreen, state.onboardingComplete]);
 
   // ── After onboarding: keep goal / commitment / weaknesses in sync with AsyncStorage ──
   useEffect(() => {
@@ -199,6 +210,10 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
       Analytics.setUserPropertiesOnce({
         onboarding_completed_at: new Date().toISOString(),
       });
+
+      // Seed user_stats derived columns so HomeTab opens with a populated row.
+      // Safe no-op if Supabase is unavailable.
+      void StatsService.recompute();
     }
     prevComplete.current = state.onboardingComplete;
   }, [state.onboardingComplete, state.userAge, state.primaryGoal, state.dailyMinutes, state.phoneUsageHours, state.selectedWeaknesses, state.screenTimeStatus, state.notificationsGranted, state.demoCompleted]);

@@ -23,6 +23,9 @@ import React, {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Analytics } from '../../../services/AnalyticsService';
 import { subscribeLogoutCleanup } from '../../../services/logoutCleanupBus';
+import { StatsService } from '../../../services/StatsService';
+import { XPService } from '../../../services/XPService';
+import { AchievementService } from '../../../services/AchievementService';
 import type {
   SessionState,
   SessionAction,
@@ -290,16 +293,58 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // ── Mixpanel: execution block completion ──
   const prevExecBlocks = useRef(state.lifetimeExecutionBlocks);
+  const prevExecMinutes = useRef(state.lifetimeExecutionMinutes);
   useEffect(() => {
     if (!isHydrated) return;
     if (state.lifetimeExecutionBlocks > prevExecBlocks.current) {
+      const minutesDelta = Math.max(
+        0,
+        state.lifetimeExecutionMinutes - prevExecMinutes.current,
+      );
       Analytics.track('Lock In Completed', {
         total_blocks: state.lifetimeExecutionBlocks,
         total_exec_minutes: state.lifetimeExecutionMinutes,
       });
+
+      // Stats / XP / achievements pipeline. Fire-and-forget; failures fall back
+      // to next-session recompute. Safe no-op when Supabase auth is unavailable.
+      const streakDays = state.consecutiveStreak;
+      void (async () => {
+        await Promise.all([
+          StatsService.bumpCounter('total_focus_minutes', minutesDelta),
+          StatsService.bumpCounter('total_completed_sessions', 1),
+          StatsService.bumpCounter('total_sessions', 1),
+        ]);
+        await XPService.award({
+          type: 'session_complete',
+          data: { durationMinutes: minutesDelta, currentStreakDays: streakDays },
+        });
+        await StatsService.recompute();
+        await AchievementService.evaluate(StatsService.getCached());
+      })();
     }
     prevExecBlocks.current = state.lifetimeExecutionBlocks;
-  }, [isHydrated, state.lifetimeExecutionBlocks, state.lifetimeExecutionMinutes]);
+    prevExecMinutes.current = state.lifetimeExecutionMinutes;
+  }, [isHydrated, state.lifetimeExecutionBlocks, state.lifetimeExecutionMinutes, state.consecutiveStreak]);
+
+  // ── user_stats: keep current_streak_days in sync; bump total_streak_days on growth ──
+  const prevStatsStreak = useRef(state.consecutiveStreak);
+  useEffect(() => {
+    if (!isHydrated) return;
+    const next = state.consecutiveStreak;
+    const prev = prevStatsStreak.current;
+    if (next === prev) return;
+
+    void (async () => {
+      if (next > prev) {
+        await StatsService.bumpCounter('total_streak_days', next - prev);
+      }
+      await StatsService.setStreak(next);
+      await StatsService.recompute();
+      await AchievementService.evaluate(StatsService.getCached());
+    })();
+    prevStatsStreak.current = next;
+  }, [isHydrated, state.consecutiveStreak]);
 
   // ── AppsFlyer: first program day completed (tutorial completion is home guide dismiss) ──
   useEffect(() => {

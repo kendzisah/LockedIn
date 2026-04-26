@@ -35,6 +35,10 @@ export interface CrewLeaderboardEntry {
   streak_days: number;
   total_score: number;
   is_current_user: boolean;
+  /** Member's OVR snapshot from user_stats (1-99). Null if no row yet. */
+  ovr: number | null;
+  /** Member's RankId snapshot from user_stats. Null if no row yet. */
+  rank_id: string | null;
 }
 
 export interface CreateCrewResult {
@@ -250,6 +254,20 @@ export const CrewService = {
         });
       }
 
+      // Fetch user_stats for OVR + rank in one query (broad-readable per RLS).
+      const { data: userStats } = await client
+        .from('user_stats')
+        .select('user_id, ovr, rank_id')
+        .in('user_id', memberIds);
+
+      const statsByUser = new Map<string, { ovr: number; rank_id: string }>();
+      for (const s of userStats ?? []) {
+        statsByUser.set(s.user_id as string, {
+          ovr: Number(s.ovr ?? 1),
+          rank_id: (s.rank_id as string) ?? 'npc',
+        });
+      }
+
       // Fetch scores for the selected week
       const { data: scores, error: scoreErr } = await client
         .from('crew_scores')
@@ -275,6 +293,7 @@ export const CrewService = {
       const merged = memberIds.map((uid) => {
         const profile = profileByUser.get(uid);
         const sc = scoreByUser.get(uid);
+        const us = statsByUser.get(uid);
         return {
           user_id: uid,
           display_name: profile?.display_name ?? null,
@@ -283,6 +302,8 @@ export const CrewService = {
           missions_done: sc?.missions_done ?? 0,
           streak_days: sc?.streak_days ?? 0,
           total_score: sc?.total_score ?? 0,
+          ovr: us?.ovr ?? null,
+          rank_id: us?.rank_id ?? null,
         };
       });
 
@@ -298,6 +319,8 @@ export const CrewService = {
         streak_days: row.streak_days,
         total_score: row.total_score,
         is_current_user: currentUserId !== null && row.user_id === currentUserId,
+        ovr: row.ovr,
+        rank_id: row.rank_id,
       }));
     } catch (error) {
       console.error('[CrewService] getCrewLeaderboard failed:', error);

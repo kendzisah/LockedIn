@@ -18,6 +18,23 @@ import { Analytics } from '../../../services/AnalyticsService';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import type { Mission, MissionType, CompletionType } from '../MissionEngine';
+import type { Stat } from '@lockedin/shared-types';
+
+const STAT_COLORS: Record<Stat, string> = {
+  discipline:  '#3A66FF',
+  focus:       '#00C2FF',
+  execution:   '#00D68F',
+  consistency: '#FFC857',
+  social:      '#A855F7',
+};
+
+const STAT_LABEL: Record<Stat, string> = {
+  discipline:  'DISCIPLINE',
+  focus:       'FOCUS',
+  execution:   'EXECUTION',
+  consistency: 'CONSIST.',
+  social:      'SOCIAL',
+};
 
 const weeklyProgressCaption = (m: Mission): string => {
   const cur = m.progress ?? 0;
@@ -198,6 +215,26 @@ export const MissionCard: React.FC<MissionCardProps> = ({ mission, onComplete })
           <View style={styles.autoRow}>
             <Ionicons name="flash" size={10} color={Colors.accent} />
             <Text style={styles.autoText}>Auto-complete</Text>
+          </View>
+        )}
+        {mission.stats && mission.stats.length > 0 && !failed && (
+          <View style={styles.statTagRow}>
+            {mission.stats.map((stat) => (
+              <View
+                key={stat}
+                style={[
+                  styles.statTag,
+                  {
+                    backgroundColor: `${STAT_COLORS[stat]}1F`,
+                    borderColor: `${STAT_COLORS[stat]}55`,
+                  },
+                ]}
+              >
+                <Text style={[styles.statTagText, { color: STAT_COLORS[stat] }]}>
+                  +{STAT_LABEL[stat]}
+                </Text>
+              </View>
+            ))}
           </View>
         )}
       </View>
@@ -488,6 +525,22 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.body,
     fontSize: 10,
     color: Colors.accent,
+  },
+  statTagRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 4,
+  },
+  statTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  statTagText: {
+    fontFamily: FontFamily.headingSemiBold,
+    fontSize: 8,
+    letterSpacing: 0.6,
   },
   xpBadge: {
     alignItems: 'center',

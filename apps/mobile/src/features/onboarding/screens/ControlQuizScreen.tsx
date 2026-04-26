@@ -10,7 +10,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
-import ProgressIndicator from '../../../design/components/ProgressIndicator';
 
 import { Analytics } from '../../../services/AnalyticsService';
 import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
@@ -116,7 +115,6 @@ const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
-        <ProgressIndicator current={6} total={10} />
 
         <View style={styles.body}>
           <Animated.Text

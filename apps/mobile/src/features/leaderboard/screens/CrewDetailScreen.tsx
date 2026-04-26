@@ -371,6 +371,8 @@ const CrewDetailScreen: React.FC<Props> = ({ navigation, route }) => {
                 totalScore={item.total_score}
                 isCurrentUser={item.is_current_user}
                 isLast={index === leaderboard.length - 1}
+                ovr={item.ovr}
+                rankId={item.rank_id as never}
                 onRemove={
                   isOwner && !item.is_current_user
                     ? () => handleKickMember(item.user_id, item.username)

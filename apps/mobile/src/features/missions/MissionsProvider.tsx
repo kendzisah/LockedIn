@@ -4,7 +4,7 @@
  * and cumulative XP tracking.
  */
 
-import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback, useMemo, useState, ReactNode } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -28,6 +28,10 @@ import {
 } from './missionXpSeason';
 import { Analytics } from '../../services/AnalyticsService';
 import { subscribeLogoutCleanup } from '../../services/logoutCleanupBus';
+import { StatsService } from '../../services/StatsService';
+import { XPService } from '../../services/XPService';
+import { AchievementService } from '../../services/AchievementService';
+import MissionCompleteOverlay from '../home/components/MissionCompleteOverlay';
 
 // ─── Local-time helpers ──────────────────────────────────
 
@@ -366,6 +370,16 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
   const crewUpdateQueue = useRef<Promise<void>>(Promise.resolve());
   const lastMissionSeasonHydrated = useRef(getMissionSeasonNumber());
 
+  // Mission-complete toast state — surfaces a brief overlay when any
+  // mission is checked off (or when all 3 land at once = perfect day).
+  const [completedToast, setCompletedToast] = useState<null | {
+    missionTitle: string;
+    xp: number;
+    completedCount: number;
+    totalCount: number;
+    isPerfectDay: boolean;
+  }>(null);
+
   // Stable key for userWeaknesses to avoid re-creating callbacks on every render
   const weaknessesKey = userWeaknesses.join(',');
   const stableWeaknesses = useMemo(() => userWeaknesses, [weaknessesKey]);
@@ -667,12 +681,58 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
 
     dispatch({ type: 'COMPLETE_MISSION', payload: missionId });
 
-    if (completedCount === state.missions.length) {
+    const isPerfectDay = completedCount === state.missions.length;
+
+    if (isPerfectDay) {
       const missionXP = mission ? mission.xp : 0;
       Analytics.track('All Missions Completed', {
         total_xp: state.dailyXP + missionXP,
       });
     }
+
+    // Surface the brief completion overlay
+    if (mission) {
+      setCompletedToast({
+        missionTitle: mission.title,
+        xp: mission.xp,
+        completedCount,
+        totalCount: state.missions.length,
+        isPerfectDay,
+      });
+    }
+
+    // Stats / XP / achievements pipeline. Fire-and-forget; safe no-op when
+    // Supabase auth is unavailable.
+    void (async () => {
+      await StatsService.bumpCounter('total_missions_completed', 1);
+
+      // Stat-tag bumps: social-tagged missions feed guild_check_ins,
+      // discipline-tagged missions feed total_distractions_resisted.
+      // (Focus / Execution / Consistency stats already grow via the
+      // generic counters above + session/streak counters elsewhere.)
+      if (mission?.stats?.includes('social')) {
+        await StatsService.bumpCounter('guild_check_ins', 1);
+      }
+      if (mission?.stats?.includes('discipline')) {
+        await StatsService.bumpCounter('total_distractions_resisted', 1);
+      }
+
+      if (mission) {
+        await XPService.award({
+          type: 'mission_complete',
+          data: { missionId: mission.id, missionXP: mission.xp },
+        });
+      }
+      if (isPerfectDay) {
+        await StatsService.bumpCounter('total_perfect_days', 1);
+        await XPService.award({
+          type: 'perfect_day',
+          data: { missionsCompleted: completedCount },
+        });
+      }
+      await StatsService.recompute();
+      await AchievementService.evaluate(StatsService.getCached());
+    })();
 
     // Queue crew stat updates to prevent concurrent read-increment-write races
     crewUpdateQueue.current = crewUpdateQueue.current.then(async () => {
@@ -877,6 +937,17 @@ export const MissionsProvider: React.FC<ProviderProps> = ({
   return (
     <MissionsContext.Provider value={contextValue}>
       {children}
+      {completedToast && (
+        <MissionCompleteOverlay
+          visible={true}
+          missionTitle={completedToast.missionTitle}
+          xp={completedToast.xp}
+          completedCount={completedToast.completedCount}
+          totalCount={completedToast.totalCount}
+          isPerfectDay={completedToast.isPerfectDay}
+          onDismiss={() => setCompletedToast(null)}
+        />
+      )}
     </MissionsContext.Provider>
   );
 };

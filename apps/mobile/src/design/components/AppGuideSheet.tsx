@@ -2,7 +2,7 @@
  * AppGuideSheet — Reusable first-time guide popup for any screen.
  *
  * Displays a glassmorphic bottom sheet with a title, bullet-point tips,
- * and an "Aight" dismiss button. Persists dismissal in AsyncStorage so
+ * and a "Got It" dismiss button. Persists dismissal in AsyncStorage so
  * each guide only appears once.
  *
  * Usage:
@@ -134,7 +134,7 @@ const AppGuideSheet: React.FC<AppGuideSheetProps> = ({
               onPress={handleDismiss}
               activeOpacity={0.85}
             >
-              <Text style={s.primaryBtnText}>Aight</Text>
+              <Text style={s.primaryBtnText}>Got It</Text>
             </TouchableOpacity>
           </Pressable>
         </Animated.View>

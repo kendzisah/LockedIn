@@ -13,7 +13,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
-import ProgressIndicator from '../../../design/components/ProgressIndicator';
 import * as Haptics from 'expo-haptics';
 
 import { Colors } from '../../../design/colors';
@@ -90,7 +89,7 @@ export const AgeQuizScreen: React.FC<Props> = ({ navigation }) => {
       toValue: 0,
       duration: 400,
       useNativeDriver: true,
-    }).start(() => navigation.navigate('LossAversionStat'));
+    }).start(() => navigation.navigate('GoalQuiz'));
   };
 
   const renderItem = useCallback(
@@ -134,7 +133,6 @@ export const AgeQuizScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
     <ScreenContainer centered={false}>
-      <ProgressIndicator current={3} total={10} />
 
       <View style={styles.content}>
         <View style={styles.headerArea}>
