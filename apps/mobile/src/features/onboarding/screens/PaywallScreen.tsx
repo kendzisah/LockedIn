@@ -33,6 +33,17 @@ const FEATURES: { icon: React.ComponentProps<typeof Ionicons>['name']; label: st
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'Paywall'>;
 
+/** Convert "HH:MM" 24h to "h:MM AM/PM" for display. Falls back to the raw input. */
+function formatScheduledTime(value: string): string {
+  const match = value.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return value;
+  const h24 = parseInt(match[1], 10);
+  const m = match[2];
+  const ampm = h24 < 12 ? 'AM' : 'PM';
+  const h12 = h24 === 0 ? 12 : h24 > 12 ? h24 - 12 : h24;
+  return `${h12}:${m} ${ampm}`;
+}
+
 const PaywallScreen: React.FC<Props> = () => {
   useOnboardingTracking('Paywall');
   const { state, dispatch } = useOnboarding();
@@ -141,6 +152,11 @@ const PaywallScreen: React.FC<Props> = () => {
                 OVR 1 • {startingRank.name}
               </Text>
               <Text style={styles.miniSub}>Ready to evolve</Text>
+              {state.scheduledSessionTime ? (
+                <Text style={styles.miniSchedule}>
+                  Session scheduled: {formatScheduledTime(state.scheduledSessionTime)} tomorrow
+                </Text>
+              ) : null}
             </View>
 
             <View style={styles.featureList}>
@@ -267,6 +283,13 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.body,
     fontSize: 12,
     color: Colors.textMuted,
+  },
+  miniSchedule: {
+    marginTop: 6,
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 12,
+    color: Colors.accent,
+    letterSpacing: 0.2,
   },
   featureList: {
     marginTop: 24,

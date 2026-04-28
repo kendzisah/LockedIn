@@ -134,8 +134,8 @@ const OnboardingAuthScreen: React.FC<Props> = ({ navigation, route }) => {
           method,
           source: 'onboarding',
         });
-        // Skip Commitment / SocialProof / TrialPreview / Paywall — they're
-        // already paying, no need to sell them again.
+        // Skip the rest of the funnel (Commitment / ScheduleSession /
+        // SocialProof / Paywall) — they're already paying, no need to sell.
         dispatch({ type: 'COMPLETE_ONBOARDING' });
       } else {
         navigation.replace('Commitment');

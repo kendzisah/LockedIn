@@ -1,48 +1,51 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  Animated,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  Platform,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+/**
+ * AgeQuizScreen — onboarding step 4: "Your Age."
+ * Single-select age band. Drives life-stage copy + retroactive
+ * adjustment of the Wake-Up Call calculation.
+ *
+ * Persisted value is the band midpoint (so downstream code that uses
+ * userAge for time-remaining math keeps working without further mapping).
+ */
+
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import * as Haptics from 'expo-haptics';
+
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
-import * as Haptics from 'expo-haptics';
-
-import { Colors } from '../../../design/colors';
-import { FontFamily } from '../../../design/typography';
+import HUDOptionCard from '../components/HUDOptionCard';
+import HUDSectionLabel from '../components/HUDSectionLabel';
 import { Analytics } from '../../../services/AnalyticsService';
 import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
-
-const MIN_AGE = 13;
-const MAX_AGE = 70;
-const DEFAULT_AGE = 22;
-const ITEM_HEIGHT = 52;
-const VISIBLE_ITEMS = 7;
-const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
-
-const AGE_VALUES = Array.from(
-  { length: MAX_AGE - MIN_AGE + 1 },
-  (_, i) => MIN_AGE + i,
-);
+import { Colors } from '../../../design/colors';
+import { FontFamily } from '../../../design/typography';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'AgeQuiz'>;
+
+interface Option {
+  /** Persisted age value (band midpoint, rounded). */
+  value: number;
+  label: string;
+}
+
+const OPTIONS: Option[] = [
+  { value: 14, label: '13–15' },
+  { value: 17, label: '16–18' },
+  { value: 20, label: '19–21' },
+  { value: 23, label: '22–25' },
+  { value: 28, label: '25+' },
+];
 
 export const AgeQuizScreen: React.FC<Props> = ({ navigation }) => {
   useOnboardingTracking('AgeQuiz');
 
   const { dispatch } = useOnboarding();
-  const [selectedAge, setSelectedAge] = useState(DEFAULT_AGE);
-  const lastHapticAge = useRef(DEFAULT_AGE);
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const screenOpacity = useRef(new Animated.Value(0)).current;
+  const [selected, setSelected] = useState<number | null>(null);
   const advancingRef = useRef(false);
+
+  const screenOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(screenOpacity, {
@@ -52,196 +55,74 @@ export const AgeQuizScreen: React.FC<Props> = ({ navigation }) => {
     }).start();
   }, [screenOpacity]);
 
-  const handleMomentumEnd = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const y = e.nativeEvent.contentOffset.y;
-      const index = Math.round(y / ITEM_HEIGHT);
-      const clamped = Math.max(0, Math.min(index, AGE_VALUES.length - 1));
-      setSelectedAge(AGE_VALUES[clamped]);
-    },
-    [],
-  );
-
-  const handleScroll = Animated.event(
-    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-    {
-      useNativeDriver: true,
-      listener: (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-        const y = e.nativeEvent.contentOffset.y;
-        const index = Math.round(y / ITEM_HEIGHT);
-        const clamped = Math.max(0, Math.min(index, AGE_VALUES.length - 1));
-        const age = AGE_VALUES[clamped];
-        if (age !== lastHapticAge.current) {
-          lastHapticAge.current = age;
-          Haptics.selectionAsync();
-        }
-      },
-    },
-  );
-
-  const handleContinue = () => {
+  const handleSelect = (opt: Option) => {
     if (advancingRef.current) return;
+    setSelected(opt.value);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    dispatch({ type: 'SET_USER_AGE', payload: opt.value });
+    Analytics.track('Onboarding Answer Submitted', {
+      screen: 'AgeQuiz',
+      answer: opt.label,
+    });
+
     advancingRef.current = true;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Analytics.track('Onboarding Answer Submitted', { screen: 'AgeQuiz', answer: String(selectedAge) });
-    dispatch({ type: 'SET_USER_AGE', payload: selectedAge });
-    Animated.timing(screenOpacity, {
-      toValue: 0,
-      duration: 400,
-      useNativeDriver: true,
-    }).start(() => navigation.navigate('GoalQuiz'));
+    setTimeout(() => {
+      Animated.timing(screenOpacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => navigation.navigate('Situation'));
+    }, 500);
   };
-
-  const renderItem = useCallback(
-    (age: number, index: number) => {
-      const inputRange = [
-        (index - 3) * ITEM_HEIGHT,
-        (index - 2) * ITEM_HEIGHT,
-        (index - 1) * ITEM_HEIGHT,
-        index * ITEM_HEIGHT,
-        (index + 1) * ITEM_HEIGHT,
-        (index + 2) * ITEM_HEIGHT,
-        (index + 3) * ITEM_HEIGHT,
-      ];
-
-      const opacity = scrollY.interpolate({
-        inputRange,
-        outputRange: [0.06, 0.12, 0.3, 1, 0.3, 0.12, 0.06],
-        extrapolate: 'clamp',
-      });
-
-      const scale = scrollY.interpolate({
-        inputRange,
-        outputRange: [0.7, 0.78, 0.88, 1.1, 0.88, 0.78, 0.7],
-        extrapolate: 'clamp',
-      });
-
-      return (
-        <Animated.View
-          key={age}
-          style={[styles.item, { opacity, transform: [{ scale }] }]}
-        >
-          <Text style={styles.itemText}>{age}</Text>
-        </Animated.View>
-      );
-    },
-    [scrollY],
-  );
-
-  const paddingVertical = (PICKER_HEIGHT - ITEM_HEIGHT) / 2;
 
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
-    <ScreenContainer centered={false}>
-
-      <View style={styles.content}>
-        <View style={styles.headerArea}>
-          <Text style={styles.headline}>How old are you?</Text>
-          <Text style={styles.subtext}>
-            So we can show you exactly what's at stake.
+      <ScreenContainer centered={false}>
+        <View style={styles.body}>
+          <HUDSectionLabel label="PLAYER PROFILE" />
+          <Text style={styles.title}>How old are you?</Text>
+          <Text style={styles.subtitle}>
+            Your system calibrates to your stage of life.
           </Text>
+
+          <View style={styles.options}>
+            {OPTIONS.map((opt) => (
+              <HUDOptionCard
+                key={opt.value}
+                label={opt.label}
+                selected={selected === opt.value}
+                onPress={() => handleSelect(opt)}
+              />
+            ))}
+          </View>
         </View>
-
-        <View style={styles.pickerContainer}>
-          <View style={styles.selectionBand} />
-
-          <Animated.ScrollView
-            showsVerticalScrollIndicator={false}
-            snapToInterval={ITEM_HEIGHT}
-            decelerationRate="fast"
-            bounces={false}
-            contentContainerStyle={{
-              paddingTop: paddingVertical,
-              paddingBottom: paddingVertical,
-            }}
-            contentOffset={{ x: 0, y: (DEFAULT_AGE - MIN_AGE) * ITEM_HEIGHT }}
-            onScroll={handleScroll}
-            scrollEventThrottle={16}
-            onMomentumScrollEnd={handleMomentumEnd}
-          >
-            {AGE_VALUES.map((age, i) => renderItem(age, i))}
-          </Animated.ScrollView>
-        </View>
-      </View>
-
-      <View style={styles.footer}>
-        <TouchableOpacity
-          onPress={handleContinue}
-          activeOpacity={0.85}
-          style={styles.continueBtn}
-        >
-          <Text style={styles.continueBtnText}>Continue</Text>
-        </TouchableOpacity>
-      </View>
-    </ScreenContainer>
+      </ScreenContainer>
     </Animated.View>
   );
 };
 
-const BAND_TOP = (PICKER_HEIGHT - ITEM_HEIGHT) / 2;
-
 const styles = StyleSheet.create({
-  content: {
+  body: {
     flex: 1,
+    paddingTop: 32,
   },
-  headerArea: {
-    marginTop: 24,
-  },
-  headline: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 28,
+  title: {
+    fontFamily: FontFamily.heading,
+    fontSize: 24,
+    lineHeight: 30,
+    letterSpacing: -0.3,
     color: Colors.textPrimary,
     marginBottom: 8,
   },
-  subtext: {
+  subtitle: {
     fontFamily: FontFamily.body,
     fontSize: 15,
+    lineHeight: 22,
     color: Colors.textMuted,
+    marginBottom: 24,
   },
-  pickerContainer: {
-    height: PICKER_HEIGHT,
-    alignSelf: 'center',
-    width: '100%',
-    marginTop: 'auto',
-    marginBottom: 'auto',
-  },
-  selectionBand: {
-    position: 'absolute',
-    top: BAND_TOP,
-    left: 0,
-    right: 0,
-    height: ITEM_HEIGHT,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  item: {
-    height: ITEM_HEIGHT,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  itemText: {
-    fontFamily: FontFamily.heading,
-    fontSize: 22,
-    color: '#FFFFFF',
-  },
-  continueBtn: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 28,
-    paddingVertical: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  continueBtnText: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 17,
-    color: 'rgba(255,255,255,0.55)',
-    letterSpacing: 0.5,
-  },
-  footer: {
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+  options: {
+    gap: 8,
   },
 });
 

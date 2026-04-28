@@ -1,42 +1,102 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  Animated,
-  Easing,
-  LayoutChangeEvent,
-  PanResponder,
-  Platform,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+/**
+ * PhoneTimeQuizScreen — onboarding step 2: "The Problem."
+ * Single-select phone-usage band. The chosen value drives the
+ * Wake-Up Call calculation on the next screen.
+ */
+
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Svg, { Rect } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
+
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
-import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
+import HUDOptionCard from '../components/HUDOptionCard';
+import HUDSectionLabel from '../components/HUDSectionLabel';
+import PrimaryButton from '../../../design/components/PrimaryButton';
 import { Analytics } from '../../../services/AnalyticsService';
-import * as Haptics from 'expo-haptics';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
-
-const MIN_HOURS = 1;
-const MAX_HOURS = 12;
-const DEFAULT_HOURS = 2;
-const THUMB_SIZE = 28;
-const CIRCLE_BTN = 44;
+import { SystemTokens } from '../../home/systemTokens';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'PhoneTimeQuiz'>;
+
+interface Option {
+  /** Persisted value — the WakeUpCall screen reads the leading digit. */
+  value: string;
+  label: string;
+  /** Battery fill level shown in the leading icon (0..1). Drains as hours rise. */
+  battery: number;
+}
+
+const OPTIONS: Option[] = [
+  { value: '2 hours', label: '2–3 hours', battery: 0.85 },
+  { value: '4 hours', label: '4–5 hours', battery: 0.5  },
+  { value: '6 hours', label: '6–7 hours', battery: 0.25 },
+  { value: '8 hours', label: '8+ hours',  battery: 0.08 },
+];
+
+/**
+ * Stylized phone with a battery fill that shrinks as the user picks higher
+ * usage bands. Color shifts green → gold → red as the level drops, so the
+ * row visually narrates time-loss before the WakeUpCall screen lands.
+ */
+const PhoneBatteryIcon: React.FC<{ level: number }> = ({ level }) => {
+  const W = 14;
+  const H = 22;
+  const PAD = 2;
+  const innerW = W - PAD * 2;
+  const innerH = H - PAD * 2 - 2; // leave a small notch up top
+  const clamped = Math.max(0.05, Math.min(1, level));
+  const fillH = innerH * clamped;
+
+  const color =
+    clamped > 0.6 ? SystemTokens.green :
+    clamped > 0.3 ? SystemTokens.gold :
+    SystemTokens.red;
+
+  return (
+    <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+      {/* speaker notch */}
+      <Rect x={W / 2 - 2} y={1} width={4} height={1} rx={0.5} ry={0.5} fill={color} opacity={0.6} />
+      {/* phone outline */}
+      <Rect
+        x={0.5}
+        y={2.5}
+        width={W - 1}
+        height={H - 3}
+        rx={3}
+        ry={3}
+        fill="transparent"
+        stroke={color}
+        strokeWidth={1.2}
+      />
+      {/* battery fill, anchored to the bottom */}
+      <Rect
+        x={PAD}
+        y={PAD + 2 + (innerH - fillH)}
+        width={innerW}
+        height={fillH}
+        rx={1.5}
+        ry={1.5}
+        fill={color}
+        opacity={0.85}
+      />
+    </Svg>
+  );
+};
 
 const PhoneTimeQuizScreen: React.FC<Props> = ({ navigation }) => {
   useOnboardingTracking('PhoneTimeQuiz');
 
   const { dispatch } = useOnboarding();
-  const [hours, setHours] = useState(DEFAULT_HOURS);
-  const screenOpacity = useRef(new Animated.Value(0)).current;
-  const insightOpacity = useRef(new Animated.Value(0)).current;
-  const insightVisible = useRef(false);
+  const [selected, setSelected] = useState<string | null>(null);
   const advancingRef = useRef(false);
+
+  const screenOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(screenOpacity, {
@@ -46,196 +106,66 @@ const PhoneTimeQuizScreen: React.FC<Props> = ({ navigation }) => {
     }).start();
   }, [screenOpacity]);
 
-  // Fade insight text in/out when hours enters/leaves the 4-7 range
-  useEffect(() => {
-    const shouldShow = hours >= 4 && hours <= 7;
-    if (shouldShow && !insightVisible.current) {
-      insightVisible.current = true;
-      Animated.timing(insightOpacity, {
-        toValue: 1,
-        duration: 500,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start();
-    } else if (!shouldShow && insightVisible.current) {
-      insightVisible.current = false;
-      Animated.timing(insightOpacity, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [hours, insightOpacity]);
+  const advanceWith = (value: string) => {
+    if (advancingRef.current) return;
+    advancingRef.current = true;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    dispatch({ type: 'SET_PHONE_USAGE', payload: value });
+    Analytics.track('Onboarding Answer Submitted', {
+      screen: 'PhoneTimeQuiz',
+      answer: value,
+    });
+    Animated.timing(screenOpacity, {
+      toValue: 0,
+      duration: 400,
+      useNativeDriver: true,
+    }).start(() => navigation.navigate('WakeUpCall'));
+  };
 
-  const trackWidth = useRef(0);
-  const trackPageX = useRef(0);
-  const lastSnapped = useRef(DEFAULT_HOURS);
-  const thumbX = useRef(new Animated.Value(0)).current;
-
-  const hoursToX = useCallback(
-    (h: number, width: number) =>
-      ((h - MIN_HOURS) / (MAX_HOURS - MIN_HOURS)) * width,
-    [],
-  );
-
-  const xToHours = useCallback((x: number, width: number) => {
-    const ratio = Math.max(0, Math.min(1, x / width));
-    return Math.round(ratio * (MAX_HOURS - MIN_HOURS) + MIN_HOURS);
-  }, []);
-
-  const updateTo = useCallback(
-    (h: number) => {
-      const clamped = Math.max(MIN_HOURS, Math.min(MAX_HOURS, h));
-      setHours(clamped);
-      lastSnapped.current = clamped;
-      Animated.spring(thumbX, {
-        toValue: hoursToX(clamped, trackWidth.current),
-        friction: 7,
-        tension: 120,
-        useNativeDriver: false,
-      }).start();
-      Haptics.selectionAsync();
-    },
-    [thumbX, hoursToX],
-  );
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) => {
-        const x = evt.nativeEvent.pageX - trackPageX.current;
-        const h = xToHours(x, trackWidth.current);
-        lastSnapped.current = h;
-        setHours(h);
-        thumbX.setValue(hoursToX(h, trackWidth.current));
-        Haptics.selectionAsync();
-      },
-      onPanResponderMove: (evt) => {
-        const x = evt.nativeEvent.pageX - trackPageX.current;
-        const h = xToHours(x, trackWidth.current);
-        thumbX.setValue(hoursToX(h, trackWidth.current));
-        if (h !== lastSnapped.current) {
-          lastSnapped.current = h;
-          setHours(h);
-          Haptics.selectionAsync();
-        }
-      },
-      onPanResponderRelease: (evt) => {
-        const x = evt.nativeEvent.pageX - trackPageX.current;
-        const h = xToHours(x, trackWidth.current);
-        updateTo(h);
-      },
-    }),
-  ).current;
-
-  const handleLayout = useCallback(
-    (e: LayoutChangeEvent) => {
-      const { width } = e.nativeEvent.layout;
-      trackWidth.current = width;
-      e.target.measureInWindow((pageX: number) => {
-        trackPageX.current = pageX;
-      });
-      thumbX.setValue(hoursToX(hours, width));
-    },
-    [hoursToX, hours, thumbX],
-  );
-
-  const fadeAndNavigate = useCallback(
-    (payload: string) => {
-      if (advancingRef.current) return;
-      advancingRef.current = true;
-      dispatch({ type: 'SET_PHONE_USAGE', payload });
-      Animated.timing(screenOpacity, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => navigation.navigate('LossAversionStat'));
-    },
-    [dispatch, screenOpacity, navigation],
-  );
-
-  const handleContinue = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Analytics.track('Onboarding Answer Submitted', { screen: 'PhoneTimeQuiz', answer: `${hours} hours` });
-    fadeAndNavigate(`${hours} hours`);
+  const handleSelect = (value: string) => {
+    if (advancingRef.current) return;
+    setSelected(value);
+    setTimeout(() => advanceWith(value), 500);
   };
 
   const handleDontKnow = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Analytics.track('Onboarding Answer Submitted', { screen: 'PhoneTimeQuiz', answer: 'unknown' });
-    fadeAndNavigate('unknown');
+    advanceWith('unknown');
   };
 
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
-    <ScreenContainer centered={false}>
-      <View style={styles.body}>
-        <Text style={styles.title}>
-          How much time do you{'\n'}spend on your phone?
-        </Text>
+      <ScreenContainer centered={false}>
+        <View style={styles.body}>
+          <HUDSectionLabel label="DIAGNOSTICS" />
+          <Text style={styles.title}>
+            How many hours do you spend on your phone each day?
+          </Text>
+          <Text style={styles.subtitle}>
+            Be honest. The system needs accurate data.
+          </Text>
 
-
-        <View style={styles.displayArea}>
-          <Text style={styles.bigNumber}>{hours}</Text>
-          <Text style={styles.unitLabel}>Hours</Text>
-          <Animated.Text style={[styles.insightText, { opacity: insightOpacity }]}>
-            That's about average for most people
-          </Animated.Text>
-        </View>
-
-        <View style={styles.sliderRow}>
-          <TouchableOpacity
-            style={styles.circleBtn}
-            onPress={() => updateTo(hours - 1)}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.circleBtnText}>−</Text>
-          </TouchableOpacity>
-
-          <View style={styles.trackContainer} {...panResponder.panHandlers}>
-            <View style={styles.track} onLayout={handleLayout}>
-              <Animated.View style={[styles.trackFill, { width: thumbX }]} />
-              <Animated.View
-                style={[
-                  styles.thumb,
-                  {
-                    transform: [
-                      { translateX: Animated.subtract(thumbX, THUMB_SIZE / 2) },
-                    ],
-                  },
-                ]}
+          <View style={styles.options}>
+            {OPTIONS.map((opt) => (
+              <HUDOptionCard
+                key={opt.value}
+                label={opt.label}
+                leading={<PhoneBatteryIcon level={opt.battery} />}
+                selected={selected === opt.value}
+                onPress={() => handleSelect(opt.value)}
               />
-            </View>
+            ))}
           </View>
-
-          <TouchableOpacity
-            style={styles.circleBtn}
-            onPress={() => updateTo(hours + 1)}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.circleBtnText}>+</Text>
-          </TouchableOpacity>
         </View>
-      </View>
 
-      <View style={styles.footer}>
-        <TouchableOpacity
-          onPress={handleDontKnow}
-          activeOpacity={0.7}
-          style={styles.dontKnowBtn}
-        >
-          <Text style={styles.dontKnowText}>I don't know</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={handleContinue}
-          activeOpacity={0.85}
-          style={styles.continueBtn}
-        >
-          <Text style={styles.continueBtnText}>Continue</Text>
-        </TouchableOpacity>
-      </View>
-    </ScreenContainer>
+        <View style={styles.footer}>
+          <PrimaryButton
+            title="I DON'T KNOW"
+            onPress={handleDontKnow}
+            secondary
+            style={styles.skip}
+          />
+        </View>
+      </ScreenContainer>
     </Animated.View>
   );
 };
@@ -246,114 +176,30 @@ const styles = StyleSheet.create({
     paddingTop: 32,
   },
   title: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 28,
-    lineHeight: 34,
+    fontFamily: FontFamily.heading,
+    fontSize: 24,
+    lineHeight: 30,
+    letterSpacing: -0.3,
     color: Colors.textPrimary,
-    marginBottom: 10,
+    marginBottom: 8,
   },
-
-  displayArea: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  bigNumber: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 72,
-    color: Colors.textPrimary,
-  },
-  unitLabel: {
+  subtitle: {
     fontFamily: FontFamily.body,
-    fontSize: 17,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  insightText: {
-    fontFamily: FontFamily.body,
-    fontSize: 14,
+    fontSize: 15,
+    lineHeight: 22,
     color: Colors.textMuted,
-    marginTop: 12,
+    marginBottom: 24,
   },
-  sliderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 48,
-  },
-  circleBtn: {
-    width: CIRCLE_BTN,
-    height: CIRCLE_BTN,
-    borderRadius: CIRCLE_BTN / 2,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  circleBtnText: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 22,
-    color: 'rgba(255,255,255,0.55)',
-    marginTop: -1,
-  },
-  trackContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    height: 44,
-  },
-  track: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.surface,
-  },
-  trackFill: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    borderRadius: 2,
-    backgroundColor: Colors.primary,
-  },
-  thumb: {
-    position: 'absolute',
-    top: -(THUMB_SIZE - 4) / 2,
-    left: 0,
-    width: THUMB_SIZE,
-    height: THUMB_SIZE,
-    borderRadius: THUMB_SIZE / 2,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+  options: {
+    gap: 8,
   },
   footer: {
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
-  },
-  dontKnowBtn: {
+    paddingTop: 12,
+    paddingBottom: 8,
     alignItems: 'center',
-    paddingVertical: 14,
   },
-  dontKnowText: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 16,
-    color: Colors.textPrimary,
-  },
-  continueBtn: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 28,
-    paddingVertical: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  continueBtnText: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 17,
-    color: 'rgba(255,255,255,0.55)',
-    letterSpacing: 0.5,
+  skip: {
+    paddingHorizontal: 0,
   },
 });
 

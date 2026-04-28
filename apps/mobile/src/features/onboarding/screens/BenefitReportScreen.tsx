@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   Animated,
   Easing,
@@ -8,9 +8,11 @@ import {
   View,
 } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import BenefitTemplate from '../components/BenefitTemplate';
+import { useOnboarding } from '../state/OnboardingProvider';
 import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
@@ -19,18 +21,102 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'BenefitReport'>;
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
-const STAT_ROWS: { label: string; value: number; color: string }[] = [
-  { label: 'Discipline',  value: 78, color: '#3A66FF' },
-  { label: 'Focus',       value: 71, color: '#00C2FF' },
-  { label: 'Execution',   value: 69, color: '#00D68F' },
-  { label: 'Consistency', value: 82, color: '#FFC857' },
-  { label: 'Social',      value: 58, color: '#A855F7' },
-];
+type StatKey = 'discipline' | 'focus' | 'execution' | 'consistency' | 'social';
+
+interface StatRow {
+  key: StatKey;
+  label: string;
+  value: number;
+  color: string;
+}
+
+const STAT_META: Record<StatKey, { label: string; color: string }> = {
+  discipline:  { label: 'Discipline',  color: '#3A66FF' },
+  focus:       { label: 'Focus',       color: '#00C2FF' },
+  execution:   { label: 'Execution',   color: '#00D68F' },
+  consistency: { label: 'Consistency', color: '#FFC857' },
+  social:      { label: 'Social',      color: '#A855F7' },
+};
+
+/**
+ * Map the user's primary goal to the two stats it boosts most. Source is
+ * the spec's MISSIONS-STAT mapping table (see onboarding-hud-spec.md).
+ */
+const GOAL_TO_STATS: Record<string, [StatKey, StatKey]> = {
+  'Improve my physique':                ['discipline', 'consistency'],
+  'Build a business or side project':   ['execution',  'focus'],
+  'Increase discipline & self-control': ['discipline', 'focus'],
+  'Advance my career':                  ['execution',  'consistency'],
+  'Study with consistency':             ['focus',      'consistency'],
+  'Reduce distractions':                ['focus',      'discipline'],
+  'Improve emotional control':          ['discipline', 'execution'],
+};
+
+/** A weakness pulls its targeted stat up further (the user has been
+ * grinding on their weak point). Source is the spec's weakness mapping. */
+const WEAKNESS_TO_STAT: Record<string, StatKey> = {
+  'I scroll when I should execute':  'focus',
+  'I start strong, then fall off':   'consistency',
+  'I get emotionally reactive':      'discipline',
+  'I relapse into distractions':     'focus',
+  'I lack daily consistency':        'consistency',
+};
+
+const ALL_STATS: StatKey[] = ['discipline', 'focus', 'execution', 'consistency', 'social'];
+
+/**
+ * Project the user's stat profile at Day 90. Numbers are aspirational —
+ * they show what consistent execution unlocks given the user's chosen
+ * focus areas. Primary > Secondary > others, with weakness picks getting
+ * an extra bump.
+ */
+function projectStats(
+  primaryGoal: string | null,
+  weaknesses: string[],
+): StatRow[] {
+  const [primary, secondary] = GOAL_TO_STATS[primaryGoal ?? ''] ?? ['discipline', 'focus'];
+  const weaknessStats = new Set(
+    weaknesses.map((w) => WEAKNESS_TO_STAT[w]).filter(Boolean) as StatKey[],
+  );
+
+  const score = (key: StatKey): number => {
+    let base: number;
+    if (key === primary) base = 78;
+    else if (key === secondary) base = 72;
+    else if (key === 'social') base = 58;
+    else base = 64;
+    if (weaknessStats.has(key)) base = Math.min(85, base + 4);
+    return base;
+  };
+
+  return ALL_STATS.map((key) => ({
+    key,
+    label: STAT_META[key].label,
+    color: STAT_META[key].color,
+    value: score(key),
+  }));
+}
 
 const BORDER_RADIUS = 18;
 const STROKE_WIDTH = 2;
 
-const ReportCard: React.FC = () => {
+interface ReportCardProps {
+  stats: StatRow[];
+  ovr: number;
+  rankName: string;
+  rankColor: string;
+  sessions: number;
+  minutes: number;
+}
+
+const ReportCard: React.FC<ReportCardProps> = ({
+  stats,
+  ovr,
+  rankName,
+  rankColor,
+  sessions,
+  minutes,
+}) => {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const dashOffset = useRef(new Animated.Value(0)).current;
 
@@ -106,7 +192,7 @@ const ReportCard: React.FC = () => {
       )}
 
       <View style={styles.cardInner}>
-        <Text style={styles.cardHeader}>WEEKLY SYSTEM REPORT — WEEK 12</Text>
+        <Text style={styles.cardHeader}>SYSTEM REPORT — DAY 90</Text>
 
         <View style={styles.gradeBlock}>
           <Text style={styles.gradeLabel}>GRADE</Text>
@@ -115,12 +201,12 @@ const ReportCard: React.FC = () => {
 
         <View style={styles.ovrRow}>
           <Text style={styles.ovrLabel}>OVR</Text>
-          <Text style={styles.ovrValue}>72</Text>
-          <Text style={styles.ovrRank}>CHOSEN</Text>
+          <Text style={styles.ovrValue}>{ovr}</Text>
+          <Text style={[styles.ovrRank, { color: rankColor }]}>{rankName}</Text>
         </View>
 
         <View style={styles.statsBlock}>
-          {STAT_ROWS.map((row) => (
+          {stats.map((row) => (
             <View key={row.label} style={styles.statRow}>
               <Text style={styles.statLabel}>{row.label}</Text>
               <View style={styles.barTrack}>
@@ -140,14 +226,17 @@ const ReportCard: React.FC = () => {
         </View>
 
         <View style={styles.metricsRow}>
-          <Metric label="Sessions" value="14" />
-          <Metric label="Minutes" value="420" />
+          <Metric label="Sessions" value={String(sessions)} />
+          <Metric label="Minutes" value={minutes.toLocaleString()} />
           <Metric label="Streak" value="90" />
         </View>
 
-        <Text style={styles.footnote}>
-          ⚡ "Elite focus. You outperformed 94% of users this week."
-        </Text>
+        <View style={styles.footnoteRow}>
+          <Ionicons name="flash" size={12} color={Colors.warning} />
+          <Text style={styles.footnote}>
+            "Elite focus. You outperformed 94% of users this week."
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -162,14 +251,39 @@ const Metric: React.FC<{ label: string; value: string }> = ({ label, value }) =>
 
 const BenefitReportScreen: React.FC<Props> = ({ navigation }) => {
   useOnboardingTracking('BenefitReport');
+  const { state } = useOnboarding();
+
+  const projection = useMemo(() => {
+    const stats = projectStats(state.primaryGoal, state.selectedWeaknesses);
+    const ovr = Math.round(
+      stats.reduce((sum, s) => sum + s.value, 0) / stats.length,
+    );
+    // 90-day model: assume one session per day at the user's chosen
+    // commitment. Falls back to 30 min if not set yet.
+    const dailyMin = state.dailyMinutes ?? 30;
+    const sessions = 90;
+    const minutes = sessions * dailyMin;
+    return {
+      stats,
+      ovr,
+      // At Day 90 the user lands in LEGEND tier.
+      rankName: 'LEGEND',
+      rankColor: '#A855F7',
+      sessions,
+      minutes,
+    };
+  }, [state.primaryGoal, state.selectedWeaknesses, state.dailyMinutes]);
+
   return (
     <BenefitTemplate
-      panelLabel="WEEKLY REPORT"
+      panelLabel="DAY 90 PROJECTION"
       step={14}
-      headline="WEEKLY REPORTS"
+      headline="THIS IS YOU IN 90 DAYS"
       headlineColor={Colors.warning}
-      body='Every Sunday the system grades your week. This is what consistent execution looks like after 90 days. The only question — will you be the one who gets here?'
-      graphic={<ReportCard />}
+      body="Show up daily and your stats compound around the goal you picked. This is your character at Day 90 — not a hypothetical, the projection from your answers."
+      callout="If you stay locked in."
+      calloutColor="#A855F7"
+      graphic={<ReportCard {...projection} />}
       onContinue={() => navigation.navigate('ScreenTimePreFrame')}
     />
   );
@@ -290,8 +404,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     color: Colors.textMuted,
   },
-  footnote: {
+  footnoteRow: {
     marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  footnote: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 11,
     color: Colors.textPrimary,

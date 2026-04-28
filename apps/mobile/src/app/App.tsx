@@ -11,6 +11,8 @@ import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
 import { InterTight_600SemiBold } from '@expo-google-fonts/inter-tight/600SemiBold';
 import { InterTight_700Bold } from '@expo-google-fonts/inter-tight/700Bold';
 import { InterTight_800ExtraBold } from '@expo-google-fonts/inter-tight/800ExtraBold';
+import { JetBrainsMono_400Regular } from '@expo-google-fonts/jetbrains-mono/400Regular';
+import { JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono/700Bold';
 import { AuthProvider } from '../features/auth/AuthProvider';
 import { OnboardingProvider } from '../features/onboarding/state/OnboardingProvider';
 import { SubscriptionProvider } from '../features/subscription/SubscriptionProvider';
@@ -66,6 +68,8 @@ const App: React.FC = () => {
     InterTight_600SemiBold,
     InterTight_700Bold,
     InterTight_800ExtraBold,
+    JetBrainsMono_400Regular,
+    JetBrainsMono_700Bold,
   });
 
   const [authReady, setAuthReady] = useState(false);

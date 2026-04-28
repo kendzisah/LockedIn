@@ -124,7 +124,7 @@ const CommitmentScreen: React.FC<Props> = ({ navigation }) => {
       toValue: 0,
       duration: 350,
       useNativeDriver: true,
-    }).start(() => navigation.navigate('SocialProof'));
+    }).start(() => navigation.navigate('ScheduleSession'));
   };
 
   return (

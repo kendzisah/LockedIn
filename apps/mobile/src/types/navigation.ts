@@ -6,16 +6,18 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 export type OnboardingStackParamList = {
   Definition: undefined;
   PhoneTimeQuiz: undefined;
-  LossAversionStat: undefined;
-  Reclaim: undefined;
+  WakeUpCall: undefined;
   AgeQuiz: undefined;
+  Situation: undefined;
   GoalQuiz: undefined;
   ControlQuiz: undefined;
+  Triggers: undefined;
+  MorningRoutine: undefined;
   DailyTimeCommitment: undefined;
+  WhyNow: undefined;
   ControlLevel: undefined;
+  SystemAnalysis: undefined;
   StatReveal: undefined;
-  Day90Preview: undefined;
-  VulnerableTime: undefined;
   BenefitExecution: undefined;
   BenefitMissions: undefined;
   BenefitRanks: undefined;
@@ -26,8 +28,8 @@ export type OnboardingStackParamList = {
   AccountPrompt: undefined;
   OnboardingAuth: { mode?: 'signup' | 'signin' } | undefined;
   Commitment: undefined;
+  ScheduleSession: undefined;
   SocialProof: undefined;
-  TrialPreview: undefined;
   Paywall: undefined;
 };
 

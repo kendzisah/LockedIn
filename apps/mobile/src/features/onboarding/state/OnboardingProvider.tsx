@@ -17,6 +17,11 @@ const initialState: OnboardingState = {
   primaryGoal: null,
   controlLevel: null,
   vulnerableTime: null,
+  situation: null,
+  triggers: [],
+  morningRoutine: null,
+  whyNow: null,
+  scheduledSessionTime: null,
   screenTimeStatus: 'not_requested',
   notificationsGranted: null,
   demoCompleted: false,
@@ -44,6 +49,16 @@ function onboardingReducer(
       return { ...state, controlLevel: action.payload };
     case 'SET_VULNERABLE_TIME':
       return { ...state, vulnerableTime: action.payload };
+    case 'SET_SITUATION':
+      return { ...state, situation: action.payload };
+    case 'SET_TRIGGERS':
+      return { ...state, triggers: action.payload };
+    case 'SET_MORNING_ROUTINE':
+      return { ...state, morningRoutine: action.payload };
+    case 'SET_WHY_NOW':
+      return { ...state, whyNow: action.payload };
+    case 'SET_SCHEDULED_SESSION_TIME':
+      return { ...state, scheduledSessionTime: action.payload };
     case 'SET_SCREEN_TIME_STATUS':
       return { ...state, screenTimeStatus: action.payload };
     case 'SET_NOTIFICATIONS_GRANTED':
@@ -107,8 +122,24 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
             if (Array.isArray(data.selectedWeaknesses)) payload.selectedWeaknesses = data.selectedWeaknesses;
             if (typeof data.controlLevel === 'string') payload.controlLevel = data.controlLevel;
             if (typeof data.vulnerableTime === 'string') payload.vulnerableTime = data.vulnerableTime;
+            if (typeof data.situation === 'string') payload.situation = data.situation;
+            if (Array.isArray(data.triggers)) payload.triggers = data.triggers;
+            if (typeof data.morningRoutine === 'string') payload.morningRoutine = data.morningRoutine;
+            if (typeof data.whyNow === 'string') payload.whyNow = data.whyNow;
+            if (typeof data.scheduledSessionTime === 'string') payload.scheduledSessionTime = data.scheduledSessionTime;
             if (typeof data.currentScreen === 'string') payload.currentScreen = data.currentScreen;
             if (typeof data.onboardingCompletedAt === 'string') payload.onboardingCompletedAt = data.onboardingCompletedAt;
+
+            // Legacy migration: old single-value `vulnerableTime` → multi-select
+            // `triggers`. Only fires when triggers is empty AND vulnerableTime
+            // is present, so we don't clobber a user who has already answered
+            // the new screen 8.
+            if (
+              (!payload.triggers || payload.triggers.length === 0) &&
+              typeof data.vulnerableTime === 'string'
+            ) {
+              payload.triggers = [data.vulnerableTime];
+            }
           } catch {}
         }
         dispatch({ type: 'HYDRATE_STATE', payload });
@@ -142,9 +173,30 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
       selectedWeaknesses: state.selectedWeaknesses,
       controlLevel: state.controlLevel,
       vulnerableTime: state.vulnerableTime,
+      situation: state.situation,
+      triggers: state.triggers,
+      morningRoutine: state.morningRoutine,
+      whyNow: state.whyNow,
+      scheduledSessionTime: state.scheduledSessionTime,
       currentScreen: state.currentScreen,
     })).catch(() => {});
-  }, [isHydrated, state.dailyMinutes, state.primaryGoal, state.phoneUsageHours, state.userAge, state.selectedWeaknesses, state.controlLevel, state.vulnerableTime, state.currentScreen, state.onboardingComplete]);
+  }, [
+    isHydrated,
+    state.dailyMinutes,
+    state.primaryGoal,
+    state.phoneUsageHours,
+    state.userAge,
+    state.selectedWeaknesses,
+    state.controlLevel,
+    state.vulnerableTime,
+    state.situation,
+    state.triggers,
+    state.morningRoutine,
+    state.whyNow,
+    state.scheduledSessionTime,
+    state.currentScreen,
+    state.onboardingComplete,
+  ]);
 
   // ── After onboarding: keep goal / commitment / weaknesses in sync with AsyncStorage ──
   useEffect(() => {
@@ -202,6 +254,11 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
         daily_commitment_minutes: state.dailyMinutes,
         phone_usage: state.phoneUsageHours,
         weaknesses: state.selectedWeaknesses.join(', '),
+        situation: state.situation,
+        triggers: state.triggers.join(', '),
+        morning_routine: state.morningRoutine,
+        why_now: state.whyNow,
+        scheduled_session_time: state.scheduledSessionTime,
         screen_time_granted: state.screenTimeStatus === 'granted',
         notifications_granted: state.notificationsGranted ?? false,
         demo_completed: state.demoCompleted,
@@ -216,7 +273,22 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({
       void StatsService.recompute();
     }
     prevComplete.current = state.onboardingComplete;
-  }, [state.onboardingComplete, state.userAge, state.primaryGoal, state.dailyMinutes, state.phoneUsageHours, state.selectedWeaknesses, state.screenTimeStatus, state.notificationsGranted, state.demoCompleted]);
+  }, [
+    state.onboardingComplete,
+    state.userAge,
+    state.primaryGoal,
+    state.dailyMinutes,
+    state.phoneUsageHours,
+    state.selectedWeaknesses,
+    state.situation,
+    state.triggers,
+    state.morningRoutine,
+    state.whyNow,
+    state.scheduledSessionTime,
+    state.screenTimeStatus,
+    state.notificationsGranted,
+    state.demoCompleted,
+  ]);
 
   const contextValue = useMemo(
     () => ({ state, dispatch, isHydrated }),

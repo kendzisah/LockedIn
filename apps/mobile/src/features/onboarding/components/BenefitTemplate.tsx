@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   Animated,
   Easing,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -112,7 +113,11 @@ const BenefitTemplate: React.FC<BenefitTemplateProps> = ({
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
-        <View style={styles.body}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           <Animated.View
             style={[
               styles.graphicSlot,
@@ -146,7 +151,7 @@ const BenefitTemplate: React.FC<BenefitTemplateProps> = ({
               </Text>
             ) : null}
           </Animated.View>
-        </View>
+        </ScrollView>
 
         <View style={styles.footer}>
           <PrimaryButton title="CONTINUE" onPress={handleContinue} style={styles.cta} />
@@ -157,10 +162,18 @@ const BenefitTemplate: React.FC<BenefitTemplateProps> = ({
 };
 
 const styles = StyleSheet.create({
-  body: {
+  scroll: {
     flex: 1,
-    justifyContent: 'center',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    // Top-aligned, not centered — when content is tall the footer overlay
+    // would otherwise visually clip the bottom of the body paragraph.
+    justifyContent: 'flex-start',
     paddingTop: 24,
+    // Generous bottom padding so the last line of body never sits under
+    // the (translucent) Continue button.
+    paddingBottom: 32,
   },
   graphicSlot: {
     width: '100%',
@@ -200,6 +213,9 @@ const styles = StyleSheet.create({
   footer: {
     paddingTop: 12,
     paddingBottom: 8,
+    // Opaque so scrolled-past body text never ghosts through the
+    // translucent CTA button.
+    backgroundColor: Colors.background,
   },
   cta: {
     width: '100%',

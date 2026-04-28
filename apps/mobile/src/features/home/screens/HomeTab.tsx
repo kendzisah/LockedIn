@@ -316,12 +316,28 @@ const HomeTab: React.FC = () => {
         visible={homeGuide.visible}
         onDismiss={onHomeGuideDismiss}
         title="You are now Locked In."
-        subtitle="Here's how your home screen works."
-        tips={[
-          { icon: 'flame-outline', iconColor: '#FF6B35', text: 'Your streak tracks consecutive days you hit your focus goal. Don\'t lose your streak.' },
-          { icon: 'radio-button-on-outline', iconColor: Colors.primary, text: 'The focus ring shows today\'s progress toward your daily commitment.' },
-          { icon: 'calendar-outline', iconColor: Colors.accent, text: 'Weekly Calendar shows your activity across the week at a glance.' },
-          { icon: 'lock-closed-outline', iconColor: Colors.primary, text: 'Tap the Lock In button to start a focus session and block distractions.' },
+        pages={[
+          {
+            title: 'You are now Locked In.',
+            subtitle: "Here's how your home screen works.",
+            tips: [
+              { icon: 'flame-outline',           iconColor: '#FF6B35',     text: 'Your streak tracks consecutive days you hit your focus goal. Don\'t lose it.' },
+              { icon: 'radio-button-on-outline', iconColor: Colors.primary, text: 'The focus ring shows today\'s progress toward your daily commitment.' },
+              { icon: 'calendar-outline',        iconColor: Colors.accent,  text: 'Weekly Calendar shows your activity across the week at a glance.' },
+              { icon: 'lock-closed-outline',     iconColor: Colors.primary, text: 'Tap the Lock In button to start a focus session and block distractions.' },
+            ],
+          },
+          {
+            title: 'Your stats grow with action.',
+            subtitle: 'Each one tracks a different muscle. Train them through what you do.',
+            tips: [
+              { icon: 'shield-checkmark-outline', iconColor: '#3A66FF', text: 'DISCIPLINE — built by resisting distractions, finishing missions, and showing up daily.' },
+              { icon: 'eye-outline',              iconColor: '#00C2FF', text: 'FOCUS — built by deep work blocks, morning sprints, and longer focus sessions.' },
+              { icon: 'rocket-outline',           iconColor: '#00D68F', text: 'EXECUTION — built by completing missions, shipping, and stacking sessions in one day.' },
+              { icon: 'repeat-outline',           iconColor: '#FFC857', text: 'CONSISTENCY — built by streak days, no-skip days, and weekly check-ins.' },
+              { icon: 'people-outline',           iconColor: '#A855F7', text: 'SOCIAL — built by guild check-ins, leaderboard activity, and inviting friends.' },
+            ],
+          },
         ]}
       />
     </View>

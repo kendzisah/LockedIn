@@ -15,6 +15,10 @@ export const FontFamily = {
   bodyMedium: 'Inter_500Medium',
   /** Inter 400 — default body text */
   body: 'Inter_400Regular',
+  /** JetBrains Mono 400 — terminal / system text (e.g. "> SYSTEM INITIALIZING") */
+  mono: 'JetBrainsMono_400Regular',
+  /** JetBrains Mono 700 — emphasized terminal text */
+  monoBold: 'JetBrainsMono_700Bold',
 } as const;
 
 /**

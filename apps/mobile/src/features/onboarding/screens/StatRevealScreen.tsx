@@ -1,31 +1,47 @@
-import React, { useEffect, useRef, useState } from 'react';
+/**
+ * StatRevealScreen — onboarding step 14: "Your Starting Stats."
+ *
+ * The character-creation moment. Shows OVR=1, all five stats=1, and the
+ * user's build summary inside an HUD panel with sectioned `// STATUS`,
+ * `// STATS`, `// BUILD` blocks. Button is gated behind a 2s absorption
+ * delay per spec.
+ */
+
+import React, { useEffect, useRef } from 'react';
 import {
   Animated,
   Easing,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
 import ScreenContainer from '../../../design/components/ScreenContainer';
+import PrimaryButton from '../../../design/components/PrimaryButton';
+import HUDPanel from '../../home/components/HUDPanel';
+import CountUpNumber from '../components/CountUpNumber';
+import TypingText from '../components/TypingText';
+import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
-import { useOnboardingTracking } from '../hooks/useOnboardingTracking';
+import { SectionLabelStyle, SystemTokens } from '../../home/systemTokens';
 import { RankService } from '../../../services/RankService';
 
-const STAT_ROWS: { label: string; color: string }[] = [
-  { label: 'DISCIPLINE',  color: '#3A66FF' },
-  { label: 'FOCUS',       color: '#00C2FF' },
-  { label: 'EXECUTION',   color: '#00D68F' },
-  { label: 'CONSISTENCY', color: '#FFC857' },
-  { label: 'SOCIAL',      color: '#A855F7' },
+const STAT_ROWS: { abbr: string; label: string; color: string }[] = [
+  { abbr: 'DIS', label: 'Discipline',  color: '#3A66FF' },
+  { abbr: 'FOC', label: 'Focus',       color: '#0BC2F7' },
+  { abbr: 'EXE', label: 'Execution',   color: '#00D65F' },
+  { abbr: 'CON', label: 'Consistency', color: '#FFCB57' },
+  { abbr: 'SOC', label: 'Social',      color: '#AB55F7' },
 ];
 
-const TYPING_TEXT = 'YOUR SYSTEM IS INITIALIZED';
+const STARTING_STAT = 1;
+const MAX_STAT = 99;
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'StatReveal'>;
 
@@ -33,78 +49,51 @@ const StatRevealScreen: React.FC<Props> = ({ navigation }) => {
   useOnboardingTracking('StatReveal');
   const { state } = useOnboarding();
 
-  const startingRank = RankService.rankFromStreak(0); // NPC
-  const nextRank = RankService.nextRank(0);            // RECRUIT
+  const startingRank = RankService.rankFromStreak(0);
+  const nextRank = RankService.nextRank(0);
 
   const screenOpacity = useRef(new Animated.Value(1)).current;
-  const cardOpacity = useRef(new Animated.Value(0)).current;
-  const cardTranslate = useRef(new Animated.Value(20)).current;
+  const panelOpacity = useRef(new Animated.Value(0)).current;
+  const panelTranslate = useRef(new Animated.Value(20)).current;
   const buttonOpacity = useRef(new Animated.Value(0)).current;
-  const ovrCount = useRef(new Animated.Value(0)).current;
-  const [displayOvr, setDisplayOvr] = useState(0);
-  const [typed, setTyped] = useState('');
   const advancingRef = useRef(false);
 
-  // Stat bar fills (each animates from 0 to 1/99 width)
-  const barProgress = useRef(STAT_ROWS.map(() => new Animated.Value(0))).current;
+  const barFills = useRef(STAT_ROWS.map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
-    // Typing animation for header (33ms per char ≈ 850ms total)
-    let i = 0;
-    const interval = setInterval(() => {
-      i++;
-      setTyped(TYPING_TEXT.slice(0, i));
-      if (i >= TYPING_TEXT.length) clearInterval(interval);
-    }, 35);
-
-    // After 1s delay: card fades in
-    const cardTimer = setTimeout(() => {
+    // Panel reveals 1s after the typed header lands, then stat bars stagger
+    // (100ms each per spec), then CTA appears after a 2s absorption beat.
+    const panelTimer = setTimeout(() => {
       Animated.parallel([
-        Animated.timing(cardOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
-        Animated.timing(cardTranslate, { toValue: 0, duration: 600, useNativeDriver: true }),
+        Animated.timing(panelOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(panelTranslate, { toValue: 0, duration: 600, useNativeDriver: true }),
       ]).start();
 
-      // OVR count up from 0 to 1
-      Animated.timing(ovrCount, {
-        toValue: 1,
-        duration: 800,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: false,
-      }).start();
-
-      // Stat bars: 200ms staggered fill
-      barProgress.forEach((bar, idx) => {
+      barFills.forEach((bar, idx) => {
         Animated.timing(bar, {
-          toValue: 1 / 99,
-          duration: 600,
-          delay: 800 + idx * 200,
+          toValue: STARTING_STAT / MAX_STAT,
+          duration: 500,
+          delay: 400 + idx * 100,
           easing: Easing.out(Easing.ease),
           useNativeDriver: false,
         }).start();
       });
     }, 1000);
 
-    // Track displayed OVR via listener
-    const ovrSub = ovrCount.addListener(({ value }) => {
-      setDisplayOvr(Math.round(value));
-    });
-
-    // Button appears after 2s after all the staging
-    const buttonTimer = setTimeout(() => {
+    const ctaDelayMs = 1000 + 400 + STAT_ROWS.length * 100 + 500 + 2000;
+    const ctaTimer = setTimeout(() => {
       Animated.timing(buttonOpacity, {
         toValue: 1,
         duration: 500,
         useNativeDriver: true,
       }).start();
-    }, 1000 + 800 + STAT_ROWS.length * 200 + 500);
+    }, ctaDelayMs);
 
     return () => {
-      clearInterval(interval);
-      clearTimeout(cardTimer);
-      clearTimeout(buttonTimer);
-      ovrCount.removeListener(ovrSub);
+      clearTimeout(panelTimer);
+      clearTimeout(ctaTimer);
     };
-  }, [cardOpacity, cardTranslate, ovrCount, buttonOpacity, barProgress]);
+  }, [panelOpacity, panelTranslate, buttonOpacity, barFills]);
 
   const handleBegin = () => {
     if (advancingRef.current) return;
@@ -114,7 +103,7 @@ const StatRevealScreen: React.FC<Props> = ({ navigation }) => {
       toValue: 0,
       duration: 350,
       useNativeDriver: true,
-    }).start(() => navigation.navigate('Day90Preview'));
+    }).start(() => navigation.navigate('BenefitExecution'));
   };
 
   const dailyMinutes = state.dailyMinutes ?? 30;
@@ -126,39 +115,69 @@ const StatRevealScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
-
         <View style={styles.body}>
-          <Text style={styles.typingHeader}>{typed}</Text>
+          <TypingText
+            text="// SYSTEM INITIALIZED"
+            charDelay={28}
+            style={styles.bootHeader}
+          />
+          <LinearGradient
+            colors={[SystemTokens.cyan, 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.bootRule}
+          />
 
           <Animated.View
-            style={[
-              styles.card,
-              {
-                opacity: cardOpacity,
-                transform: [{ translateY: cardTranslate }],
-              },
-            ]}
+            style={{
+              opacity: panelOpacity,
+              transform: [{ translateY: panelTranslate }],
+              marginTop: 16,
+            }}
           >
-            {/* Inner glow */}
-            <View style={styles.glowOrb} pointerEvents="none" />
+            <HUDPanel headerLabel="STATUS" style={styles.panel}>
+              <View style={styles.statusRow}>
+                <View style={styles.ovrBox}>
+                  <Text style={styles.ovrLabel}>OVR</Text>
+                  <CountUpNumber
+                    value={1}
+                    duration={900}
+                    startDelay={200}
+                    style={styles.ovrValue}
+                  />
+                </View>
+                <View style={styles.statusMeta}>
+                  <Text style={[styles.rankName, { color: startingRank.color }]}>
+                    {startingRank.name.toUpperCase()}
+                  </Text>
+                  <Text style={styles.metaSub}>Day 0</Text>
+                </View>
+              </View>
+            </HUDPanel>
 
-            <Text style={styles.ovrLabel}>OVR</Text>
-            <Text style={styles.ovrValue}>{displayOvr}</Text>
-            <Text style={[styles.rankLabel, { color: startingRank.color }]}>
-              ── {startingRank.name} ──
-            </Text>
-
-            <View style={styles.statBlock}>
+            <HUDPanel headerLabel="STATS" style={styles.panel}>
               {STAT_ROWS.map((row, idx) => (
-                <View key={row.label} style={styles.statRow}>
-                  <Text style={styles.statLabel}>{row.label}</Text>
+                <View key={row.abbr} style={styles.statRow}>
+                  <Text style={styles.statAbbr}>{row.abbr}</Text>
                   <View style={styles.statBarTrack}>
                     <Animated.View
                       style={[
                         styles.statBarFill,
                         {
                           backgroundColor: row.color,
-                          width: barProgress[idx].interpolate({
+                          width: barFills[idx].interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['0%', '100%'],
+                          }),
+                        },
+                      ]}
+                    />
+                    <Animated.View
+                      style={[
+                        styles.statBarTip,
+                        {
+                          backgroundColor: row.color,
+                          left: barFills[idx].interpolate({
                             inputRange: [0, 1],
                             outputRange: ['0%', '100%'],
                           }),
@@ -166,46 +185,45 @@ const StatRevealScreen: React.FC<Props> = ({ navigation }) => {
                       ]}
                     />
                   </View>
-                  <Text style={styles.statValue}>1</Text>
+                  <Text style={styles.statValue}>{STARTING_STAT}</Text>
                 </View>
               ))}
-            </View>
+            </HUDPanel>
 
-            <View style={styles.divider} />
-            <Text style={styles.buildHeader}>── YOUR BUILD ──</Text>
-            <View style={styles.buildBlock}>
+            <HUDPanel headerLabel="BUILD" style={styles.panel}>
               <BuildLine label="Goal" value={state.primaryGoal ?? 'Build discipline'} />
               <BuildLine
                 label="Weakness"
-                value={state.selectedWeaknesses[0] ?? 'Inconsistency'}
+                value={
+                  state.selectedWeaknesses.length > 0
+                    ? state.selectedWeaknesses.join(' · ')
+                    : 'Inconsistency'
+                }
               />
               <BuildLine label="Commitment" value={commitmentLabel} />
-            </View>
-
-            <View style={styles.divider} />
-            <View style={styles.xpRow}>
-              <Text style={styles.xpText}>XP: 0</Text>
-              <Text style={styles.xpText}>
-                Next rank:{' '}
-                <Text style={{ color: nextRank?.color ?? Colors.textPrimary }}>
-                  {nextRank?.name ?? 'MAX'}
-                </Text>{' '}
-                <Text style={styles.xpMuted}>
-                  (Day {nextRank?.minDays ?? 0})
+              <View style={styles.buildDivider} />
+              <View style={styles.xpRow}>
+                <Text style={styles.xpText}>XP: 0</Text>
+                <Text style={styles.xpText}>
+                  Next rank{' '}
+                  <Text style={{ color: nextRank?.color ?? Colors.textPrimary }}>
+                    {(nextRank?.name ?? 'MAX').toUpperCase()}
+                  </Text>
+                  <Text style={styles.xpMuted}>
+                    {' '}(Day {nextRank?.minDays ?? 0})
+                  </Text>
                 </Text>
-              </Text>
-            </View>
+              </View>
+            </HUDPanel>
           </Animated.View>
         </View>
 
         <Animated.View style={[styles.footer, { opacity: buttonOpacity }]}>
-          <TouchableOpacity
-            style={styles.cta}
+          <PrimaryButton
+            title="> BEGIN MY EVOLUTION"
             onPress={handleBegin}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.ctaText}>Begin my evolution</Text>
-          </TouchableOpacity>
+            style={styles.cta}
+          />
         </Animated.View>
       </ScreenContainer>
     </Animated.View>
@@ -214,8 +232,8 @@ const StatRevealScreen: React.FC<Props> = ({ navigation }) => {
 
 const BuildLine: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <View style={styles.buildRow}>
-    <Text style={styles.buildLabel}>{label}:</Text>
-    <Text style={styles.buildValue} numberOfLines={1}>
+    <Text style={styles.buildLabel}>{label}</Text>
+    <Text style={styles.buildValue} numberOfLines={2}>
       {value}
     </Text>
   </View>
@@ -224,84 +242,96 @@ const BuildLine: React.FC<{ label: string; value: string }> = ({ label, value })
 const styles = StyleSheet.create({
   body: {
     flex: 1,
-    paddingTop: 24,
+    paddingTop: 16,
+  },
+  bootHeader: {
+    ...SectionLabelStyle,
+    color: SystemTokens.cyan,
+    textShadowColor: SystemTokens.cyan,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
+  },
+  bootRule: {
+    height: 1,
+    marginTop: 6,
+  },
+  panel: {
+    marginBottom: 10,
+  },
+  statusRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 16,
   },
-  typingHeader: {
-    fontFamily: FontFamily.headingBold,
-    fontSize: 22,
-    letterSpacing: -0.2,
-    color: Colors.accent,
-    minHeight: 28,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  card: {
-    width: '100%',
-    backgroundColor: 'rgba(21,26,33,0.72)',
+  ovrBox: {
+    width: 96,
+    height: 96,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 18,
-    padding: 20,
-    overflow: 'hidden',
-  },
-  glowOrb: {
-    position: 'absolute',
-    top: -60,
-    left: -60,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(58,102,255,0.06)',
+    borderColor: 'rgba(58,102,255,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(58,102,255,0.04)',
   },
   ovrLabel: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 14,
-    letterSpacing: 1.5,
-    color: Colors.textSecondary,
-    textAlign: 'center',
+    fontFamily: FontFamily.mono,
+    fontSize: 10,
+    letterSpacing: 1.6,
+    color: SystemTokens.textMuted,
   },
   ovrValue: {
     fontFamily: FontFamily.headingBold,
-    fontSize: 64,
-    lineHeight: 72,
+    fontSize: 56,
+    lineHeight: 60,
+    letterSpacing: -1,
     color: Colors.textPrimary,
-    textAlign: 'center',
-    marginTop: 4,
+    textShadowColor: SystemTokens.glowAccent,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
   },
-  rankLabel: {
-    fontFamily: FontFamily.heading,
-    fontSize: 16,
-    letterSpacing: 1.2,
-    textAlign: 'center',
-    marginTop: 4,
+  statusMeta: {
+    flex: 1,
   },
-  statBlock: {
-    marginTop: 20,
-    gap: 10,
+  rankName: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 22,
+    letterSpacing: 0.6,
+  },
+  metaSub: {
+    marginTop: 4,
+    fontFamily: FontFamily.mono,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    color: SystemTokens.textMuted,
   },
   statRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    paddingVertical: 4,
   },
-  statLabel: {
-    width: 96,
-    fontFamily: FontFamily.headingSemiBold,
+  statAbbr: {
+    width: 32,
+    fontFamily: FontFamily.mono,
     fontSize: 11,
-    letterSpacing: 0.8,
-    color: Colors.textSecondary,
+    letterSpacing: 1.5,
+    color: SystemTokens.textSecondary,
   },
   statBarTrack: {
     flex: 1,
-    height: 8,
+    height: 6,
     backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 4,
     overflow: 'hidden',
   },
   statBarFill: {
     height: '100%',
-    borderRadius: 4,
+  },
+  statBarTip: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 2,
+    transform: [{ translateX: -2 }],
+    opacity: 0.85,
   },
   statValue: {
     width: 24,
@@ -310,44 +340,36 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textPrimary,
   },
-  divider: {
-    marginTop: 20,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  buildHeader: {
-    marginTop: 16,
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 12,
-    letterSpacing: 1.4,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  buildBlock: {
-    marginTop: 12,
-    gap: 6,
-  },
   buildRow: {
     flexDirection: 'row',
-    gap: 8,
+    paddingVertical: 4,
+    gap: 12,
   },
   buildLabel: {
-    fontFamily: FontFamily.body,
-    fontSize: 13,
-    color: Colors.textMuted,
     width: 96,
+    fontFamily: FontFamily.mono,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: SystemTokens.textMuted,
+    paddingTop: 2,
   },
   buildValue: {
     flex: 1,
     fontFamily: FontFamily.bodyMedium,
     fontSize: 13,
+    lineHeight: 18,
     color: Colors.textPrimary,
   },
+  buildDivider: {
+    marginTop: 8,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
   xpRow: {
-    marginTop: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginTop: 8,
   },
   xpText: {
     fontFamily: FontFamily.bodyMedium,
@@ -355,7 +377,7 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
   },
   xpMuted: {
-    color: Colors.textMuted,
+    color: SystemTokens.textMuted,
     fontFamily: FontFamily.body,
   },
   footer: {
@@ -363,24 +385,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   cta: {
-    backgroundColor: 'rgba(58,102,255,0.42)',
-    borderWidth: 1,
-    borderColor: 'rgba(120,160,255,0.55)',
-    borderRadius: 28,
-    paddingVertical: 16,
-    minHeight: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#3A66FF',
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  ctaText: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 17,
-    letterSpacing: -0.1,
-    color: Colors.textPrimary,
+    width: '100%',
   },
 });
 

@@ -1,17 +1,18 @@
 /**
- * ControlQuizScreen — onboarding step 7: "Your Weakness."
- * Multi-select up to 2. Drives mission generation bias toward the user's
- * declared vulnerabilities.
+ * TriggersQuizScreen — onboarding step 8.
+ * "When do you lose focus?" — multi-select up to 3. Replaces the old
+ * single-value VulnerableTime screen.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
+import type { Trigger } from '../state/types';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import HUDOptionCard from '../components/HUDOptionCard';
 import HUDSectionLabel from '../components/HUDSectionLabel';
@@ -22,50 +23,25 @@ import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { SystemTokens } from '../../home/systemTokens';
 
-type Props = NativeStackScreenProps<OnboardingStackParamList, 'ControlQuiz'>;
+type Props = NativeStackScreenProps<OnboardingStackParamList, 'Triggers'>;
 
-const MAX_SELECT = 2;
+const MAX_SELECT = 3;
 const ICON_SIZE = 18;
 
-interface Option {
-  value: string;
-  label: string;
-  icon: React.ReactNode;
-}
-
-const OPTIONS: Option[] = [
-  {
-    value: 'I scroll when I should execute',
-    label: 'I scroll when I should execute',
-    icon: <MaterialCommunityIcons name="cellphone-text" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
-  },
-  {
-    value: 'I start strong, then fall off',
-    label: 'I start strong, then fall off',
-    icon: <Ionicons name="flame" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
-  },
-  {
-    value: 'I get emotionally reactive',
-    label: 'I get emotionally reactive',
-    icon: <MaterialCommunityIcons name="lightning-bolt-circle" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
-  },
-  {
-    value: 'I relapse into distractions',
-    label: 'I relapse into distractions',
-    icon: <Ionicons name="game-controller" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
-  },
-  {
-    value: 'I lack daily consistency',
-    label: 'I lack daily consistency',
-    icon: <Ionicons name="trending-down" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
-  },
+const OPTIONS: Array<{ value: Trigger; label: string; iconName: keyof typeof Ionicons.glyphMap }> = [
+  { value: 'morning',       label: 'First thing in the morning', iconName: 'sunny' },
+  { value: 'late_night',    label: 'Late at night',              iconName: 'moon' },
+  { value: 'around_others', label: "When I'm around others",     iconName: 'people' },
+  { value: 'bored_alone',   label: "When I'm bored or alone",    iconName: 'cloud' },
+  { value: 'after_stress',  label: 'After stressful moments',    iconName: 'flash' },
+  { value: 'during_breaks', label: 'During breaks',              iconName: 'cafe' },
 ];
 
-const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
-  useOnboardingTracking('ControlQuiz');
+const TriggersQuizScreen: React.FC<Props> = ({ navigation }) => {
+  useOnboardingTracking('Triggers');
 
   const { dispatch } = useOnboarding();
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<Trigger[]>([]);
   const advancingRef = useRef(false);
 
   const screenOpacity = useRef(new Animated.Value(0)).current;
@@ -78,7 +54,7 @@ const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
     }).start();
   }, [screenOpacity]);
 
-  const handleToggle = (value: string) => {
+  const handleToggle = (value: Trigger) => {
     if (advancingRef.current) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelected((prev) => {
@@ -97,26 +73,26 @@ const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
     if (advancingRef.current || selected.length === 0) return;
     advancingRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    dispatch({ type: 'SET_WEAKNESSES', payload: selected });
+    dispatch({ type: 'SET_TRIGGERS', payload: selected });
     Analytics.track('Onboarding Answer Submitted', {
-      screen: 'ControlQuiz',
+      screen: 'Triggers',
       answer: selected.join(', '),
     });
     Animated.timing(screenOpacity, {
       toValue: 0,
       duration: 400,
       useNativeDriver: true,
-    }).start(() => navigation.navigate('Triggers'));
+    }).start(() => navigation.navigate('MorningRoutine'));
   };
 
   return (
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
         <View style={styles.body}>
-          <HUDSectionLabel label="VULNERABILITIES" />
-          <Text style={styles.title}>What holds you back?</Text>
+          <HUDSectionLabel label="THREAT ANALYSIS" />
+          <Text style={styles.title}>When do you lose focus?</Text>
           <Text style={styles.subtitle}>
-            Select up to 2. The system will target these.
+            Select up to 3. The system learns your patterns.
           </Text>
 
           <View style={styles.options}>
@@ -124,7 +100,13 @@ const ControlQuizScreen: React.FC<Props> = ({ navigation }) => {
               <HUDOptionCard
                 key={opt.value}
                 label={opt.label}
-                leading={opt.icon}
+                leading={
+                  <Ionicons
+                    name={opt.iconName}
+                    size={ICON_SIZE}
+                    color={SystemTokens.glowAccent}
+                  />
+                }
                 selected={selected.includes(opt.value)}
                 onPress={() => handleToggle(opt.value)}
               />
@@ -177,4 +159,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default ControlQuizScreen;
+export default TriggersQuizScreen;

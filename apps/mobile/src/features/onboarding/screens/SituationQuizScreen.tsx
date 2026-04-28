@@ -1,7 +1,7 @@
 /**
- * GoalQuizScreen — onboarding step 6: "Your Mission."
- * Single-select primary goal. Drives mission generation (slot 2 of 3
- * pulls from the user's goal-specific pool).
+ * SituationQuizScreen — onboarding step 5.
+ * "What's your situation right now?" — captures life stage so missions
+ * and copy can adapt to where the user actually is.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -12,6 +12,7 @@ import * as Haptics from 'expo-haptics';
 
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
+import type { Situation } from '../state/types';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import HUDOptionCard from '../components/HUDOptionCard';
 import HUDSectionLabel from '../components/HUDSectionLabel';
@@ -21,51 +22,49 @@ import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { SystemTokens } from '../../home/systemTokens';
 
-type Props = NativeStackScreenProps<OnboardingStackParamList, 'GoalQuiz'>;
-
-const ICON_SIZE = 18;
+type Props = NativeStackScreenProps<OnboardingStackParamList, 'Situation'>;
 
 interface Option {
-  value: string;
+  value: Situation;
+  label: string;
   icon: React.ReactNode;
 }
 
+const ICON_SIZE = 18;
+
 const OPTIONS: Option[] = [
   {
-    value: 'Improve my physique',
-    icon: <MaterialCommunityIcons name="dumbbell" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
-  },
-  {
-    value: 'Build a business or side project',
-    icon: <Ionicons name="briefcase" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
-  },
-  {
-    value: 'Increase discipline & self-control',
-    icon: <MaterialCommunityIcons name="brain" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
-  },
-  {
-    value: 'Advance my career',
-    icon: <Ionicons name="trending-up" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
-  },
-  {
-    value: 'Study with consistency',
+    value: 'student',
+    label: 'Student',
     icon: <Ionicons name="book" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
   },
   {
-    value: 'Reduce distractions',
-    icon: <MaterialCommunityIcons name="shield-off" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
+    value: 'working',
+    label: 'Working',
+    icon: <Ionicons name="briefcase" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
   },
   {
-    value: 'Improve emotional control',
-    icon: <MaterialCommunityIcons name="weather-windy" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
+    value: 'figuring',
+    label: 'Figuring it out',
+    icon: <Ionicons name="search" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
+  },
+  {
+    value: 'building',
+    label: 'Building something',
+    icon: <Ionicons name="rocket" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
+  },
+  {
+    value: 'starting_over',
+    label: 'Starting over',
+    icon: <MaterialCommunityIcons name="restart" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
   },
 ];
 
-const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
-  useOnboardingTracking('GoalQuiz');
+const SituationQuizScreen: React.FC<Props> = ({ navigation }) => {
+  useOnboardingTracking('Situation');
 
   const { dispatch } = useOnboarding();
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Situation | null>(null);
   const advancingRef = useRef(false);
 
   const screenOpacity = useRef(new Animated.Value(0)).current;
@@ -78,13 +77,13 @@ const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
     }).start();
   }, [screenOpacity]);
 
-  const handleSelect = (value: string) => {
+  const handleSelect = (value: Situation) => {
     if (advancingRef.current) return;
     setSelected(value);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    dispatch({ type: 'SET_PRIMARY_GOAL', payload: value });
+    dispatch({ type: 'SET_SITUATION', payload: value });
     Analytics.track('Onboarding Answer Submitted', {
-      screen: 'GoalQuiz',
+      screen: 'Situation',
       answer: value,
     });
 
@@ -94,7 +93,7 @@ const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
         toValue: 0,
         duration: 400,
         useNativeDriver: true,
-      }).start(() => navigation.navigate('ControlQuiz'));
+      }).start(() => navigation.navigate('GoalQuiz'));
     }, 500);
   };
 
@@ -102,20 +101,21 @@ const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
         <View style={styles.body}>
-          <HUDSectionLabel label="PRIMARY OBJECTIVE" />
-          <Text style={styles.title}>What are you building toward?</Text>
+          <HUDSectionLabel label="CURRENT STATUS" />
+          <Text style={styles.title}>What's your situation right now?</Text>
           <Text style={styles.subtitle}>
-            This determines your daily missions and stat growth.
+            The system adapts to where you are — not where you pretend to be.
           </Text>
 
           <View style={styles.options}>
             {OPTIONS.map((opt) => (
               <HUDOptionCard
                 key={opt.value}
-                label={opt.value}
+                label={opt.label}
                 leading={opt.icon}
                 selected={selected === opt.value}
                 onPress={() => handleSelect(opt.value)}
+                style={styles.option}
               />
             ))}
           </View>
@@ -143,11 +143,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     color: Colors.textMuted,
-    marginBottom: 24,
+    marginBottom: 28,
   },
   options: {
     gap: 8,
   },
+  option: {
+    marginBottom: 0,
+  },
 });
 
-export default GoalQuizScreen;
+export default SituationQuizScreen;

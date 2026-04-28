@@ -1,7 +1,8 @@
 /**
- * GoalQuizScreen — onboarding step 6: "Your Mission."
- * Single-select primary goal. Drives mission generation (slot 2 of 3
- * pulls from the user's goal-specific pool).
+ * WhyNowQuizScreen — onboarding step 11.
+ * "Why now? What made you download this today?" — single select. The
+ * selected reason becomes copy for personalized reminder notifications
+ * after onboarding.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -12,6 +13,7 @@ import * as Haptics from 'expo-haptics';
 
 import type { OnboardingStackParamList } from '../../../types/navigation';
 import { useOnboarding } from '../state/OnboardingProvider';
+import type { WhyNow } from '../state/types';
 import ScreenContainer from '../../../design/components/ScreenContainer';
 import HUDOptionCard from '../components/HUDOptionCard';
 import HUDSectionLabel from '../components/HUDSectionLabel';
@@ -21,51 +23,43 @@ import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
 import { SystemTokens } from '../../home/systemTokens';
 
-type Props = NativeStackScreenProps<OnboardingStackParamList, 'GoalQuiz'>;
+type Props = NativeStackScreenProps<OnboardingStackParamList, 'WhyNow'>;
 
 const ICON_SIZE = 18;
 
-interface Option {
-  value: string;
-  icon: React.ReactNode;
-}
-
-const OPTIONS: Option[] = [
+const OPTIONS: Array<{ value: WhyNow; label: string; icon: React.ReactNode }> = [
   {
-    value: 'Improve my physique',
-    icon: <MaterialCommunityIcons name="dumbbell" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
+    value: 'tired_wasting',
+    label: "I'm tired of wasting time",
+    icon: <Ionicons name="warning" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
   },
   {
-    value: 'Build a business or side project',
-    icon: <Ionicons name="briefcase" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
+    value: 'failing_goal',
+    label: 'I have a goal I keep failing at',
+    icon: <MaterialCommunityIcons name="target" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
   },
   {
-    value: 'Increase discipline & self-control',
-    icon: <MaterialCommunityIcons name="brain" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
+    value: 'someone_ahead',
+    label: 'Someone I respect is ahead of me',
+    icon: <Ionicons name="people" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
   },
   {
-    value: 'Advance my career',
-    icon: <Ionicons name="trending-up" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
+    value: 'need_accountability',
+    label: 'I need accountability',
+    icon: <Ionicons name="shield" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
   },
   {
-    value: 'Study with consistency',
-    icon: <Ionicons name="book" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
-  },
-  {
-    value: 'Reduce distractions',
-    icon: <MaterialCommunityIcons name="shield-off" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
-  },
-  {
-    value: 'Improve emotional control',
-    icon: <MaterialCommunityIcons name="weather-windy" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
+    value: 'prove_something',
+    label: 'I want to prove something',
+    icon: <Ionicons name="flame" size={ICON_SIZE} color={SystemTokens.glowAccent} />,
   },
 ];
 
-const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
-  useOnboardingTracking('GoalQuiz');
+const WhyNowQuizScreen: React.FC<Props> = ({ navigation }) => {
+  useOnboardingTracking('WhyNow');
 
   const { dispatch } = useOnboarding();
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<WhyNow | null>(null);
   const advancingRef = useRef(false);
 
   const screenOpacity = useRef(new Animated.Value(0)).current;
@@ -78,13 +72,13 @@ const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
     }).start();
   }, [screenOpacity]);
 
-  const handleSelect = (value: string) => {
+  const handleSelect = (value: WhyNow) => {
     if (advancingRef.current) return;
     setSelected(value);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    dispatch({ type: 'SET_PRIMARY_GOAL', payload: value });
+    dispatch({ type: 'SET_WHY_NOW', payload: value });
     Analytics.track('Onboarding Answer Submitted', {
-      screen: 'GoalQuiz',
+      screen: 'WhyNow',
       answer: value,
     });
 
@@ -94,7 +88,7 @@ const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
         toValue: 0,
         duration: 400,
         useNativeDriver: true,
-      }).start(() => navigation.navigate('ControlQuiz'));
+      }).start(() => navigation.navigate('ControlLevel'));
     }, 500);
   };
 
@@ -102,17 +96,16 @@ const GoalQuizScreen: React.FC<Props> = ({ navigation }) => {
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
         <View style={styles.body}>
-          <HUDSectionLabel label="PRIMARY OBJECTIVE" />
-          <Text style={styles.title}>What are you building toward?</Text>
-          <Text style={styles.subtitle}>
-            This determines your daily missions and stat growth.
+          <HUDSectionLabel label="CORE DRIVE" />
+          <Text style={styles.title}>
+            Why now? What made you download this today?
           </Text>
 
           <View style={styles.options}>
             {OPTIONS.map((opt) => (
               <HUDOptionCard
                 key={opt.value}
-                label={opt.value}
+                label={opt.label}
                 leading={opt.icon}
                 selected={selected === opt.value}
                 onPress={() => handleSelect(opt.value)}
@@ -136,13 +129,6 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     letterSpacing: -0.3,
     color: Colors.textPrimary,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontFamily: FontFamily.body,
-    fontSize: 15,
-    lineHeight: 22,
-    color: Colors.textMuted,
     marginBottom: 24,
   },
   options: {
@@ -150,4 +136,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default GoalQuizScreen;
+export default WhyNowQuizScreen;

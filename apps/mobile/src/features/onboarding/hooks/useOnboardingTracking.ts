@@ -14,22 +14,24 @@ import { useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Analytics } from '../../../services/AnalyticsService';
 
-export const TOTAL_STEPS = 24;
+export const TOTAL_STEPS = 26;
 const CURRENT_SCREEN_KEY = '@lockedin/onboarding_current_screen';
 
 export type OnboardingScreenName =
   | 'Definition'
   | 'PhoneTimeQuiz'
-  | 'LossAversionStat'
-  | 'Reclaim'
+  | 'WakeUpCall'
   | 'AgeQuiz'
+  | 'Situation'
   | 'GoalQuiz'
   | 'ControlQuiz'
+  | 'Triggers'
+  | 'MorningRoutine'
   | 'DailyTimeCommitment'
+  | 'WhyNow'
   | 'ControlLevel'
+  | 'SystemAnalysis'
   | 'StatReveal'
-  | 'Day90Preview'
-  | 'VulnerableTime'
   | 'BenefitExecution'
   | 'BenefitMissions'
   | 'BenefitRanks'
@@ -40,59 +42,67 @@ export type OnboardingScreenName =
   | 'AccountPrompt'
   | 'OnboardingAuth'
   | 'Commitment'
+  | 'ScheduleSession'
   | 'SocialProof'
-  | 'TrialPreview'
   | 'Paywall';
 
 /**
- * Map screen names to their step number in the 24-screen "system awakening" flow.
+ * Map screen names to their step number in the 26-screen "system awakening" flow.
  */
 export const SCREEN_STEP_MAP: Record<OnboardingScreenName, number> = {
   Definition: 1,
   PhoneTimeQuiz: 2,
-  LossAversionStat: 3,
-  Reclaim: 4,
-  AgeQuiz: 5,
+  WakeUpCall: 3,
+  AgeQuiz: 4,
+  Situation: 5,
   GoalQuiz: 6,
   ControlQuiz: 7,
-  DailyTimeCommitment: 8,
-  ControlLevel: 9,
-  StatReveal: 10,
-  Day90Preview: 11,
-  VulnerableTime: 12,
-  BenefitExecution: 13,
-  BenefitMissions: 14,
-  BenefitRanks: 15,
-  BenefitGuilds: 16,
-  BenefitReport: 17,
-  ScreenTimePreFrame: 18,
-  NotificationPreFrame: 19,
-  AccountPrompt: 20,
+  Triggers: 8,
+  MorningRoutine: 9,
+  DailyTimeCommitment: 10,
+  WhyNow: 11,
+  ControlLevel: 12,
+  SystemAnalysis: 13,
+  StatReveal: 14,
+  BenefitExecution: 15,
+  BenefitMissions: 16,
+  BenefitRanks: 17,
+  BenefitGuilds: 18,
+  BenefitReport: 19,
+  ScreenTimePreFrame: 20,
+  NotificationPreFrame: 21,
+  AccountPrompt: 22,
   // Auth form is a sub-screen of AccountPrompt — same step number so the
   // progress bar doesn't jump when users tap into it.
-  OnboardingAuth: 20,
-  Commitment: 21,
-  SocialProof: 22,
-  TrialPreview: 23,
-  Paywall: 24,
+  OnboardingAuth: 22,
+  Commitment: 23,
+  ScheduleSession: 24,
+  SocialProof: 25,
+  Paywall: 26,
 };
 
 /**
  * Ordered list of screen names for resume logic.
+ *
+ * Retired screen names are deliberately excluded — if a user's persisted
+ * `currentScreen` is a retired route, `getPersistedOnboardingScreen` returns
+ * null and the navigator falls back to `Definition`.
  */
 export const ONBOARDING_SCREEN_ORDER: OnboardingScreenName[] = [
   'Definition',
   'PhoneTimeQuiz',
-  'LossAversionStat',
-  'Reclaim',
+  'WakeUpCall',
   'AgeQuiz',
+  'Situation',
   'GoalQuiz',
   'ControlQuiz',
+  'Triggers',
+  'MorningRoutine',
   'DailyTimeCommitment',
+  'WhyNow',
   'ControlLevel',
+  'SystemAnalysis',
   'StatReveal',
-  'Day90Preview',
-  'VulnerableTime',
   'BenefitExecution',
   'BenefitMissions',
   'BenefitRanks',
@@ -102,8 +112,8 @@ export const ONBOARDING_SCREEN_ORDER: OnboardingScreenName[] = [
   'NotificationPreFrame',
   'AccountPrompt',
   'Commitment',
+  'ScheduleSession',
   'SocialProof',
-  'TrialPreview',
   'Paywall',
 ];
 

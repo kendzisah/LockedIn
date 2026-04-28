@@ -1,6 +1,4 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '../types/navigation';
 import { Colors } from '../design/colors';
@@ -11,16 +9,18 @@ import OnboardingProgressBar from '../features/onboarding/components/OnboardingP
 
 import DefinitionScreen from '../features/onboarding/screens/DefinitionScreen';
 import PhoneTimeQuizScreen from '../features/onboarding/screens/PhoneTimeQuizScreen';
-import LossAversionStatScreen from '../features/onboarding/screens/LossAversionStatScreen';
-import ReclaimScreen from '../features/onboarding/screens/ReclaimScreen';
+import WakeUpCallScreen from '../features/onboarding/screens/WakeUpCallScreen';
 import { AgeQuizScreen } from '../features/onboarding/screens/AgeQuizScreen';
+import SituationQuizScreen from '../features/onboarding/screens/SituationQuizScreen';
 import GoalQuizScreen from '../features/onboarding/screens/GoalQuizScreen';
 import ControlQuizScreen from '../features/onboarding/screens/ControlQuizScreen';
+import TriggersQuizScreen from '../features/onboarding/screens/TriggersQuizScreen';
+import MorningRoutineQuizScreen from '../features/onboarding/screens/MorningRoutineQuizScreen';
 import DailyTimeCommitmentScreen from '../features/onboarding/screens/DailyTimeCommitmentScreen';
+import WhyNowQuizScreen from '../features/onboarding/screens/WhyNowQuizScreen';
 import ControlLevelScreen from '../features/onboarding/screens/ControlLevelScreen';
+import SystemAnalysisScreen from '../features/onboarding/screens/SystemAnalysisScreen';
 import StatRevealScreen from '../features/onboarding/screens/StatRevealScreen';
-import Day90PreviewScreen from '../features/onboarding/screens/Day90PreviewScreen';
-import VulnerableTimeScreen from '../features/onboarding/screens/VulnerableTimeScreen';
 import BenefitExecutionScreen from '../features/onboarding/screens/BenefitExecutionScreen';
 import BenefitMissionsScreen from '../features/onboarding/screens/BenefitMissionsScreen';
 import BenefitRanksScreen from '../features/onboarding/screens/BenefitRanksScreen';
@@ -31,8 +31,8 @@ import NotificationPreFrameScreen from '../features/onboarding/screens/Notificat
 import AccountPromptScreen from '../features/onboarding/screens/AccountPromptScreen';
 import OnboardingAuthScreen from '../features/onboarding/screens/OnboardingAuthScreen';
 import CommitmentScreen from '../features/onboarding/screens/CommitmentScreen';
+import ScheduleSessionScreen from '../features/onboarding/screens/ScheduleSessionScreen';
 import SocialProofScreen from '../features/onboarding/screens/SocialProofScreen';
-import TrialPreviewScreen from '../features/onboarding/screens/TrialPreviewScreen';
 import PaywallScreen from '../features/onboarding/screens/PaywallScreen';
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
@@ -40,6 +40,8 @@ const Stack = createNativeStackNavigator<OnboardingStackParamList>();
 /**
  * Determine the initial route for the onboarding navigator.
  * If the user previously left mid-onboarding, resume from their last screen.
+ * Routes from the legacy 24-step flow that no longer exist will fail the
+ * `ONBOARDING_SCREEN_ORDER` check, falling back to Definition.
  */
 function getInitialRoute(currentScreen: string | null): keyof OnboardingStackParamList {
   if (
@@ -71,30 +73,36 @@ const OnboardingNavigator: React.FC = () => {
       }}
     >
       <Stack.Screen name="Definition" component={DefinitionScreen} />
-      <Stack.Screen name="PhoneTimeQuiz" component={PhoneTimeQuizScreen} options={{ animation: 'none' }} />
-      <Stack.Screen name="LossAversionStat" component={LossAversionStatScreen} options={{ animation: 'none' }} />
-      <Stack.Screen name="Reclaim" component={ReclaimScreen} options={{ animation: 'fade' }} />
-      <Stack.Screen name="AgeQuiz" component={AgeQuizScreen} options={{ animation: 'none' }} />
-      <Stack.Screen name="GoalQuiz" component={GoalQuizScreen} options={{ animation: 'none' }} />
-      <Stack.Screen name="ControlQuiz" component={ControlQuizScreen} options={{ animation: 'none' }} />
-      <Stack.Screen name="DailyTimeCommitment" component={DailyTimeCommitmentScreen} options={{ animation: 'none' }} />
-      <Stack.Screen name="ControlLevel" component={ControlLevelScreen} options={{ animation: 'none' }} />
-      <Stack.Screen name="StatReveal" component={StatRevealScreen} options={{ animation: 'fade' }} />
-      <Stack.Screen name="Day90Preview" component={Day90PreviewScreen} options={{ animation: 'fade' }} />
-      <Stack.Screen name="VulnerableTime" component={VulnerableTimeScreen} options={{ animation: 'none' }} />
-      <Stack.Screen name="BenefitExecution" component={BenefitExecutionScreen} options={{ animation: 'fade' }} />
-      <Stack.Screen name="BenefitMissions" component={BenefitMissionsScreen} options={{ animation: 'fade' }} />
-      <Stack.Screen name="BenefitRanks" component={BenefitRanksScreen} options={{ animation: 'fade' }} />
-      <Stack.Screen name="BenefitGuilds" component={BenefitGuildsScreen} options={{ animation: 'fade' }} />
-      <Stack.Screen name="BenefitReport" component={BenefitReportScreen} options={{ animation: 'fade' }} />
-      <Stack.Screen name="ScreenTimePreFrame" component={ScreenTimePreFrameScreen} options={{ animation: 'none' }} />
-      <Stack.Screen name="NotificationPreFrame" component={NotificationPreFrameScreen} options={{ animation: 'none' }} />
-      <Stack.Screen name="AccountPrompt" component={AccountPromptScreen} options={{ animation: 'fade' }} />
-      <Stack.Screen name="OnboardingAuth" component={OnboardingAuthScreen} options={{ animation: 'slide_from_bottom' }} />
-      <Stack.Screen name="Commitment" component={CommitmentScreen} options={{ animation: 'fade' }} />
-      <Stack.Screen name="SocialProof" component={SocialProofScreen} options={{ animation: 'fade' }} />
-      <Stack.Screen name="TrialPreview" component={TrialPreviewScreen} options={{ animation: 'fade' }} />
-      <Stack.Screen name="Paywall" component={PaywallScreen} options={{ animation: 'fade' }} />
+      <Stack.Screen name="PhoneTimeQuiz" component={PhoneTimeQuizScreen} />
+      <Stack.Screen name="WakeUpCall" component={WakeUpCallScreen} />
+      <Stack.Screen name="AgeQuiz" component={AgeQuizScreen} />
+      <Stack.Screen name="Situation" component={SituationQuizScreen} />
+      <Stack.Screen name="GoalQuiz" component={GoalQuizScreen} />
+      <Stack.Screen name="ControlQuiz" component={ControlQuizScreen} />
+      <Stack.Screen name="Triggers" component={TriggersQuizScreen} />
+      <Stack.Screen name="MorningRoutine" component={MorningRoutineQuizScreen} />
+      <Stack.Screen name="DailyTimeCommitment" component={DailyTimeCommitmentScreen} />
+      <Stack.Screen name="WhyNow" component={WhyNowQuizScreen} />
+      <Stack.Screen name="ControlLevel" component={ControlLevelScreen} />
+      <Stack.Screen name="SystemAnalysis" component={SystemAnalysisScreen} />
+      <Stack.Screen name="StatReveal" component={StatRevealScreen} />
+      <Stack.Screen name="BenefitExecution" component={BenefitExecutionScreen} />
+      <Stack.Screen name="BenefitMissions" component={BenefitMissionsScreen} />
+      <Stack.Screen name="BenefitRanks" component={BenefitRanksScreen} />
+      <Stack.Screen name="BenefitGuilds" component={BenefitGuildsScreen} />
+      <Stack.Screen name="BenefitReport" component={BenefitReportScreen} />
+      <Stack.Screen name="ScreenTimePreFrame" component={ScreenTimePreFrameScreen} />
+      <Stack.Screen name="NotificationPreFrame" component={NotificationPreFrameScreen} />
+      <Stack.Screen name="AccountPrompt" component={AccountPromptScreen} />
+      <Stack.Screen
+        name="OnboardingAuth"
+        component={OnboardingAuthScreen}
+        options={{ animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen name="Commitment" component={CommitmentScreen} />
+      <Stack.Screen name="ScheduleSession" component={ScheduleSessionScreen} />
+      <Stack.Screen name="SocialProof" component={SocialProofScreen} />
+      <Stack.Screen name="Paywall" component={PaywallScreen} />
     </Stack.Navigator>
   );
 };

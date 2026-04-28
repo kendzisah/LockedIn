@@ -51,7 +51,7 @@ const SocialProofScreen: React.FC<Props> = ({ navigation }) => {
       toValue: 0,
       duration: 300,
       useNativeDriver: true,
-    }).start(() => navigation.navigate('TrialPreview'));
+    }).start(() => navigation.navigate('Paywall'));
   };
 
   return (
