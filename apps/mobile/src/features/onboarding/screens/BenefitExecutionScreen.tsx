@@ -27,6 +27,7 @@ const BenefitExecutionScreen: React.FC<Props> = ({ navigation }) => {
   useOnboardingTracking('BenefitExecution');
   return (
     <BenefitTemplate
+      panelLabel="FOCUS SESSIONS"
       step={10}
       headline="FOCUS SESSIONS"
       headlineColor={Colors.primary}

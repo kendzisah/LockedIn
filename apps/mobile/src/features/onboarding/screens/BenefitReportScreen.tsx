@@ -164,6 +164,7 @@ const BenefitReportScreen: React.FC<Props> = ({ navigation }) => {
   useOnboardingTracking('BenefitReport');
   return (
     <BenefitTemplate
+      panelLabel="WEEKLY REPORT"
       step={14}
       headline="WEEKLY REPORTS"
       headlineColor={Colors.warning}

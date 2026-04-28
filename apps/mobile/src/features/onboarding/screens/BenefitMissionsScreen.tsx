@@ -50,6 +50,7 @@ const BenefitMissionsScreen: React.FC<Props> = ({ navigation }) => {
   useOnboardingTracking('BenefitMissions');
   return (
     <BenefitTemplate
+      panelLabel="MISSIONS"
       step={11}
       headline="DAILY MISSIONS"
       headlineColor={Colors.success}

@@ -96,6 +96,7 @@ const BenefitRanksScreen: React.FC<Props> = ({ navigation }) => {
   useOnboardingTracking('BenefitRanks');
   return (
     <BenefitTemplate
+      panelLabel="RANK SYSTEM"
       step={12}
       headline="9 RANKS. 365 DAYS TO THE TOP."
       headlineColor={Colors.textPrimary}

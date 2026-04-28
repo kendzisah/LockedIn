@@ -4,19 +4,23 @@ import {
   Easing,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import ScreenContainer from '../../../design/components/ScreenContainer';
+import PrimaryButton from '../../../design/components/PrimaryButton';
+import HUDPanel from '../../home/components/HUDPanel';
 import { Colors } from '../../../design/colors';
 import { FontFamily } from '../../../design/typography';
+import { SystemTokens } from '../../home/systemTokens';
 
 export interface BenefitTemplateProps {
   /** Step number (kept on the API for callers — currently unused since the
    *  progress bar is mounted at the navigator level. */
   step: number;
-  /** Headline (renders InterTight ExtraBold 28px). */
+  /** Monospace `// LABEL` shown above the graphic panel. */
+  panelLabel?: string;
+  /** Headline (renders InterTight Bold 26px). */
   headline: string;
   /** Color of the headline (per benefit theme). */
   headlineColor: string;
@@ -24,7 +28,7 @@ export interface BenefitTemplateProps {
   body: string;
   /** Optional small callout below body (e.g. "+35 XP per session"). */
   callout?: string;
-  /** Color for the callout text (defaults to Colors.accent). */
+  /** Color for the callout text (defaults to SystemTokens.cyan). */
   calloutColor?: string;
   /** Mockup graphic rendered above the headline. */
   graphic: React.ReactNode;
@@ -33,16 +37,17 @@ export interface BenefitTemplateProps {
 }
 
 /**
- * Shared layout for benefit screens 10–14: graphic mockup at top,
- * themed headline, body copy, optional callout, then "Continue" CTA.
+ * Shared HUD layout for benefit screens 10–14: graphic mockup wrapped
+ * in an HUDPanel with corner brackets + `// LABEL` header, themed
+ * headline below, body copy, optional callout, then HUD action button.
  */
 const BenefitTemplate: React.FC<BenefitTemplateProps> = ({
-  step,
+  panelLabel,
   headline,
   headlineColor,
   body,
   callout,
-  calloutColor = Colors.accent,
+  calloutColor = SystemTokens.cyan,
   graphic,
   onContinue,
 }) => {
@@ -108,19 +113,19 @@ const BenefitTemplate: React.FC<BenefitTemplateProps> = ({
     <Animated.View style={{ flex: 1, opacity: screenOpacity }}>
       <ScreenContainer centered={false}>
         <View style={styles.body}>
-          <View style={styles.graphicSlot}>
-            <Animated.View
-              style={[
-                styles.graphicWrap,
-                {
-                  opacity: graphicOpacity,
-                  transform: [{ translateY: graphicTranslate }],
-                },
-              ]}
-            >
-              {graphic}
-            </Animated.View>
-          </View>
+          <Animated.View
+            style={[
+              styles.graphicSlot,
+              {
+                opacity: graphicOpacity,
+                transform: [{ translateY: graphicTranslate }],
+              },
+            ]}
+          >
+            <HUDPanel headerLabel={panelLabel ?? 'SYSTEM'} accentColor={headlineColor}>
+              <View style={styles.graphicInner}>{graphic}</View>
+            </HUDPanel>
+          </Animated.View>
 
           <Animated.View
             style={[
@@ -144,13 +149,7 @@ const BenefitTemplate: React.FC<BenefitTemplateProps> = ({
         </View>
 
         <View style={styles.footer}>
-          <TouchableOpacity
-            style={styles.cta}
-            onPress={handleContinue}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.ctaText}>Continue</Text>
-          </TouchableOpacity>
+          <PrimaryButton title="CONTINUE" onPress={handleContinue} style={styles.cta} />
         </View>
       </ScreenContainer>
     </Animated.View>
@@ -164,39 +163,38 @@ const styles = StyleSheet.create({
     paddingTop: 24,
   },
   graphicSlot: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  graphicWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
     width: '100%',
   },
+  graphicInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
   textBlock: {
-    paddingTop: 24,
+    paddingTop: 22,
     paddingBottom: 12,
   },
   headline: {
     fontFamily: FontFamily.headingBold,
-    fontSize: 28,
+    fontSize: 26,
     letterSpacing: -0.3,
-    lineHeight: 32,
+    lineHeight: 30,
     textAlign: 'center',
   },
   bodyText: {
-    marginTop: 16,
+    marginTop: 14,
     fontFamily: FontFamily.body,
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 15,
+    lineHeight: 22,
     color: Colors.textPrimary,
     textAlign: 'center',
     paddingHorizontal: 8,
   },
   callout: {
-    marginTop: 16,
+    marginTop: 14,
     fontFamily: FontFamily.headingSemiBold,
-    fontSize: 16,
-    letterSpacing: -0.1,
+    fontSize: 14,
+    letterSpacing: 0.4,
     textAlign: 'center',
   },
   footer: {
@@ -204,24 +202,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   cta: {
-    backgroundColor: 'rgba(58,102,255,0.42)',
-    borderWidth: 1,
-    borderColor: 'rgba(120,160,255,0.55)',
-    borderRadius: 28,
-    paddingVertical: 16,
-    minHeight: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#3A66FF',
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  ctaText: {
-    fontFamily: FontFamily.headingSemiBold,
-    fontSize: 17,
-    letterSpacing: -0.1,
-    color: Colors.textPrimary,
+    width: '100%',
   },
 });
 

@@ -14,10 +14,12 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigationState } from '@react-navigation/native';
 import { Colors } from '../../../design/colors';
+import { FontFamily } from '../../../design/typography';
+import { SystemTokens } from '../../home/systemTokens';
 import {
   SCREEN_STEP_MAP,
   TOTAL_STEPS,
@@ -31,8 +33,9 @@ const HIDDEN_ROUTES: ReadonlySet<OnboardingScreenName> = new Set([
   'Paywall',
 ]);
 
-const BAR_HEIGHT = 3;
-const VISIBLE_HEIGHT = 12; // 8 top + 3 bar + 1 bottom
+const BAR_HEIGHT = 2;
+const LABEL_HEIGHT = 14;
+const VISIBLE_HEIGHT = 8 + LABEL_HEIGHT + 4 + BAR_HEIGHT + 1; // top + label + gap + bar + bottom
 const TRANSITION_MS = 450;
 
 const OnboardingProgressBar: React.FC = () => {
@@ -77,7 +80,10 @@ const OnboardingProgressBar: React.FC = () => {
       {/* Outer wrapper animates height (JS-driven layout) */}
       <Animated.View style={[styles.container, { height: heightAnim }]}>
         {/* Inner wrapper animates opacity (native-driven, isolated node) */}
-        <Animated.View style={{ opacity: opacityAnim, flex: 1, justifyContent: 'center' }}>
+        <Animated.View style={{ opacity: opacityAnim, flex: 1 }}>
+          <Text style={styles.stepLabel}>
+            // STEP {String(step).padStart(2, '0')} / {TOTAL_STEPS}
+          </Text>
           <View style={styles.track}>
             <Animated.View
               style={[
@@ -89,7 +95,9 @@ const OnboardingProgressBar: React.FC = () => {
                   }),
                 },
               ]}
-            />
+            >
+              <View style={styles.fillTip} />
+            </Animated.View>
           </View>
         </Animated.View>
       </Animated.View>
@@ -105,19 +113,32 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     overflow: 'hidden',
   },
+  stepLabel: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 10,
+    letterSpacing: 2.4,
+    color: SystemTokens.textMuted,
+    height: LABEL_HEIGHT,
+    marginBottom: 4,
+  },
   track: {
     height: BAR_HEIGHT,
-    borderRadius: BAR_HEIGHT / 2,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: SystemTokens.barTrack,
     overflow: 'hidden',
   },
   fill: {
     height: '100%',
-    borderRadius: BAR_HEIGHT / 2,
-    backgroundColor: Colors.primary,
-    shadowColor: Colors.primary,
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
+    backgroundColor: SystemTokens.glowAccent,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  fillTip: {
+    width: 2,
+    height: '100%',
+    backgroundColor: SystemTokens.cyan,
+    shadowColor: SystemTokens.cyan,
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
     shadowOffset: { width: 0, height: 0 },
   },
 });

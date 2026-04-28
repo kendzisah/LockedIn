@@ -67,6 +67,7 @@ const BenefitGuildsScreen: React.FC<Props> = ({ navigation }) => {
   useOnboardingTracking('BenefitGuilds');
   return (
     <BenefitTemplate
+      panelLabel="GUILDS"
       step={13}
       headline="GUILDS"
       headlineColor="#A855F7"

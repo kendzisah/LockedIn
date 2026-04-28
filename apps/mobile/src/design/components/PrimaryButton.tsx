@@ -1,16 +1,19 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, ViewStyle } from 'react-native';
-import { Colors } from '../colors';
-import { Typography } from '../typography';
+import { FontFamily } from '../typography';
 
 interface PrimaryButtonProps {
   title: string;
   onPress: () => void;
   disabled?: boolean;
   style?: ViewStyle;
-  /** Use muted/secondary styling */
+  /** Ghost (outline) variant — used for "back" / "skip" / "maybe later" actions. */
   secondary?: boolean;
 }
+
+const HUD_PRIMARY = '#3A66FF';
+const HUD_BG = 'rgba(58,102,255,0.18)';
+const HUD_BORDER = 'rgba(58,102,255,0.45)';
 
 const PrimaryButton: React.FC<PrimaryButtonProps> = ({
   title,
@@ -28,14 +31,13 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = ({
         style,
       ]}
       onPress={onPress}
-      activeOpacity={0.8}
+      activeOpacity={0.85}
       disabled={disabled}
     >
       <Text
         style={[
           styles.text,
           secondary && styles.secondaryText,
-          disabled && styles.disabledText,
         ]}
       >
         {title}
@@ -46,29 +48,33 @@ const PrimaryButton: React.FC<PrimaryButtonProps> = ({
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 16,
+    backgroundColor: HUD_BG,
+    borderWidth: 1,
+    borderColor: HUD_BORDER,
+    paddingVertical: 14,
     paddingHorizontal: 48,
-    borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   secondary: {
     backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: Colors.surface,
+    borderWidth: 0,
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(255,255,255,0.06)',
+    paddingVertical: 12,
   },
   disabled: {
-    backgroundColor: Colors.disabled,
+    opacity: 0.35,
   },
   text: {
-    ...Typography.button,
-    color: Colors.textPrimary,
+    fontFamily: FontFamily.headingBold,
+    fontSize: 13,
+    letterSpacing: 1.6,
+    color: HUD_PRIMARY,
   },
   secondaryText: {
-    color: Colors.textSecondary,
-  },
-  disabledText: {
-    color: Colors.textMuted,
+    color: '#9CA3AF',
+    letterSpacing: 1.2,
   },
 });
 
