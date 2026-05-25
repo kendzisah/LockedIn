@@ -17,6 +17,7 @@ import {
   type StorageAdapter,
 } from '@lockedin/supabase-client';
 import { ENV } from '../config/env';
+import { Analytics } from './AnalyticsService';
 
 const HAS_LAUNCHED_KEY = '@lockedin/has_launched';
 
@@ -73,8 +74,17 @@ async function initialize(): Promise<boolean> {
     initialized = true;
     console.log('[SupabaseService] Authenticated anonymously:', currentUserId);
     return true;
-  } catch (error) {
+  } catch (error: any) {
     console.warn('[SupabaseService] Init failed (app will run in timer-only mode):', error);
+    Analytics.captureException(error, {
+      error_type: 'supabase_init',
+      error_code: error?.code,
+    });
+    Analytics.track('supabase_init_failed', {
+      error_type: 'supabase_init',
+      error_code: error?.code,
+      error_message: error?.message,
+    });
     // Don't set initialized = true — allow retry on next call
     client = null;
     return false;

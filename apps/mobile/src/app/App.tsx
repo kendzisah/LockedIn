@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AppState, type AppStateStatus, Platform, View, StyleSheet } from 'react-native';
+import { AppState, type AppStateStatus, Platform, View, Text, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
@@ -30,8 +30,8 @@ import { rootNavigationRef } from '../navigation/rootNavigationRef';
 import { GuildService } from '../features/leaderboard/GuildService';
 import { runStorageMigrations } from '../services/StorageMigrations';
 import { AppsFlyerService } from '../services/AppsFlyerService';
-import { MixpanelService } from '../services/MixpanelService';
-import { Analytics } from '../services/AnalyticsService';
+import { PostHogService } from '../services/PostHogService';
+import { Analytics, installGlobalErrorHandlers } from '../services/AnalyticsService';
 import { recordEarlyOpen } from '../features/missions/MissionsProvider';
 import Purchases from 'react-native-purchases';
 import { ENV } from '../config/env';
@@ -40,6 +40,48 @@ const LAST_OPEN_KEY = '@lockedin/last_app_open';
 
 // Keep splash screen visible while fonts + auth load
 SplashScreen.preventAutoHideAsync();
+
+/**
+ * Minimal app-wide error boundary. Forwards caught render errors to PostHog
+ * via Analytics.captureException, then renders a static fallback view.
+ *
+ * `posthog-react-native` does not currently export a built-in
+ * `PostHogErrorBoundary` component (verified against installed version),
+ * so we wire one up locally rather than pulling in a Sentry-style dep.
+ */
+type ErrorBoundaryState = { hasError: boolean };
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  ErrorBoundaryState
+> {
+  state: ErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    try {
+      Analytics.captureException(error, {
+        error_type: 'react_render',
+        component_stack: info.componentStack ?? '',
+      });
+    } catch {
+      /* never let the error handler crash itself */
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={styles.errorFallback}>
+          <Text style={styles.errorFallbackText}>Something went wrong</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 /**
  * Bridges onboarding + session state into MissionsProvider props so the 3-slot
@@ -88,7 +130,8 @@ const App: React.FC = () => {
           timeToWaitForATTUserAuthorization: 10,
         });
 
-        await MixpanelService.initialize();
+        await PostHogService.initialize();
+        installGlobalErrorHandlers();
         await SupabaseService.initialize();
 
         // One-shot AsyncStorage key migrations (e.g. crew_* → guild_*).
@@ -243,22 +286,24 @@ const App: React.FC = () => {
 
   return (
     <View style={styles.root}>
-      <SafeAreaProvider>
-        <AuthProvider>
-          <OnboardingProvider>
-            <SubscriptionProvider>
-              <SessionProvider>
-                <MissionsBridge>
-                  <NavigationContainer ref={rootNavigationRef}>
-                    <StatusBar style="light" />
-                    <RootNavigator />
-                  </NavigationContainer>
-                </MissionsBridge>
-              </SessionProvider>
-            </SubscriptionProvider>
-          </OnboardingProvider>
-        </AuthProvider>
-      </SafeAreaProvider>
+      <AppErrorBoundary>
+        <SafeAreaProvider>
+          <AuthProvider>
+            <OnboardingProvider>
+              <SubscriptionProvider>
+                <SessionProvider>
+                  <MissionsBridge>
+                    <NavigationContainer ref={rootNavigationRef}>
+                      <StatusBar style="light" />
+                      <RootNavigator />
+                    </NavigationContainer>
+                  </MissionsBridge>
+                </SessionProvider>
+              </SubscriptionProvider>
+            </OnboardingProvider>
+          </AuthProvider>
+        </SafeAreaProvider>
+      </AppErrorBoundary>
     </View>
   );
 };
@@ -271,6 +316,19 @@ const styles = StyleSheet.create({
   bootPlaceholder: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  errorFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+    paddingHorizontal: 24,
+  },
+  errorFallbackText: {
+    color: Colors.textPrimary,
+    fontFamily: 'InterTight_600SemiBold',
+    fontSize: 17,
+    textAlign: 'center',
   },
 });
 

@@ -268,7 +268,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     state.weekCompletedDays,
   ]);
 
-  // ── Mixpanel: super properties (auto-attached to every event) ──
+  // ── Analytics: super properties (auto-attached to every event) ──
   useEffect(() => {
     if (!isHydrated) return;
     Analytics.setStreakDays(state.consecutiveStreak);
@@ -278,7 +278,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, [isHydrated, state.maxCompletedDay, state.consecutiveStreak, state.lifetimeTotalMinutes]);
 
-  // ── Mixpanel: streak broken detection ──
+  // ── Analytics: streak broken detection ──
   const prevStreak = useRef(state.consecutiveStreak);
   useEffect(() => {
     if (!isHydrated) return;
@@ -291,7 +291,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     prevStreak.current = state.consecutiveStreak;
   }, [isHydrated, state.consecutiveStreak, state.maxCompletedDay]);
 
-  // ── Mixpanel: execution block completion ──
+  // ── Analytics: execution block completion ──
   const prevExecBlocks = useRef(state.lifetimeExecutionBlocks);
   const prevExecMinutes = useRef(state.lifetimeExecutionMinutes);
   useEffect(() => {

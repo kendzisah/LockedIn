@@ -1,0 +1,20 @@
+# Secrets — never commit real keys.
+Config/Secrets.xcconfig
+
+# Generated Xcode project (regenerate with `xcodegen generate`).
+*.xcodeproj/
+*.xcworkspace/
+
+# Build artifacts.
+DerivedData/
+build/
+.build/
+Index.noindex/
+
+# SPM
+.swiftpm/
+
+# Misc
+.DS_Store
+*.xcuserdatad/
+xcuserdata/
