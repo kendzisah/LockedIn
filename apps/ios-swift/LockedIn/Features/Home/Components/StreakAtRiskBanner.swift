@@ -1,10 +1,11 @@
 import SwiftUI
 import DesignKit
 
-/// StreakAtRiskBanner — Glassmorphic warning banner. Tap routes the user
-/// into a 15-minute focus session via the duration picker.
+/// StreakAtRiskBanner — Glassmorphic warning banner shown when the streak is
+/// one missed day from breaking. Tap opens the lock-in flow so the user can
+/// meet today's goal and keep the streak alive.
 ///
-/// Ported 1:1 from `apps/mobile/src/features/home/components/StreakAtRiskBanner.tsx`.
+/// Ported from `apps/mobile/src/features/home/components/StreakAtRiskBanner.tsx`.
 struct StreakAtRiskBanner: View {
     let onPress: () -> Void
 
@@ -24,7 +25,7 @@ struct StreakAtRiskBanner: View {
                     Text("Your streak is at risk!")
                         .font(.custom(FontFamily.headingSemiBold.rawValue, size: 14))
                         .foregroundColor(AppColors.danger)
-                    Text("Complete a 15-min focus session to save it")
+                    Text("Lock in today to keep it alive")
                         .font(.custom(FontFamily.body.rawValue, size: 12))
                         .foregroundColor(AppColors.textMuted)
                 }

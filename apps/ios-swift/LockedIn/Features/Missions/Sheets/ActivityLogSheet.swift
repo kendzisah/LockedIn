@@ -163,6 +163,11 @@ struct ActivityLogSheet: View {
         isSubmitting = true
         HapticsService.shared.success()
         StatsService.bumpCounter(.totalMissionsCompleted, delta: 1)
+        // Unified per-stat XP: manual activity log treats the entry as an
+        // execution act. We don't get tag context from `MissionTemplate`
+        // here, so only EXE +15 fires; tag-specific bonuses are reserved
+        // for the daily mission completion path.
+        StatsService.bumpStatXp(.execution, delta: 15)
         XPService.award(.mission)
         AnalyticsService.shared.track(MissionsRoute.AnalyticsEvent.dailyActivityLogged, properties: [
             // MissionTemplate has no `id` field; title is the natural identifier.

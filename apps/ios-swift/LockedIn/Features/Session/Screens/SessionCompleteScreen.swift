@@ -225,11 +225,22 @@ public struct SessionCompleteScreen: View {
 
 // MARK: - Rank tier helper
 
-/// Mirrors `RankService.rankFromStreak` for the streak celebration color.
+/// Streak-day → rank-tier mapping used only by the session-complete
+/// celebration color. Hardcoded because the post-XP rank table no longer
+/// stores streak thresholds — this is a UX-affordance heuristic that
+/// reaches for the "color most users would associate with this streak".
 private func rankTier(forStreak streak: Int) -> RankTier {
-    var current = RankTiers.all[0]
-    for tier in RankTiers.all where streak >= tier.minDays {
-        current = tier
+    let id: RankId
+    switch streak {
+    case 365...:    id = .lockedIn
+    case 180..<365: id = .goat
+    case 90..<180:  id = .legend
+    case 60..<90:   id = .phantom
+    case 30..<60:   id = .elite
+    case 14..<30:   id = .chosen
+    case 7..<14:    id = .rising
+    case 3..<7:     id = .grinder
+    default:        id = .npc
     }
-    return current
+    return RankTiers.byId[id] ?? RankTiers.all[0]
 }

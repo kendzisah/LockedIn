@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import DesignKit
+import WidgetKit
 
 // MARK: - Storage keys
 
@@ -237,6 +238,10 @@ public final class MissionsState {
         }
 
         lastMissionSeasonHydrated = MissionXPSeason.currentSeasonNumber()
+
+        // Push initial next-mission title into the App Group so widgets
+        // installed before the user opens the missions tab still render.
+        publishNextMissionToWidget()
     }
 
     // MARK: - Mutators
@@ -291,8 +296,76 @@ public final class MissionsState {
         persistDaily(missions: updated, date: date, profile: profile)
         persistCumulativeXP(totalXP)
 
+        // Legacy counter fan-out (kept populated for admin queries; the
+        // letter-tier UI no longer reads these directly after the unified
+        // per-stat XP migration).
+        StatsService.bumpCounter(.totalMissionsCompleted, delta: 1)
+        if let tags = mission.stats {
+            if tags.contains(.discipline) {
+                StatsService.bumpCounter(.totalDistractionsResisted, delta: 1)
+            }
+            if tags.contains(.social) {
+                StatsService.bumpCounter(.guildCheckIns, delta: 1)
+            }
+        }
+
+        // ── Unified per-stat XP fan-out ──
+        //
+        // Every mission earns EXE XP (it's an act of execution regardless
+        // of theme), plus a per-tag bonus on the stat the mission is
+        // specifically themed around. All multiplied by the streak XP
+        // modifier — consistency is rewarded by accelerating earn rate
+        // (caps at 1.5× at 180+ day streaks).
+        let streakBonusedXp: (Int) -> Int = { base in
+            RankHelpers.applyStreakMultiplier(baseXp: base, streak: self.streak)
+        }
+        StatsService.bumpStatXp(.execution, delta: streakBonusedXp(15))
+        if let tags = mission.stats {
+            if tags.contains(.discipline) {
+                StatsService.bumpStatXp(.discipline, delta: streakBonusedXp(30))
+            }
+            if tags.contains(.social) {
+                StatsService.bumpStatXp(.social, delta: streakBonusedXp(30))
+            }
+            if tags.contains(.consistency) {
+                StatsService.bumpStatXp(.consistency, delta: streakBonusedXp(20))
+            }
+            // .focus tag intentionally doesn't fan-out — FOC XP is earned
+            // exclusively from lock-in minutes (with the 180/day cap) so
+            // mission completion can't shortcut around the cap.
+        }
+
+        // Server XP fan-out (was missing — local-only XP previously)
+        XPService.award(.mission)
+        if isPerfectDay {
+            XPService.award(.perfectDay)
+            StatsService.bumpCounter(.totalPerfectDays, delta: 1)
+            // Perfect-day bonus: extra EXE (+50) and CON (+30) on top of
+            // the per-mission XP above. The trigger is "all 3 missions
+            // complete on a day the daily focus goal was already met".
+            // Streak multiplier applies — perfect-day-on-a-streak is the
+            // peak earning moment.
+            StatsService.bumpStatXp(.execution, delta: streakBonusedXp(50))
+            StatsService.bumpStatXp(.consistency, delta: streakBonusedXp(30))
+        }
+
+        // Evaluate achievement unlocks now that counters have advanced.
+        // `AchievementService.evaluate` internally refreshes server stats
+        // before checking predicates, so a threshold-crossing mission
+        // unlocks on **this** completion (not the next one).
+        AchievementService.evaluate(AchievementContext(
+            consecutiveStreak: streak,
+            lifetimeRunsCompleted: 0,
+            lifetimeTotalMinutes: 0,
+            dailyGoalMet: isPerfectDay
+        ))
+
         // Forward to coordinator (W11 owns the `complete-mission` edge function call).
         onMissionCompleted?(mission)
+
+        // The "Next: …" mission title may have changed (or cleared on a
+        // perfect day) — push to widgets.
+        publishNextMissionToWidget()
     }
 
     /// `UPDATE_DAILY_PROGRESS` — advance progress on a daily mission without
@@ -323,6 +396,7 @@ public final class MissionsState {
         userGoal = goal
         applyGenerated(missions: newMissions, date: today)
         persistDaily(missions: newMissions, date: today, profile: profile)
+        publishNextMissionToWidget()
     }
 
     /// Regenerate today's 3 missions. Used after settings updates.
@@ -363,6 +437,7 @@ public final class MissionsState {
             persistWeekly(missions: newWeekly, weekKey: currentWeekKey, profile: profile)
         }
         persistDaily(missions: newMissions, date: today, profile: profile)
+        publishNextMissionToWidget()
     }
 
     /// `RESET_DAY` — empty today's missions (does NOT regenerate). Mirrors RN.
@@ -372,6 +447,7 @@ public final class MissionsState {
         completedCount = 0
         dailyXP = 0
         lockedInToday = false
+        publishNextMissionToWidget()
     }
 
     /// `FULL_LOGOUT_RESET` — wipe runtime state. Persistence is cleared
@@ -386,11 +462,62 @@ public final class MissionsState {
         totalXP = 0
         lockedInToday = false
         completedToast = nil
+        publishNextMissionToWidget()
     }
 
     /// Clear the toast after the overlay finishes.
     public func dismissCompletedToast() {
         completedToast = nil
+    }
+
+    // MARK: - Widget snapshot bridge
+
+    /// First incomplete daily mission title — drives the "Next mission" row
+    /// in the Today widget. nil when every daily mission is complete (the
+    /// widget falls back to "All missions complete").
+    public var nextMissionTitle: String? {
+        missions.first(where: { !$0.completed })?.title
+    }
+
+    /// Re-publish the App Group `WidgetSnapshot` with the latest mission
+    /// progress, daily XP, and `nextMissionTitle`. Reads the current snapshot
+    /// to preserve all HomeState-owned fields (streak, daily focus, lifetime).
+    ///
+    /// No-ops when no prior snapshot exists; HomeState will publish on its
+    /// next persist() and we'll catch up on the following mutation.
+    public func publishNextMissionToWidget() {
+        guard let prev = WidgetDataPublisher.shared.loadSnapshot() else { return }
+        let newTitle = nextMissionTitle
+        let newCompleted = completedCount
+        // Use the actual mission count when we have one; fall back to 3 so a
+        // pre-hydrate snapshot still renders a sensible HUD denominator.
+        let newTotal = missions.isEmpty ? 3 : missions.count
+        let newXp = dailyXP
+
+        // Skip the write when nothing changed — saves a WidgetCenter reload.
+        if prev.nextMissionTitle == newTitle
+            && prev.todayMissionsCompleted == newCompleted
+            && prev.todayMissionsTotal == newTotal
+            && prev.todayXpEarned == newXp {
+            return
+        }
+
+        let snapshot = WidgetSnapshot(
+            consecutiveStreak: prev.consecutiveStreak,
+            dailyFocusedMinutes: prev.dailyFocusedMinutes,
+            dailyGoalMinutes: prev.dailyGoalMinutes,
+            dailyGoalMet: prev.dailyGoalMet,
+            lifetimeLongestStreak: prev.lifetimeLongestStreak,
+            currentSessionEndsAtMs: prev.currentSessionEndsAtMs,
+            rankTierId: prev.rankTierId,
+            nextMissionTitle: newTitle,
+            todayMissionsCompleted: newCompleted,
+            todayMissionsTotal: newTotal,
+            todayXpEarned: newXp,
+            lifetimeFocusedMinutes: prev.lifetimeFocusedMinutes,
+            publishedAtMs: Date().timeIntervalSince1970 * 1000.0
+        )
+        WidgetDataPublisher.shared.publish(snapshot)
     }
 
     // MARK: - Auto-complete on session-end

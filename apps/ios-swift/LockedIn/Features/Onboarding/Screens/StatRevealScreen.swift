@@ -2,8 +2,10 @@ import SwiftUI
 import DesignKit
 
 /// StatRevealScreen — Step 14: character-creation moment.
-/// OVR=1, all five stats=1, plus build summary inside HUD panels.
-/// Button is gated behind a 2s absorption delay.
+///
+/// **Letter-tier rewrite (Wave 1, Agent 3):** OVR = `F-`, all five stats =
+/// `F-` (counters at zero). Pre/post-onboarding stat representation now
+/// matches the profile tab's `SystemStatsCard` letter-tier UI.
 ///
 /// Port of `screens/StatRevealScreen.tsx`.
 struct StatRevealScreen: View {
@@ -15,14 +17,14 @@ struct StatRevealScreen: View {
     @State private var panelOpacity: Double = 0
     @State private var panelOffset: CGFloat = 20
     @State private var buttonOpacity: Double = 0
-    @State private var barFills: [Double] = Array(repeating: 0, count: 5)
+    @State private var letterOpacity: [Double] = Array(repeating: 0, count: 5)
     @State private var isAdvancing = false
 
-    /// Day-zero rank — mirrors `RankHelpers.rankFromStreak(0)` (NPC).
-    private var startingRank: RankTier { RankHelpers.rankFromStreak(0) }
+    /// Zero-XP rank — mirrors `RankHelpers.rankFromXp(0)` (NPC).
+    private var startingRank: RankTier { RankHelpers.rankFromXp(0) }
     /// Next rank ladder rung above NPC.
     private var nextRank: RankTier? {
-        RankHelpers.nextRank(streak: 0)
+        RankHelpers.nextRankByXp(0)
     }
 
     private var commitmentLabel: String {
@@ -86,11 +88,11 @@ struct StatRevealScreen: View {
                     panelOpacity = 1
                     panelOffset = 0
                 }
-                // Stagger stat-bar fills.
+                // Stagger letter-tier reveals.
                 for idx in 0..<OnboardingData.statRevealRows.count {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4 + Double(idx) * 0.1) {
                         withAnimation(.easeOut(duration: 0.5)) {
-                            barFills[idx] = Double(OnboardingData.startingStat) / Double(OnboardingData.maxStat)
+                            letterOpacity[idx] = 1
                         }
                     }
                 }
@@ -103,24 +105,28 @@ struct StatRevealScreen: View {
         .onDisappear { tracker.didDisappear() }
     }
 
+    /// Starting tier — counter = 0 across all axes ⇒ `F-`.
+    private var startingTier: StatTier { .fMinus }
+
     private var statusPanel: some View {
         OnboardingHUDPanel(headerLabel: "STATUS") {
             HStack(spacing: 16) {
                 ZStack {
                     Rectangle()
-                        .fill(Color(.sRGB, red: 58/255, green: 102/255, blue: 255/255, opacity: 0.04))
+                        .fill(startingTier.color.opacity(0.05))
                         .overlay(
-                            Rectangle().stroke(SystemTokens.glowAccent.opacity(0.3), lineWidth: 1)
+                            Rectangle().stroke(startingTier.color.opacity(0.3), lineWidth: 1)
                         )
-                    VStack(spacing: 0) {
+                    VStack(spacing: 2) {
                         Text("OVR")
-                            .font(.custom(FontFamily.mono.rawValue, size: 10))
+                            .font(.custom(FontFamily.display.rawValue, size: 10))
                             .tracking(1.6)
-                            .foregroundColor(SystemTokens.textMuted)
-                        CountUpNumber(value: 1, duration: 0.9, startDelay: 0.2)
-                            .font(.custom(FontFamily.heading.rawValue, size: 56))
-                            .foregroundColor(AppColors.textPrimary)
-                            .shadow(color: SystemTokens.glowAccent, radius: 10)
+                            .foregroundColor(AppColors.textMuted)
+                        Text(startingTier.rawValue)
+                            .font(.custom(FontFamily.headingBold.rawValue, size: 44))
+                            .monospacedDigit()
+                            .foregroundColor(startingTier.color)
+                            .shadow(color: startingTier.color.opacity(0.6), radius: 10)
                     }
                 }
                 .frame(width: 96, height: 96)
@@ -129,42 +135,61 @@ struct StatRevealScreen: View {
                     Text(startingRank.name.uppercased())
                         .font(.custom(FontFamily.heading.rawValue, size: 22))
                         .foregroundColor(startingRank.color)
-                    Text("Day 0")
-                        .font(.custom(FontFamily.mono.rawValue, size: 11))
-                        .tracking(1.4)
-                        .foregroundColor(SystemTokens.textMuted)
+                    Text("Day 0 — Your character starts at F-.")
+                        .font(.custom(FontFamily.body.rawValue, size: 11))
+                        .foregroundColor(AppColors.textMuted)
+                        .lineLimit(2)
+                    Text("Complete missions and sessions to rank up.")
+                        .font(.custom(FontFamily.body.rawValue, size: 10))
+                        .foregroundColor(AppColors.textMuted)
+                        .lineLimit(2)
                 }
-                Spacer()
+                Spacer(minLength: 0)
             }
         }
     }
 
     private var statsPanel: some View {
         OnboardingHUDPanel(headerLabel: "STATS") {
-            VStack(spacing: 4) {
+            VStack(spacing: 6) {
                 ForEach(Array(OnboardingData.statRevealRows.enumerated()), id: \.element.id) { idx, row in
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         Text(row.abbr)
-                            .font(.custom(FontFamily.mono.rawValue, size: 11))
-                            .tracking(1.5)
-                            .foregroundColor(SystemTokens.textSecondary)
-                            .frame(width: 32, alignment: .leading)
-                        GeometryReader { proxy in
-                            ZStack(alignment: .leading) {
-                                Rectangle().fill(Color.white.opacity(0.05))
-                                Rectangle().fill(row.color)
-                                    .frame(width: proxy.size.width * barFills[idx])
-                            }
-                        }
-                        .frame(height: 6)
-                        Text(String(OnboardingData.startingStat))
-                            .font(.custom(FontFamily.headingSemiBold.rawValue, size: 13))
-                            .foregroundColor(AppColors.textPrimary)
-                            .frame(width: 24, alignment: .trailing)
+                            .font(.custom(FontFamily.display.rawValue, size: 10))
+                            .tracking(1.6)
+                            .foregroundColor(AppColors.textMuted)
+                            .frame(width: 36, alignment: .leading)
+                        Text(startingTier.rawValue)
+                            .font(.custom(FontFamily.headingBold.rawValue, size: 22))
+                            .monospacedDigit()
+                            .foregroundColor(startingTier.color)
+                            .frame(width: 44, alignment: .leading)
+                        Spacer()
+                        // Show the next-tier target per the actual axis (FOC/SOC
+                        // have different first-rung thresholds than DIS/EXE/CON).
+                        Text(StatTierTable.progressLabel(counter: 0, kind: counterKind(for: row.abbr)))
+                            .font(.custom(FontFamily.body.rawValue, size: 12))
+                            .monospacedDigit()
+                            .foregroundColor(AppColors.textSecondary)
                     }
                     .padding(.vertical, 4)
+                    .opacity(letterOpacity[idx])
                 }
             }
+        }
+    }
+
+    /// Maps the stat row abbreviation to the matching `StatCounterKind` so
+    /// `StatTierTable.progressLabel` can render the right "0/N to F" copy per
+    /// axis (e.g. FOC's first rung is 30, SOC's is 2 — not all stats have F at 1).
+    private func counterKind(for abbr: String) -> StatCounterKind {
+        switch abbr {
+        case "DIS": return .discipline
+        case "FOC": return .focus
+        case "EXE": return .execution
+        case "CON": return .consistency
+        case "SOC": return .social
+        default:    return .execution
         }
     }
 
@@ -193,7 +218,7 @@ struct StatRevealScreen: View {
                         Text((nextRank?.name ?? "MAX").uppercased())
                             .font(.custom(FontFamily.bodyMedium.rawValue, size: 12))
                             .foregroundColor(nextRank?.color ?? AppColors.textPrimary)
-                        Text(" (Day \(nextRank?.minDays ?? 0))")
+                        Text(" (\(nextRank?.minXp.formatted(.number.notation(.compactName)) ?? "0") XP)")
                             .font(.custom(FontFamily.body.rawValue, size: 12))
                             .foregroundColor(SystemTokens.textMuted)
                     }

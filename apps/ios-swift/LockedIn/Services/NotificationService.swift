@@ -71,6 +71,7 @@ public final class NotificationService {
         public static let closeToGoal           = "lockedin.close_to_goal"
         public static let missionReminder       = "lockedin.mission_reminder"
         public static let firstSessionReminder  = "lockedin.first_session_reminder"
+        public static let guildMonthEnd         = "lockedin.guild_month_end"
     }
 
     // MARK: - Authorization
@@ -219,6 +220,48 @@ public final class NotificationService {
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 24 * 60 * 60, repeats: false)
         let request = UNNotificationRequest(identifier: ID.firstGuildNudge, content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request) { _ in }
+    }
+
+    /// Arm the month-end guild reminder: a one-shot local notification on the
+    /// last day of the month at 10:00 local, nudging the user to check where
+    /// they landed before the leaderboard resets. No-op (and cancels any
+    /// pending one) when the user isn't in a guild.
+    ///
+    /// "Last day of month" can't be expressed by a repeating calendar trigger
+    /// (28/29/30/31 varies), so this schedules a single dated trigger and is
+    /// re-armed on every app launch / foreground — which also rolls it forward
+    /// to the next month after it fires.
+    public func scheduleGuildMonthEndReminder(hasActiveGuild: Bool) {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [ID.guildMonthEnd])
+        guard hasActiveGuild, let fireDate = Self.nextMonthEndReminderDate() else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Rankings lock tonight"
+        content.body = "Final day of the month — your guild standings reset at midnight. Make your last push and lock in your spot on the board."
+        content.sound = .default
+
+        let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+        let request = UNNotificationRequest(identifier: ID.guildMonthEnd, content: content, trigger: trigger)
+        center.add(request) { _ in }
+    }
+
+    /// The next "last day of month at `hour`:00 local" that is still in the
+    /// future — this month's if it hasn't passed, otherwise next month's.
+    static func nextMonthEndReminderDate(now: Date = Date(), hour: Int = 10) -> Date? {
+        let cal = Calendar.current
+        func lastDay(of date: Date) -> Date? {
+            guard let range = cal.range(of: .day, in: .month, for: date) else { return nil }
+            var comps = cal.dateComponents([.year, .month], from: date)
+            comps.day = range.upperBound - 1
+            comps.hour = hour
+            comps.minute = 0
+            return cal.date(from: comps)
+        }
+        if let thisMonth = lastDay(of: now), thisMonth > now { return thisMonth }
+        guard let nextMonth = cal.date(byAdding: .month, value: 1, to: now) else { return nil }
+        return lastDay(of: nextMonth)
     }
 
     /// Refresh the rolling daily-notification schedule based on stored state.

@@ -37,9 +37,28 @@ public struct GuildDetailScreen: View {
     // MARK: - Confirmation state
 
     @State private var showMoreSheet: Bool = false
-    @State private var pendingDelete: Bool = false
-    @State private var pendingLeave: Bool = false
+    @State private var moreSheetStage: MoreSheetStage = .options
     @State private var pendingKick: (userId: String, username: String)? = nil
+
+    /// Drives the HUD-themed options sheet — `.options` is the initial menu;
+    /// the destructive branches swap the panel content in-place rather than
+    /// stacking a second modal on top, so the user never sees a system alert
+    /// that breaks the HUD vocabulary.
+    fileprivate enum MoreSheetStage {
+        case options
+        case confirmDelete
+        case confirmLeave
+    }
+
+    /// Alert payload shown when `runDeleteOrLeave(.leave)` fails. Identifiable
+    /// so `.alert(item:)` can route on identity rather than a parallel Bool
+    /// flag.
+    private struct LeaveFailedAlert: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
+    @State private var leaveFailedAlert: LeaveFailedAlert?
 
     private var details: GuildService.GuildDetails? {
         state.detailsByGuild[guildId]
@@ -48,12 +67,19 @@ public struct GuildDetailScreen: View {
         state.leaderboardByGuild[guildId] ?? []
     }
     private var isOwner: Bool {
-        guard let details, let currentUserId else { return false }
-        return details.owner_id == currentUserId
+        guard let currentUserId else { return false }
+        if let details {
+            return details.owner_id == currentUserId
+        }
+        // Fall back to `myGuilds` cache when the detail fetch hasn't landed
+        // yet — otherwise an owner who opens the detail screen would briefly
+        // see "Leave Guild" instead of "Delete Guild" and tapping Leave would
+        // round-trip to the server only to hit `LeaveResult.ownerCannotLeave`.
+        return state.myGuilds.first(where: { $0.guild_id == guildId })?.owner_id == currentUserId
     }
-    private var currentWeekKey: String { GuildService.currentWeekKey() }
-    private var selectedWeekKey: String { state.weekKey(forOffset: state.weekOffset) }
-    private var isCurrentWeek: Bool { state.weekOffset == 0 }
+    private var currentMonthKey: String { GuildService.currentMonthKey() }
+    private var selectedMonthKey: String { state.monthKey(forOffset: state.monthOffset) }
+    private var isCurrentMonth: Bool { state.monthOffset == 0 }
 
     public var body: some View {
         ZStack(alignment: .top) {
@@ -79,7 +105,7 @@ public struct GuildDetailScreen: View {
                     Spacer()
                 } else {
                     header
-                    weekSelector
+                    monthSelector
                     listOrEmpty
                     inviteFooter
                 }
@@ -88,8 +114,8 @@ public struct GuildDetailScreen: View {
         .task(id: guildId) {
             await state.loadDetail(guildId: guildId)
         }
-        .task(id: state.weekOffset) {
-            // Re-fetch leaderboard when week offset changes.
+        .task(id: state.monthOffset) {
+            // Re-fetch leaderboard when month offset changes.
             await state.loadDetail(guildId: guildId, silent: true)
         }
         .refreshable {
@@ -98,49 +124,29 @@ public struct GuildDetailScreen: View {
         .onChange(of: leaderboard.isEmpty) { _, _ in
             emitLeaderboardViewed()
         }
-        .confirmationDialog(
-            details?.name ?? "Options",
-            isPresented: $showMoreSheet,
-            titleVisibility: .visible
-        ) {
-            Button("Share Invite Code") { handleShareInvite() }
-            if isOwner {
-                Button("Delete Guild", role: .destructive) {
-                    pendingDelete = true
-                }
-            } else {
-                Button("Leave Guild", role: .destructive) {
-                    pendingLeave = true
-                }
-            }
-            Button("Cancel", role: .cancel) {}
+        .fullScreenCover(isPresented: $showMoreSheet) {
+            MoreOptionsHUDSheet(
+                guildName: details?.name ?? "",
+                isOwner: isOwner,
+                stage: $moreSheetStage,
+                onShareInvite: {
+                    handleShareInvite()
+                    dismissMoreSheet()
+                },
+                onConfirm: { stage in
+                    dismissMoreSheet()
+                    switch stage {
+                    case .confirmDelete:
+                        Task { await runDeleteOrLeave(.delete) }
+                    case .confirmLeave:
+                        Task { await runDeleteOrLeave(.leave) }
+                    case .options:
+                        break
+                    }
+                },
+                onCancel: { dismissMoreSheet() }
+            )
         }
-        .alert(
-            "Delete Guild",
-            isPresented: $pendingDelete,
-            actions: {
-                Button("Delete", role: .destructive) {
-                    Task { await runDeleteOrLeave(.delete) }
-                }
-                Button("Cancel", role: .cancel) {}
-            },
-            message: {
-                Text("Are you sure you want to delete \"\(details?.name ?? "")\"? This cannot be undone.")
-            }
-        )
-        .alert(
-            "Leave Guild",
-            isPresented: $pendingLeave,
-            actions: {
-                Button("Leave", role: .destructive) {
-                    Task { await runDeleteOrLeave(.leave) }
-                }
-                Button("Cancel", role: .cancel) {}
-            },
-            message: {
-                Text("Are you sure you want to leave \"\(details?.name ?? "")\"?")
-            }
-        )
         .alert(
             "Remove Member",
             isPresented: Binding(
@@ -161,6 +167,13 @@ public struct GuildDetailScreen: View {
                 Text("Remove \(pendingKick?.username ?? "this member") from this guild? Their scores will be deleted.")
             }
         )
+        .alert(item: $leaveFailedAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK"))
+            )
+        }
     }
 
     // MARK: - Header
@@ -200,7 +213,12 @@ public struct GuildDetailScreen: View {
             }
             .frame(maxWidth: .infinity)
 
-            Button(action: { showMoreSheet = true }) {
+            Button(action: {
+                // Always re-open at the options stage; the destructive
+                // confirmation screens are reached by tapping into them.
+                moreSheetStage = .options
+                showMoreSheet = true
+            }) {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(AppColors.textSecondary)
@@ -219,11 +237,11 @@ public struct GuildDetailScreen: View {
         .padding(.bottom, 16)
     }
 
-    // MARK: - Week selector
+    // MARK: - Month selector
 
-    private var weekSelector: some View {
+    private var monthSelector: some View {
         HStack {
-            Button(action: { state.weekOffset -= 1 }) {
+            Button(action: { state.monthOffset -= 1 }) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(AppColors.textSecondary)
@@ -234,10 +252,10 @@ public struct GuildDetailScreen: View {
             Spacer()
 
             HStack(spacing: 8) {
-                Text(weekLabel(selectedWeekKey, currentWeekKey: currentWeekKey))
+                Text(monthLabel(selectedMonthKey, currentMonthKey: currentMonthKey))
                     .font(.custom(FontFamily.bodyMedium.rawValue, size: 14))
                     .foregroundColor(AppColors.textPrimary)
-                if isCurrentWeek {
+                if isCurrentMonth {
                     Circle()
                         .fill(AppColors.success)
                         .frame(width: 6, height: 6)
@@ -246,14 +264,14 @@ public struct GuildDetailScreen: View {
 
             Spacer()
 
-            Button(action: { state.weekOffset = min(state.weekOffset + 1, 0) }) {
+            Button(action: { state.monthOffset = min(state.monthOffset + 1, 0) }) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(isCurrentWeek ? AppColors.surface : AppColors.textSecondary)
+                    .foregroundColor(isCurrentMonth ? AppColors.surface : AppColors.textSecondary)
                     .padding(4)
             }
             .buttonStyle(PressOpacityButtonStyle())
-            .disabled(isCurrentWeek)
+            .disabled(isCurrentMonth)
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 14)
@@ -352,13 +370,37 @@ public struct GuildDetailScreen: View {
                 onLeft()
             }
         case .leave:
-            let ok = await state.leaveGuild(guildId: guildId)
-            if ok {
+            let result = await state.leaveGuild(guildId: guildId)
+            switch result {
+            case .success:
                 AnalyticsService.shared.track("Guild Left", properties: [
                     "guild_id": guildId,
                     "was_owner": false,
                 ])
                 onLeft()
+            case .ownerCannotLeave:
+                leaveFailedAlert = LeaveFailedAlert(
+                    title: "You're the guild owner",
+                    message: "Owners can't leave — use Delete Guild to dissolve it instead."
+                )
+                AnalyticsService.shared.track("Guild Leave Failed", properties: [
+                    "guild_id": guildId,
+                    "reason": "owner_cannot_leave",
+                ])
+            case .notMember:
+                // Already left somehow (membership row missing). Pop the
+                // screen anyway so the user isn't stuck on a detail view for
+                // a guild they aren't in.
+                onLeft()
+            case .networkError(let msg):
+                leaveFailedAlert = LeaveFailedAlert(
+                    title: "Couldn't leave guild",
+                    message: msg.isEmpty ? "Please check your connection and try again." : msg
+                )
+                AnalyticsService.shared.track("Guild Leave Failed", properties: [
+                    "guild_id": guildId,
+                    "reason": "network",
+                ])
             }
         }
     }
@@ -369,6 +411,14 @@ public struct GuildDetailScreen: View {
         // share button, but RN keeps both to match Apple's HIG.
         // TODO(post-launch): wire a programmatic UIActivityViewController
         // here for parity with the RN HIG behaviour.
+    }
+
+    private func dismissMoreSheet() {
+        showMoreSheet = false
+        // Reset to options for the next open. fullScreenCover dismisses
+        // before this state mutation matters, so the user never sees a
+        // confirmation flash back to options.
+        moreSheetStage = .options
     }
 
     private func emitLeaderboardViewed() {
@@ -384,31 +434,250 @@ public struct GuildDetailScreen: View {
         }
     }
 
-    // MARK: - Week label
+    // MARK: - Month label
 
-    private func weekLabel(_ weekKey: String, currentWeekKey: String) -> String {
-        if weekKey == currentWeekKey { return "This Week" }
-        // Parse `YYYY-Www`.
-        let parts = weekKey.split(separator: "-")
+    private func monthLabel(_ monthKey: String, currentMonthKey: String) -> String {
+        if monthKey == currentMonthKey { return "This Month" }
+        // Parse `YYYY-MM`.
+        let parts = monthKey.split(separator: "-")
         guard parts.count == 2,
               let year = Int(parts[0]),
-              parts[1].hasPrefix("W"),
-              let week = Int(parts[1].dropFirst())
-        else { return weekKey }
+              let month = Int(parts[1])
+        else { return monthKey }
 
         var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = .current
-        // Anchor: Jan 4 always falls in ISO week 1.
-        guard let jan4 = cal.date(from: DateComponents(year: year, month: 1, day: 4)) else { return weekKey }
-        let weekday = cal.component(.weekday, from: jan4) // 1 = Sun
-        // Shift to that week's Monday.
-        let mondayOffset = (weekday == 1 ? -6 : 2 - weekday)
-        guard let startOfWeek1 = cal.date(byAdding: .day, value: mondayOffset, to: jan4) else { return weekKey }
-        guard let startOfWeek = cal.date(byAdding: .day, value: (week - 1) * 7, to: startOfWeek1) else { return weekKey }
-        guard let endOfWeek = cal.date(byAdding: .day, value: 6, to: startOfWeek) else { return weekKey }
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        guard let date = cal.date(from: DateComponents(year: year, month: month, day: 1)) else { return monthKey }
 
         let f = DateFormatter()
-        f.dateFormat = "MMM d"
-        return "\(f.string(from: startOfWeek)) – \(f.string(from: endOfWeek))"
+        f.calendar = cal
+        f.timeZone = cal.timeZone
+        // "May 2026" — drop the year for months in the current year.
+        let currentYear = Calendar(identifier: .gregorian).component(.year, from: Date())
+        f.dateFormat = (year == currentYear) ? "MMMM" : "MMMM yyyy"
+        return f.string(from: date)
+    }
+}
+
+// MARK: - HUD-themed options sheet
+
+/// Single HUD-styled overlay that hosts both the initial options list and
+/// the destructive confirmation steps. Mirrors the DurationPickerSheet
+/// presentation pattern — black 0.75 backdrop, HUD panel with corner
+/// brackets, "// LABEL" eyebrow, sharp 4pt corners.
+///
+/// Stays mounted across stage transitions so SwiftUI animates the inner
+/// content swap instead of dismissing and re-presenting a fullScreenCover
+/// (which would visibly flash on every confirm tap).
+private struct MoreOptionsHUDSheet: View {
+    let guildName: String
+    let isOwner: Bool
+    @Binding var stage: GuildDetailScreen.MoreSheetStage
+    let onShareInvite: () -> Void
+    let onConfirm: (GuildDetailScreen.MoreSheetStage) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.75)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { onCancel() }
+
+            card
+                .padding(.horizontal, 24)
+        }
+        .background(Color.clear)
+    }
+
+    private var card: some View {
+        ZStack {
+            Rectangle()
+                .fill(SystemTokens.panelBg)
+                .overlay(
+                    Rectangle()
+                        .stroke(SystemTokens.panelBorder, lineWidth: 1)
+                )
+
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                content
+                    .padding(.top, 16)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
+            .padding(.bottom, 16)
+
+            HUDCornerBrackets(color: SystemTokens.bracketColor, pulses: false)
+                .allowsHitTesting(false)
+        }
+        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: false, vertical: true)
+        .animation(.easeInOut(duration: 0.18), value: stage)
+    }
+
+    // MARK: - Header strip
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(eyebrowLabel)
+                .sectionLabel()
+            LinearGradient(
+                colors: [SystemTokens.bracketColor, .clear],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(height: 1)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 6)
+            Text(guildName.isEmpty ? " " : guildName.uppercased())
+                .font(.custom(FontFamily.headingBold.rawValue, size: 10))
+                .tracking(1.6)
+                .foregroundColor(SystemTokens.textMuted)
+                .lineLimit(1)
+                .padding(.top, 2)
+        }
+    }
+
+    private var eyebrowLabel: String {
+        switch stage {
+        case .options:       return "// OPTIONS"
+        case .confirmDelete: return "// CONFIRM DELETE"
+        case .confirmLeave:  return "// CONFIRM LEAVE"
+        }
+    }
+
+    // MARK: - Stage content
+
+    @ViewBuilder
+    private var content: some View {
+        switch stage {
+        case .options:
+            optionsView
+        case .confirmDelete:
+            confirmView(
+                body: "Delete \"\(guildName)\"? This dissolves the guild for every member. This cannot be undone.",
+                actionLabel: "Delete",
+                onAct: { onConfirm(.confirmDelete) }
+            )
+        case .confirmLeave:
+            confirmView(
+                body: "Leave \"\(guildName)\"? Your scores stay on the board but you'll need a new invite code to rejoin.",
+                actionLabel: "Leave",
+                onAct: { onConfirm(.confirmLeave) }
+            )
+        }
+    }
+
+    private var optionsView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            actionRow(
+                label: "SHARE INVITE CODE",
+                style: .neutral,
+                action: onShareInvite
+            )
+            if isOwner {
+                actionRow(
+                    label: "DELETE GUILD",
+                    style: .destructive,
+                    action: { stage = .confirmDelete }
+                )
+            } else {
+                actionRow(
+                    label: "LEAVE GUILD",
+                    style: .destructive,
+                    action: { stage = .confirmLeave }
+                )
+            }
+            cancelRow
+        }
+    }
+
+    private func confirmView(
+        body: String,
+        actionLabel: String,
+        onAct: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(body)
+                .font(.custom(FontFamily.body.rawValue, size: 14))
+                .foregroundColor(AppColors.textSecondary)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            actionRow(
+                label: actionLabel.uppercased(),
+                style: .destructive,
+                action: onAct
+            )
+            actionRow(
+                label: "BACK",
+                style: .neutral,
+                action: { stage = .options }
+            )
+        }
+    }
+
+    // MARK: - Row primitives
+
+    private enum RowStyle { case neutral, destructive }
+
+    private func actionRow(label: String, style: RowStyle, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            ZStack(alignment: .leading) {
+                Rectangle()
+                    .fill(Color.white.opacity(0.02))
+                    .overlay(
+                        Rectangle()
+                            .stroke(rowBorderColor(style), lineWidth: 1)
+                    )
+                Rectangle()
+                    .fill(rowAccentColor(style))
+                    .frame(width: 2)
+                Text(label)
+                    .font(.custom(FontFamily.headingBold.rawValue, size: 12))
+                    .tracking(1.4)
+                    .foregroundColor(rowTextColor(style))
+                    .padding(.leading, 14)
+                    .padding(.vertical, 14)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressOpacityButtonStyle())
+    }
+
+    private var cancelRow: some View {
+        Button(action: onCancel) {
+            Text("Cancel")
+                .font(.custom(FontFamily.bodyMedium.rawValue, size: 13))
+                .foregroundColor(SystemTokens.textMuted)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressOpacityButtonStyle())
+    }
+
+    private func rowAccentColor(_ s: RowStyle) -> Color {
+        switch s {
+        case .neutral:     return AppColors.primary
+        case .destructive: return AppColors.danger
+        }
+    }
+
+    private func rowBorderColor(_ s: RowStyle) -> Color {
+        switch s {
+        case .neutral:     return Color.white.opacity(0.06)
+        case .destructive: return AppColors.danger.opacity(0.35)
+        }
+    }
+
+    private func rowTextColor(_ s: RowStyle) -> Color {
+        switch s {
+        case .neutral:     return AppColors.textPrimary
+        case .destructive: return AppColors.danger
+        }
     }
 }

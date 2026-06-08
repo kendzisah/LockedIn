@@ -39,20 +39,49 @@ struct CommitmentScreen: View {
                 .frame(maxHeight: .infinity, alignment: .center)
 
                 Button(action: handleCommit) {
-                    Text("I'M READY TO WORK")
-                        .font(.custom(FontFamily.heading.rawValue, size: 18))
-                        .tracking(0.5)
-                        .foregroundColor(AppColors.textPrimary)
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                        .padding(.vertical, 18)
-                        .background(Color(.sRGB, red: 58/255, green: 102/255, blue: 255/255, opacity: 0.42))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 28)
-                                .stroke(Color(.sRGB, red: 120/255, green: 160/255, blue: 255/255, opacity: 0.55), lineWidth: 1)
+                    ZStack {
+                        // HUD panel surface — sharp 4pt corners, dark
+                        // glass fill, Discipline-Blue rim. Matches the
+                        // DurationPickerSheet / system-status HUD chrome.
+                        Rectangle()
+                            .fill(SystemTokens.panelBg)
+                            .overlay(
+                                Rectangle()
+                                    .stroke(SystemTokens.panelBorder, lineWidth: 1)
+                            )
+
+                        // Left-edge accent strip — the HUD vocabulary's
+                        // "this is the action" signal.
+                        HStack(spacing: 0) {
+                            Rectangle()
+                                .fill(SystemTokens.bracketColor)
+                                .frame(width: 2)
+                            Spacer(minLength: 0)
+                        }
+
+                        HStack(spacing: 10) {
+                            Text("▸")
+                                .font(.custom(FontFamily.display.rawValue, size: 10))
+                                .foregroundColor(SystemTokens.bracketColor)
+                            Text("INITIATE PROTOCOL")
+                                .font(.custom(FontFamily.display.rawValue, size: 12))
+                                .tracking(2.0)
+                                .foregroundColor(AppColors.textPrimary)
+                        }
+
+                        HUDCornerBrackets(
+                            length: 10,
+                            thickness: 1.5,
+                            color: SystemTokens.bracketColor,
+                            pulses: false
                         )
-                        .clipShape(RoundedRectangle(cornerRadius: 28))
-                        .shadow(color: AppColors.primary.opacity(pulseGlow), radius: 24)
+                        .allowsHitTesting(false)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .shadow(color: AppColors.primary.opacity(pulseGlow * 0.55), radius: 14)
                 }
+                .buttonStyle(PressOpacityButtonStyle())
                 .opacity(ctaOpacity)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)

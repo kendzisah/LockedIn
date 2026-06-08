@@ -53,6 +53,8 @@ public struct ProfileTabScreen: View {
     @State private var blockedAppCount: Int = 0
     @State private var loadingAppPicker: Bool = false
     @State private var showFamilyControlsDeniedAlert: Bool = false
+    @State private var earnedAchievements: Set<String> = []
+    @State private var detailAchievementId: String?
 
     // MARK: - Init
 
@@ -83,7 +85,21 @@ public struct ProfileTabScreen: View {
                     playerPanel
                     identityPanel
                     SystemStatsCard(stats: stats, rank: rank)
-                    AchievementsRow()
+                    AchievementsRow(
+                        earnedCount: earnedAchievements.count,
+                        totalCount: AchievementCatalog.all.count,
+                        entries: AchievementCatalog.all.map { def in
+                            AchievementsRow.Entry(
+                                id: def.id,
+                                name: def.name,
+                                earned: earnedAchievements.contains(def.id),
+                                categoryColor: def.category.color
+                            )
+                        },
+                        onSelect: { entry in
+                            detailAchievementId = entry.id
+                        }
+                    )
                     RecordsPanel(stats: stats)
                     planSection
                     notificationsSection
@@ -100,7 +116,16 @@ public struct ProfileTabScreen: View {
         .task {
             await settings.refresh()
             await reloadProfile()
+            await reloadAchievements()
             blockedAppCount = LockModeService.shared.getSelectedAppCount()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .achievementsUnlocked)) { note in
+            // Optimistically merge the newly-unlocked ids into our local set
+            // so the badges flip to "earned" the instant the unlock toast
+            // appears — no need to wait for the next server fetch.
+            if let ids = note.userInfo?["ids"] as? [String] {
+                earnedAchievements.formUnion(ids)
+            }
         }
         .onAppear {
             // Refresh permission status when the user returns from OS Settings.
@@ -128,8 +153,13 @@ public struct ProfileTabScreen: View {
         .fullScreenCover(isPresented: $showSignIn) {
             SignInScreen(
                 goToSignUp: {
+                    // SwiftUI can't present a new fullScreenCover while
+                    // another is still dismissing — defer the swap until
+                    // the dismissal animation has completed.
                     showSignIn = false
-                    showSignUp = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        showSignUp = true
+                    }
                 },
                 continueAsGuest: { showSignIn = false },
                 onSignedIn: { showSignIn = false }
@@ -140,12 +170,16 @@ public struct ProfileTabScreen: View {
             SignUpScreen(
                 goToSignIn: {
                     showSignUp = false
-                    showSignIn = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        showSignIn = true
+                    }
                 },
                 continueAsGuest: { showSignUp = false },
                 onSignedUp: {
                     showSignUp = false
-                    showEditProfile = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        showEditProfile = true
+                    }
                 }
             )
             .environment(auth)
@@ -153,6 +187,16 @@ public struct ProfileTabScreen: View {
         .fullScreenCover(isPresented: $showPaywallOffer) {
             PaywallOfferScreen()
                 .environment(subscription)
+        }
+        .fullScreenCover(item: Binding<AchievementDefinition?>(
+            get: { detailAchievementId.flatMap { AchievementCatalog.byId[$0] } },
+            set: { if $0 == nil { detailAchievementId = nil } }
+        )) { def in
+            AchievementDetailSheet(
+                definition: def,
+                earned: earnedAchievements.contains(def.id),
+                onClose: { detailAchievementId = nil }
+            )
         }
         // Confirmation alerts
         .alert("Sign Out?", isPresented: $showSignOutConfirm) {
@@ -609,6 +653,7 @@ public struct ProfileTabScreen: View {
     private func reloadProfile() async {
         guard auth.isAuthenticated, let uid = auth.user?.id.uuidString else {
             settings.reloadProfile(displayName: nil, avatarURL: nil)
+            stats = nil
             return
         }
         let client = LockedInSupabase.shared.client
@@ -628,6 +673,29 @@ public struct ProfileTabScreen: View {
             print("[ProfileTabScreen] reloadProfile failed:", error)
             #endif
         }
+        // Pull `user_stats` so the letter-tier UI has real counter values.
+        // Falls back to baseline (all F-) on failure — `SystemStatsCard`
+        // handles `stats == nil` gracefully.
+        do {
+            if let row = try await HomeService.shared.refreshStats(userId: uid) {
+                stats = UserStatsLite(from: row)
+            }
+        } catch {
+            #if DEBUG
+            print("[ProfileTabScreen] refreshStats failed:", error)
+            #endif
+        }
+    }
+
+    /// Pull the user's earned achievement ids from `user_achievements`.
+    /// Run alongside `reloadProfile()` and re-run on focus so badges stay
+    /// in sync if an unlock fired on another device.
+    private func reloadAchievements() async {
+        guard auth.isAuthenticated else {
+            earnedAchievements = []
+            return
+        }
+        earnedAchievements = await AchievementService.fetchEarnedIds()
     }
 }
 

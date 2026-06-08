@@ -238,66 +238,7 @@ working ExecutionBlock screen.
 
 ---
 
-## 4. iOS Focus Filter integration
-
-**Summary.** Two flavors:
-- **Filter:** when the user is in Apple's "Work" Focus, LockedIn
-  auto-hides social surfaces (guild, leaderboard) and only shows
-  missions + lock-in.
-- **Register-as-Focus:** LockedIn defines its own Focus mode. The user
-  can schedule "Lock In Focus" weekdays 9am–5pm, and during those
-  windows the app's shield is automatically applied.
-
-**Why LockedIn.** The "register-as-Focus" half is the most native
-expression of the product. Apple effectively shipped half your value
-proposition as an OS feature; LockedIn plugs into it instead of
-duplicating it. This becomes a strategic moat against competitors that
-can't (because they're cross-platform RN apps).
-
-**Technical surface.**
-- Framework: `AppIntents` Focus filter support (iOS 16+).
-- Code lives in: the same `AppIntentsKit` package as #3.
-- Filter type: `SetFocusFilterIntent`.
-- A new extension target `LockedInFocusFilter` is required for the
-  register-as-Focus half (iOS surfaces filters via a separate process
-  for performance).
-
-**Implementation outline.**
-1. **Phase 4a — Filter (smaller):**
-   - Define `LockedInFocusFilter: SetFocusFilterIntent` with parameters
-     for `showGuild`, `showLeaderboard`, `forceLockMode`.
-   - The main app reads
-     `INSendMessageIntent.suggestedInvocationPhrase`-equivalent for
-     focus state and adjusts UI.
-2. **Phase 4b — Register-as-Focus (bigger):**
-   - Create a new extension target conforming to the focus filter
-     framework. Wire it to apply / clear ManagedSettings shields
-     when the user toggles the "Lock In Focus" on/off via Control
-     Center or Settings → Focus.
-
-**Acceptance criteria.**
-- After enabling "Work" Focus, the LockedIn tab bar hides the Guild
-  and Leaderboard tabs.
-- Disabling the Focus restores the full UI within 1s.
-- A user can create a custom "Lock In Focus" in iOS Settings that
-  includes LockedIn-specific filter settings.
-- For Phase 4b: enabling the "Lock In Focus" applies the configured
-  app shield without opening LockedIn.
-
-**Effort.** Phase 4a: ~3 days. Phase 4b: ~2 weeks (extension target,
-manual provisioning, Family Controls re-approval for the new bundle
-ID).
-
-**Dependencies.** Requires `AppIntentsKit` from #3.
-
-**Risks.**
-- Register-as-Focus is rarely-shipped territory. Apple's docs are
-  sparse and the entitlement story is fuzzy. May require a DTS ticket
-  to clarify provisioning requirements.
-
----
-
-## 5. Apple Watch companion
+## 4. Apple Watch companion (DO NOT DO THIS ONE. This is Shelved)
 
 **Summary.** A watchOS app that mirrors the lock-in core: start a
 session from the wrist, see streak on a complication, get a haptic when

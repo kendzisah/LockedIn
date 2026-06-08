@@ -48,11 +48,13 @@ struct SystemStatusBar: View {
 
     var body: some View {
         let streakDays = home.consecutiveStreak
-        let currentRank = RankHelpers.rankFromStreak(streakDays)
-        let nextRank = RankHelpers.nextRank(streak: streakDays)
-        let progress = RankHelpers.progressToNext(streak: streakDays)
-        let ovr = stats?.ovr ?? 1
-        let totalXp = stats?.totalXp ?? 0
+        let rankXp = stats?.totalRankXp ?? 0
+        let currentRank = RankHelpers.rankFromXp(rankXp)
+        let nextRank = RankHelpers.nextRankByXp(rankXp)
+        let progress = RankHelpers.progressToNextByXp(rankXp)
+        let xpToNext = RankHelpers.xpToNext(rankXp)
+        let ovrTier = stats?.ovrTier ?? .fMinus
+        let totalXp = rankXp
 
         let todayKey = SessionDayEngine.todayKey()
         let weekKeys = SessionDayEngine.currentWeekDayKeys()
@@ -65,7 +67,7 @@ struct SystemStatusBar: View {
             onPress: onTapStatus
         ) {
             VStack(alignment: .leading, spacing: 0) {
-                identityRow(currentRank: currentRank, nextRank: nextRank, progress: progress, ovr: ovr, streakDays: streakDays)
+                identityRow(currentRank: currentRank, nextRank: nextRank, progress: progress, xpToNext: xpToNext, ovrTier: ovrTier, streakDays: streakDays)
 
                 sectionLabel("STATS")
                 statsBlock
@@ -117,7 +119,8 @@ struct SystemStatusBar: View {
         currentRank: RankTier,
         nextRank: RankTier?,
         progress: Double,
-        ovr: Int,
+        xpToNext: Int,
+        ovrTier: StatTier,
         streakDays: Int
     ) -> some View {
         HStack(alignment: .top, spacing: 14) {
@@ -170,11 +173,12 @@ struct SystemStatusBar: View {
                             .font(.custom(FontFamily.headingSemiBold.rawValue, size: 11))
                             .tracking(1.4)
                             .foregroundColor(SystemTokens.textMuted)
-                        Text("\(ovr)")
+                        Text(ovrTier.rawValue)
                             .font(.custom(FontFamily.headingBold.rawValue, size: 22))
                             .tracking(0.6)
-                            .foregroundColor(currentRank.color)
-                            .shadow(color: currentRank.color, radius: CGFloat(ovrGlow * 4 + 6))
+                            .foregroundColor(ovrTier.color)
+                            .shadow(color: ovrTier.color, radius: CGFloat(ovrGlow * 4 + 6))
+                            .monospacedDigit()
                     }
                 }
 
@@ -207,7 +211,7 @@ struct SystemStatusBar: View {
                                 .font(.custom(FontFamily.headingSemiBold.rawValue, size: 10))
                                 .tracking(0.6)
                                 .foregroundColor(nextRank.color)
-                            Text(" · \(max(0, nextRank.minDays - streakDays))D")
+                            Text(" · \(formatThousands(xpToNext)) XP")
                                 .font(.custom(FontFamily.body.rawValue, size: 10))
                                 .tracking(0.6)
                                 .foregroundColor(SystemTokens.textMuted)
@@ -251,16 +255,20 @@ struct SystemStatusBar: View {
     private var statsBlock: some View {
         VStack(spacing: 5) {
             ForEach(Array(Self.statRows.enumerated()), id: \.element) { (idx, stat) in
-                let raw = stats?.value(forStat: stat) ?? 1
-                let color = StatTokens.colors[stat] ?? SystemTokens.glowAccent
+                let counter = stats?.counter(for: stat) ?? 0
+                let kind = UserStatsLite.counterKind(for: stat)
+                let tier = StatTierTable.tier(for: counter, kind: kind)
+                let fraction = StatTierTable.fractionWithinTier(counter: counter, kind: kind)
                 let label = StatTokens.labels[stat] ?? "—"
                 HUDStatBar(
                     label: label,
-                    valueText: "\(raw)",
-                    current: Double(raw),
-                    max: 99,
-                    color: color,
-                    delay: Double(idx) * 0.1
+                    value: tier.rawValue,
+                    progress: fraction,
+                    color: tier.color,
+                    delay: Double(idx) * 0.1,
+                    // Letter tiers vary in width ("F" vs "F-" vs "S+") — leading
+                    // alignment keeps every row's letter starting at the same X.
+                    valueAlignment: .leading
                 )
             }
         }
@@ -386,13 +394,17 @@ struct SystemStatusBar: View {
     }
 
     private func computeCompletedSet(weekKeys: [String]) -> Set<String> {
+        // A day is "completed" only when the daily focus goal was met.
+        // `weekCompletedDays` + `lastSessionDayKey` are both written by
+        // `HomeState.dailyGoalMet()` which only fires once the user crosses
+        // their `OnboardingState.dailyMinutes` target. Do NOT fall back to
+        // `lastLockInCompletedDate` — that is set by every successful lock-in
+        // regardless of duration, so a 1-minute session would falsely mark
+        // the day complete even if the goal was 90 minutes.
         var s = Set<String>()
         let week = Set(weekKeys)
         for dk in home.weekCompletedDays where week.contains(dk) {
             s.insert(dk)
-        }
-        if let last = home.lastLockInCompletedDate, week.contains(last) {
-            s.insert(last)
         }
         if let last = home.lastSessionDayKey, week.contains(last) {
             s.insert(last)

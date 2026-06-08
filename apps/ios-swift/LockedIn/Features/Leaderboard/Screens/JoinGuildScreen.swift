@@ -10,6 +10,15 @@ import DesignKit
 ///
 /// Allowed chars: `A-Z2-9` (server's `generate_invite_code()` skips
 /// `0, O, I, L, 1` — see `supabase/migrations/20260403045935`).
+///
+/// Input pattern: ONE hidden `TextField` with `.textContentType(.oneTimeCode)`
+/// drives the keyboard; six visible `cellDisplay` rectangles render the
+/// characters as the user types. The previous "six TextFields, each tagged
+/// `.oneTimeCode`, each with @FocusState focus-juggling" pattern froze the
+/// main thread on a real device — Apple's autofill subsystem only expects
+/// one OTP field, and the focus cascade on every keystroke compounded the
+/// hang. The single-field pattern is the canonical iOS OTP idiom and
+/// behaves cleanly.
 public struct JoinGuildScreen: View {
     @Bindable var state: GuildState
 
@@ -28,16 +37,20 @@ public struct JoinGuildScreen: View {
 
     private static let codeLength = 6
 
-    @State private var chars: [String] = Array(repeating: "", count: 6)
-    @State private var focusedIdx: Int = 0
+    /// Single source of truth — the full code typed so far. Display cells
+    /// render `chars[i]` against this string's `i`-th character (or empty
+    /// when `i >= code.count`).
+    @State private var code: String = ""
     @State private var isLoading: Bool = false
     @State private var errorMessage: String? = nil
     @State private var successMessage: String? = nil
     @State private var shakeOffset: CGFloat = 0
-    @FocusState private var focusedField: Int?
+    @FocusState private var keyboardFocused: Bool
 
-    private var isFull: Bool { chars.allSatisfy { $0.count == 1 } }
-    private static let validRegex = try! NSRegularExpression(pattern: "^[A-Z2-9]$")
+    private var isFull: Bool { code.count == Self.codeLength }
+    /// Regex applied per-character on input — matches the server's
+    /// `generate_invite_code()` alphabet (skips `0/O/I/L/1`).
+    private static let allowedCharSet: Set<Character> = Set("ABCDEFGHJKMNPQRSTUVWXYZ23456789")
 
     public var body: some View {
         ZStack {
@@ -56,37 +69,10 @@ public struct JoinGuildScreen: View {
                         .lineSpacing(6)
                         .padding(.bottom, 28)
 
-                    HStack(spacing: 10) {
-                        ForEach(0..<Self.codeLength, id: \.self) { idx in
-                            charBox(idx: idx)
-                        }
-                    }
-                    .offset(x: shakeOffset)
-                    .padding(.bottom, 32)
+                    cellRow
+                        .padding(.bottom, 32)
 
-                    Button(action: { Task { await handleJoin() } }) {
-                        ZStack {
-                            if isLoading {
-                                ProgressView()
-                                    .tint(AppColors.textPrimary)
-                            } else {
-                                Text("Join Guild")
-                                    .font(.custom(FontFamily.headingSemiBold.rawValue, size: 16))
-                                    .foregroundColor(AppColors.primary)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .background(Color(.sRGB, red: 58/255, green: 102/255, blue: 255/255, opacity: 0.12))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color(.sRGB, red: 58/255, green: 102/255, blue: 255/255, opacity: 0.25), lineWidth: 1)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .opacity(isFull && !isLoading ? 1 : 0.4)
-                    }
-                    .buttonStyle(PressOpacityButtonStyle())
-                    .disabled(!isFull || isLoading)
+                    joinButton
 
                     if let errorMessage {
                         Text(errorMessage)
@@ -122,9 +108,18 @@ public struct JoinGuildScreen: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 80)
             }
+
+            // Hidden keyboard input — invisible but interactive. Tapping
+            // any visible cell calls `keyboardFocused = true` to surface
+            // the keyboard.
+            hiddenInputField
         }
         .onAppear {
-            focusedField = 0
+            // Defer focus by one runloop tick so the focus change
+            // doesn't fight the push transition animation.
+            DispatchQueue.main.async {
+                keyboardFocused = true
+            }
         }
     }
 
@@ -154,90 +149,122 @@ public struct JoinGuildScreen: View {
         .padding(.bottom, 12)
     }
 
-    // MARK: - Char box
+    // MARK: - Cells
+
+    private var cellRow: some View {
+        HStack(spacing: 10) {
+            ForEach(0..<Self.codeLength, id: \.self) { idx in
+                cellDisplay(idx: idx)
+            }
+        }
+        .offset(x: shakeOffset)
+        .contentShape(Rectangle())
+        .onTapGesture { keyboardFocused = true }
+    }
 
     @ViewBuilder
-    private func charBox(idx: Int) -> some View {
-        let filled = chars[idx].count > 0
-        let focused = focusedField == idx
+    private func cellDisplay(idx: Int) -> some View {
+        let ch = character(at: idx)
+        let filled = ch != nil
+        // The "active" cell is the next empty slot. Visually highlighted
+        // so the user always knows where the next keystroke lands.
+        let active = (idx == code.count) && keyboardFocused
         ZStack {
-            TextField(
-                "",
-                text: Binding(
-                    get: { chars[idx] },
-                    set: { handleChange(text: $0, idx: idx) }
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(
+                    active
+                        ? Color(.sRGB, red: 58/255, green: 102/255, blue: 255/255, opacity: 0.06)
+                        : Color(.sRGB, red: 44/255, green: 52/255, blue: 64/255, opacity: 0.4)
                 )
-            )
-            .multilineTextAlignment(.center)
-            .font(.custom(FontFamily.heading.rawValue, size: 22))
-            .foregroundColor(AppColors.textPrimary)
-            .textInputAutocapitalization(.characters)
-            .autocorrectionDisabled(true)
-            .keyboardType(.asciiCapable)
-            .textContentType(.oneTimeCode)
-            .focused($focusedField, equals: idx)
-            .onSubmit { Task { await handleJoin() } }
-        }
-        .frame(width: 48, height: 56)
-        .background(
-            focused
-                ? Color(.sRGB, red: 58/255, green: 102/255, blue: 255/255, opacity: 0.06)
-                : Color(.sRGB, red: 44/255, green: 52/255, blue: 64/255, opacity: 0.4)
-        )
-        .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(
-                    focused
+                    active
                         ? AppColors.primary
                         : (filled
                             ? Color(.sRGB, red: 58/255, green: 102/255, blue: 255/255, opacity: 0.3)
                             : Color.white.opacity(0.06)),
                     lineWidth: 1.5
                 )
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
 
-    // MARK: - Char handling
-
-    private func handleChange(text raw: String, idx: Int) {
-        let upper = raw.uppercased()
-
-        // Paste-full-code path.
-        if upper.count >= Self.codeLength {
-            let pasted = Array(upper.prefix(Self.codeLength)).map(String.init)
-            if pasted.allSatisfy(Self.isValidChar) {
-                chars = pasted
-                errorMessage = nil
-                focusedField = Self.codeLength - 1
-                return
+            if let ch {
+                Text(String(ch))
+                    .font(.custom(FontFamily.heading.rawValue, size: 22))
+                    .foregroundColor(AppColors.textPrimary)
             }
         }
+        .frame(width: 48, height: 56)
+    }
 
-        let lastChar = String(upper.suffix(1))
-        if !lastChar.isEmpty && !Self.isValidChar(lastChar) {
-            // Invalid char — drop it.
-            chars[idx] = ""
-            return
-        }
+    /// Character at a given cell index, or `nil` for the unfilled slots.
+    private func character(at idx: Int) -> Character? {
+        guard idx < code.count else { return nil }
+        return code[code.index(code.startIndex, offsetBy: idx)]
+    }
 
-        chars[idx] = lastChar
-        errorMessage = nil
+    // MARK: - Hidden input
 
-        if !lastChar.isEmpty && idx < Self.codeLength - 1 {
-            focusedField = idx + 1
-        } else if lastChar.isEmpty && idx > 0 {
-            // Backspace path: move focus back if the cell was already empty.
-            focusedField = idx - 1
+    /// Invisible but focusable TextField that drives the keyboard.
+    /// Sized 1×1 with near-zero opacity so it's reachable by VoiceOver
+    /// and tap-through but invisible. `.textContentType(.oneTimeCode)`
+    /// here (and only here) gives us proper SMS-code autofill.
+    private var hiddenInputField: some View {
+        TextField("", text: Binding(
+            get: { code },
+            set: { newValue in handleInputChange(newValue) }
+        ))
+        .keyboardType(.asciiCapable)
+        .textContentType(.oneTimeCode)
+        .textInputAutocapitalization(.characters)
+        .autocorrectionDisabled(true)
+        .focused($keyboardFocused)
+        .onSubmit { Task { await handleJoin() } }
+        .frame(width: 1, height: 1)
+        .opacity(0.001)
+        .accessibilityLabel("Invite code")
+    }
+
+    private func handleInputChange(_ raw: String) {
+        // Filter to the server's allowed alphabet + uppercase + cap at 6.
+        let filtered = raw
+            .uppercased()
+            .filter { Self.allowedCharSet.contains($0) }
+            .prefix(Self.codeLength)
+        let next = String(filtered)
+        if next != code {
+            code = next
+            errorMessage = nil
         }
     }
 
-    private static func isValidChar(_ s: String) -> Bool {
-        let range = NSRange(s.startIndex..<s.endIndex, in: s)
-        return validRegex.firstMatch(in: s, range: range) != nil
+    // MARK: - Join button
+
+    private var joinButton: some View {
+        Button(action: { Task { await handleJoin() } }) {
+            ZStack {
+                if isLoading {
+                    ProgressView()
+                        .tint(AppColors.textPrimary)
+                } else {
+                    Text("Join Guild")
+                        .font(.custom(FontFamily.headingSemiBold.rawValue, size: 16))
+                        .foregroundColor(AppColors.primary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+            .background(Color(.sRGB, red: 58/255, green: 102/255, blue: 255/255, opacity: 0.12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color(.sRGB, red: 58/255, green: 102/255, blue: 255/255, opacity: 0.25), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .opacity(isFull && !isLoading ? 1 : 0.4)
+        }
+        .buttonStyle(PressOpacityButtonStyle())
+        .disabled(!isFull || isLoading)
     }
 
-    // MARK: - Join
+    // MARK: - Shake / join
 
     private func triggerShake() {
         let baseAnim = Animation.linear(duration: 0.05)
@@ -261,7 +288,6 @@ public struct JoinGuildScreen: View {
         isLoading = true
         errorMessage = nil
 
-        let code = chars.joined()
         let result = await state.joinGuild(code: code)
         isLoading = false
 

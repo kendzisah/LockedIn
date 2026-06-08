@@ -323,55 +323,72 @@ public enum MissionsEngine {
             index: 1
         )
 
-        // ── Slot 3: Weakness ──
-        let validWeaknesses = params.weaknesses.filter { MissionData.weaknessMissions[$0] != nil }
-        var weaknessMission: Mission
+        // ── Slot 3: Stat Rotation (replaces Weakness) ──
+        // Day-of-week determines which stat tag to satisfy:
+        //   Mon→DIS, Tue→FOC, Wed→EXE, Thu→SOC, Fri→CON, Sat→SOC, Sun→DIS
+        // Pull from UniversalMissionPools; dedup against Slot 1 + Slot 2 titles.
+        // The `.weakness` slot enum value is preserved for binary compat with
+        // persisted missions — only the SEMANTIC of slot 3 changed.
+        let weekday = Calendar.current.component(.weekday, from: params.date)
+        // Calendar.weekday: 1=Sun, 2=Mon, 3=Tue, ..., 7=Sat
+        let rotationStat: Stat = {
+            switch weekday {
+            case 2: return .discipline    // Mon
+            case 3: return .focus         // Tue
+            case 4: return .execution     // Wed
+            case 5: return .social        // Thu
+            case 6: return .consistency   // Fri
+            case 7: return .social        // Sat
+            case 1: return .discipline    // Sun
+            default: return .focus
+            }
+        }()
 
-        if validWeaknesses.isEmpty {
-            let fallbackPool = dailyOnly(MissionData.weaknessMissions["I lack daily consistency"] ?? [])
-            let fallbackIndex = hashStr("\(day)_weakness") % max(1, fallbackPool.count)
-            weaknessMission = buildMission(
-                template: fallbackPool[fallbackIndex],
-                slot: .weakness,
-                tier: tier,
-                streak: params.streak,
-                dayOfYear: day,
-                index: 2
-            )
-        } else {
-            let key = validWeaknesses[day.nonNegativeModulo(validWeaknesses.count)]
-            let pool = dailyOnly(MissionData.weaknessMissions[key] ?? [])
-            let initialIndex = hashStr("\(day)_\(key)") % max(1, pool.count)
-            weaknessMission = buildMission(
-                template: pool[initialIndex],
-                slot: .weakness,
-                tier: tier,
-                streak: params.streak,
-                dayOfYear: day,
-                index: 2
-            )
+        // Weakness-aware override: if the user picked a weakness and that weakness pool
+        // has a mission tagged with today's rotation stat, prefer it (preserves user agency).
+        // Otherwise, pull from UniversalMissionPools.pool(for: rotationStat).
+        let weaknessPoolForToday: [MissionTemplate]? = {
+            guard let firstWeakness = params.weaknesses.first(where: { MissionData.weaknessMissions[$0] != nil }) else {
+                return nil
+            }
+            let pool = (MissionData.weaknessMissions[firstWeakness] ?? []).filter {
+                $0.duration != .weekly &&
+                (MissionTypeStats.map[$0.type] ?? []).contains(rotationStat)
+            }
+            return pool.isEmpty ? nil : pool
+        }()
+        let rotationPool: [MissionTemplate] = weaknessPoolForToday ?? UniversalMissionPools.pool(for: rotationStat)
 
-            // Dedup: re-roll if title collides with the goal mission.
-            if weaknessMission.title == goalMission.title {
-                for attempt in 1..<pool.count {
-                    let nextIndex = (initialIndex + attempt) % pool.count
-                    let candidate = buildMission(
-                        template: pool[nextIndex],
-                        slot: .weakness,
-                        tier: tier,
-                        streak: params.streak,
-                        dayOfYear: day,
-                        index: 2
-                    )
-                    if candidate.title != goalMission.title {
-                        weaknessMission = candidate
-                        break
-                    }
+        let rotationIndex = hashStr("\(day)_rotation_\(rotationStat.rawValue)") % max(1, rotationPool.count)
+        var rotationMission = buildMission(
+            template: rotationPool[rotationIndex],
+            slot: .weakness,    // reuse the existing slot enum for binary compat — we just changed its semantic
+            tier: tier,
+            streak: params.streak,
+            dayOfYear: day,
+            index: 2
+        )
+
+        // Dedup: re-roll if title collides with core or goal mission
+        if rotationMission.title == coreMission.title || rotationMission.title == goalMission.title {
+            for attempt in 1..<rotationPool.count {
+                let nextIndex = (rotationIndex + attempt) % rotationPool.count
+                let candidate = buildMission(
+                    template: rotationPool[nextIndex],
+                    slot: .weakness,
+                    tier: tier,
+                    streak: params.streak,
+                    dayOfYear: day,
+                    index: 2
+                )
+                if candidate.title != coreMission.title && candidate.title != goalMission.title {
+                    rotationMission = candidate
+                    break
                 }
             }
         }
 
-        return [coreMission, goalMission, weaknessMission]
+        return [coreMission, goalMission, rotationMission]
     }
 
     /// Legacy compatibility wrapper for callers that only pass a goal.

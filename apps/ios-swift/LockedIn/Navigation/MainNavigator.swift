@@ -49,6 +49,8 @@ public struct MainNavigator: View {
     @StateObject private var stack = MainNavigatorPath()
     @StateObject private var lockIn = LockInCoordinator()
 
+    @Environment(\.scenePhase) private var scenePhase
+
     public init() {}
 
     public var body: some View {
@@ -72,6 +74,30 @@ public struct MainNavigator: View {
             }
             missions.userWeaknesses = onboarding.selectedWeaknesses
             missions.streak = home.consecutiveStreak
+
+            // Mission completions push guild scores too — focus sessions are
+            // handled in `handleSessionFinish`. The cache bump is synchronous
+            // on the MainActor (the hook fires inside `completeMission`), so a
+            // burst of auto-completions during a session each count exactly
+            // once; only the network push is async.
+            missions.onMissionCompleted = { [weak home] _ in
+                let streak = home?.consecutiveStreak ?? 0
+                let stats = GuildService.shared.getMonthlyStats()
+                let nextMissions = stats.missions_done + 1
+                GuildService.shared.updateMonthlyStats(
+                    missionsDone: nextMissions,
+                    streakDays: streak
+                )
+                let focus = stats.focus_minutes
+                Task {
+                    _ = await GuildService.shared.completeMissionServerSide(
+                        focusMinutes: focus,
+                        missionsDone: nextMissions,
+                        streakDays: streak
+                    )
+                }
+            }
+
             // Schedule rolling notifications based on current streak.
             NotificationService.shared.refreshScheduleWithStoredStreak()
 
@@ -89,6 +115,18 @@ public struct MainNavigator: View {
                     )
                 }
             }
+        }
+        .onAppear { resumeActiveExecutionBlockIfNeeded() }
+        .onChange(of: scenePhase) { _, newPhase in
+            // Re-mount the active execution-block screen if the user
+            // foregrounds mid-session (e.g. tapped the Live Activity in the
+            // Dynamic Island while in another app). Without this, the modal
+            // can be missing from the cover stack after re-entry, stranding
+            // the user on the home tab while the shield is still up — there's
+            // no other way back into the timer short of starting a new
+            // session, which would cancel the active one.
+            guard newPhase == .active else { return }
+            resumeActiveExecutionBlockIfNeeded()
         }
         .fullScreenCover(item: $lockIn.activeModal) { modal in
             switch modal {
@@ -111,6 +149,7 @@ public struct MainNavigator: View {
                         durationMinutes: durationMinutes,
                         resumeEndTimestamp: resumeEnd
                     ),
+                    goal: onboarding.primaryGoal,
                     onFinish: { actualMinutes, wasNatural in
                         // Run shared session-side-effects (state writes,
                         // analytics, complete-mission edge function call).
@@ -140,16 +179,22 @@ public struct MainNavigator: View {
         switch route {
         case .signUp:
             SignUpScreen(
-                goToSignIn: { stack.path.removeLast(); stack.path.append(.signIn) },
+                goToSignIn: { swapAuthRoute(to: .signIn) },
                 continueAsGuest: { stack.path.removeLast() },
                 onSignedUp: {
+                    // Pop the SignUp page, then push EditProfile on the
+                    // next runloop tick — two synchronous path mutations
+                    // in one closure leaves NavigationStack mid-animation
+                    // (pop + push) and the screen visibly freezes.
                     stack.path.removeLast()
-                    stack.path.append(.editProfile)
+                    DispatchQueue.main.async {
+                        stack.path.append(.editProfile)
+                    }
                 }
             )
         case .signIn:
             SignInScreen(
-                goToSignUp: { stack.path.removeLast(); stack.path.append(.signUp) },
+                goToSignUp: { swapAuthRoute(to: .signUp) },
                 continueAsGuest: { stack.path.removeLast() },
                 onSignedIn: { stack.path.removeLast() }
             )
@@ -163,7 +208,11 @@ public struct MainNavigator: View {
             GuildDetailScreen(
                 state: guild,
                 guildId: guildId,
-                currentUserId: auth.user?.id.uuidString,
+                // Supabase + Postgres store UUIDs lowercase; `Foundation.UUID
+                // .uuidString` returns uppercase. Lowercasing here keeps
+                // `isOwner`'s string-compare honest — without it the owner
+                // can never see "Delete Guild".
+                currentUserId: auth.user?.id.uuidString.lowercased(),
                 onBack: { stack.path.removeLast() },
                 onLeft: { stack.path.removeLast() }
             )
@@ -186,8 +235,15 @@ public struct MainNavigator: View {
                 state: guild,
                 onBack: { stack.path.removeLast() },
                 onJoined: { guildId in
+                    // Pop the JoinGuild screen first, then push the
+                    // detail on the next runloop tick. Doing both in
+                    // one closure leaves NavigationStack mid-animation
+                    // (pop + push) and the screen visibly freezes —
+                    // same anti-pattern the SignUp/SignIn flows hit.
                     stack.path.removeLast()
-                    stack.path.append(.guildDetail(guildId: guildId))
+                    DispatchQueue.main.async {
+                        stack.path.append(.guildDetail(guildId: guildId))
+                    }
                 }
             )
         case .weeklyReport:
@@ -220,6 +276,18 @@ public struct MainNavigator: View {
         )
     }
 
+    /// Pop the current auth route (SignUp ↔ SignIn) and push the requested
+    /// twin on the next runloop tick. Doing both in one closure leaves
+    /// NavigationStack animating a pop + push simultaneously — the screen
+    /// visibly freezes on tap, which is the "Sign in button does nothing"
+    /// symptom on the Create Account page.
+    private func swapAuthRoute(to route: MainStackRoute) {
+        if !stack.path.isEmpty { stack.path.removeLast() }
+        DispatchQueue.main.async {
+            stack.path.append(route)
+        }
+    }
+
     // MARK: - Session completion fan-out
 
     private func handleSessionFinish(actualMinutes: Int, wasNatural: Bool) {
@@ -239,6 +307,19 @@ public struct MainNavigator: View {
         if metAfter && home.dailyGoalMetDate != todayKey {
             home.dailyGoalMet()
             XPService.award(.perfectDay)
+            StatsService.bumpCounter(.totalStreakDays, delta: 1)   // lifetime "days you hit goal"
+            StatsService.bumpCounter(.totalPerfectDays, delta: 1)  // CON formula uses this with 2× weight
+
+            // Per-stat XP: daily-goal-met awards CON XP, multiplied by the
+            // streak XP modifier. `dailyGoalMet()` has already incremented
+            // `consecutiveStreak` so the bonus reflects the streak the user
+            // is *about to be on* (rewards crossing milestones like day 3,
+            // 7, 30, 60, 90, 180).
+            let conXp = RankHelpers.applyStreakMultiplier(
+                baseXp: 30,
+                streak: home.consecutiveStreak
+            )
+            StatsService.bumpStatXp(.consistency, delta: conXp)
         }
 
         // Forward to missions auto-complete.
@@ -251,13 +332,36 @@ public struct MainNavigator: View {
         missions.checkAutoComplete(data)
         MissionsState.recordActiveDay()
 
-        // Server-side stat bumps.
+        // Server-side legacy counter bumps (kept populated for admin queries).
         StatsService.bumpCounter(.totalFocusMinutes, delta: actualMinutes)
         StatsService.bumpCounter(.totalSessions, delta: 1)
         if wasNatural {
             StatsService.bumpCounter(.totalCompletedSessions, delta: 1)
         }
         StatsService.setStreak(home.consecutiveStreak)
+
+        // ── Unified per-stat XP bumps ──
+        //
+        // FOC: 1 XP per focused minute, with a 180/day cap. The cap is the
+        // anti-abuse mechanism — a 24-hour lock-in yields no more FOC XP than
+        // a 3-hour one. Cap is enforced client-side via HomeState; server
+        // accepts whatever delta we send (it has no cross-day context).
+        let focusXp = home.eligibleFocusXp(for: actualMinutes, todayKey: todayKey)
+        if focusXp > 0 {
+            StatsService.bumpStatXp(.focus, delta: focusXp)
+            home.recordFocusXpAwarded(focusXp, todayKey: todayKey)
+        }
+
+        // DIS: small per-session reward — completing a session counts as
+        // "resisting" distractions for that block, regardless of mission tag.
+        StatsService.bumpStatXp(.discipline, delta: 5)
+
+        // EXE: every session counts (15 XP). Mission-completion EXE +15 and
+        // the perfect-day EXE +50 / CON +30 bonus both fire from
+        // `MissionsState.completeMission` — keep them centralized there so a
+        // session-end and a mission-tap can't double-credit if the user
+        // happens to flip both states on the same tick.
+        StatsService.bumpStatXp(.execution, delta: 15)
 
         // Streak milestone notification.
         NotificationService.shared.scheduleStreakMilestoneIfNeeded(
@@ -282,23 +386,52 @@ public struct MainNavigator: View {
             streak: home.consecutiveStreak
         )
 
-        // Push the `complete-mission` edge function call with the weekly
-        // aggregated totals.
+        // Push the focus minutes from this session to every guild. Missions
+        // own their own `missions_done` increments via the
+        // `onMissionCompleted` hook, so forward the cached monthly count
+        // unchanged here — re-adding today's `completedCount` would
+        // double-count (and any missions auto-completed by this session have
+        // already bumped the cache before this Task runs).
         Task {
-            let stats = GuildService.shared.getWeeklyStats()
+            let stats = GuildService.shared.getMonthlyStats()
             let nextFocus = stats.focus_minutes + actualMinutes
-            let nextMissionsDone = stats.missions_done + missions.completedCount
             let nextStreak = home.consecutiveStreak
-            GuildService.shared.updateWeeklyStats(
+            GuildService.shared.updateMonthlyStats(
                 focusMinutes: nextFocus,
-                missionsDone: nextMissionsDone,
                 streakDays: nextStreak
             )
             _ = await GuildService.shared.completeMissionServerSide(
                 focusMinutes: nextFocus,
-                missionsDone: nextMissionsDone,
+                missionsDone: stats.missions_done,
                 streakDays: nextStreak
             )
         }
+    }
+
+    /// Restore the active execution-block modal if a session is still in
+    /// progress per `LockModeService`. Runs on cold start (`.onAppear`) AND
+    /// every foreground (`scenePhase` → `.active`):
+    ///
+    /// - **Cold start path** (the one that broke after 10+ min in the
+    ///   background): iOS killed the process, the user taps the Dynamic
+    ///   Island, the splash screen plays, then a fresh `LockInCoordinator` is
+    ///   built with `activeModal == nil`. The persisted block in App Group
+    ///   storage is the only signal that we're mid-session.
+    /// - **Warm foreground path**: covers the rare case where the cover got
+    ///   dropped without the process dying.
+    ///
+    /// Skips when a modal is already up, when no block is persisted, or when
+    /// the persisted `endTimestamp` is already in the past (don't resurrect a
+    /// stale timer — let the cold-start sweep clean it up).
+    private func resumeActiveExecutionBlockIfNeeded() {
+        guard lockIn.activeModal == nil else { return }
+        guard let active = LockModeService.shared.loadActiveExecutionBlock() else { return }
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        guard active.endTimestamp > nowMs else { return }
+        let endDate = Date(timeIntervalSince1970: active.endTimestamp / 1000)
+        lockIn.activeModal = .executionBlock(
+            durationMinutes: active.durationMinutes,
+            resumeEndTimestamp: endDate
+        )
     }
 }

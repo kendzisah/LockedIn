@@ -32,4 +32,24 @@ public enum SharedScreenTime {
     public static func sharedDefaults() -> UserDefaults? {
         UserDefaults(suiteName: appGroupId)
     }
+
+    /// App Group keys consumed by the Widget extension and the Live Activity.
+    ///
+    /// Writers: `WidgetDataPublisher` (snapshot + lastRefresh); `SessionEngine`
+    ///          via Live Activity setup (`liveActivitySessionId`).
+    /// Readers: `LockedInWidgets` extension + AppIntentsKit intents — these
+    ///          must NOT touch the main app's runtime state.
+    public enum WidgetKeys {
+        /// JSON-encoded `WidgetSnapshot`. Versioned so we can introduce a v2
+        /// shape without race-corrupting old installs mid-launch.
+        public static let snapshotV1 = "widget.snapshot.v1"
+
+        /// Epoch milliseconds (Double) — last time the publisher wrote a
+        /// snapshot. Used by widget timeline providers as a staleness signal.
+        public static let lastRefresh = "widget.lastRefresh"
+
+        /// UUID string of the currently-running ActivityKit activity, if any.
+        /// Cleared by `SessionEngine.finish()` / `endEarly()`.
+        public static let liveActivitySessionId = "live_activity.session_id"
+    }
 }

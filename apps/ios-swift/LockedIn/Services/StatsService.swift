@@ -20,6 +20,7 @@ public enum StatsService {
     /// `StatsService.CounterField.totalFocusMinutes` without depending on
     /// HomeService directly.
     public typealias CounterField = HomeService.CounterField
+    public typealias StatXpKind = HomeService.StatXpKind
 
     /// Bump a `user_stats` counter via the `bump_user_stat` RPC. Errors are
     /// logged and swallowed — the RN service treats these as fire-and-forget.
@@ -29,6 +30,20 @@ public enum StatsService {
                 try await HomeService.shared.bumpCounter(field: field, delta: delta)
             } catch {
                 print("[StatsService] bumpCounter(\(field.rawValue)) failed: \(error)")
+            }
+        }
+    }
+
+    /// Bump per-stat XP via the `bump_stat_xp` RPC. Fire-and-forget; this is
+    /// the unified post-migration path — every stat-growth action funnels
+    /// through here.
+    public static func bumpStatXp(_ kind: StatXpKind, delta: Int) {
+        guard delta != 0 else { return }
+        Task {
+            do {
+                try await HomeService.shared.bumpStatXp(kind: kind, delta: delta)
+            } catch {
+                print("[StatsService] bumpStatXp(\(kind.rawValue), \(delta)) failed: \(error)")
             }
         }
     }

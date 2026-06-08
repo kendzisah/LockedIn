@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import UserNotifications
 import DesignKit
 
 /// ScheduleSessionScreen — Step 24: time-of-day picker for the user's first
@@ -10,6 +12,17 @@ import DesignKit
 /// `NotificationService.shared.scheduleDailyReminder(at:)`. Identifier
 /// `lockedin.daily_reminder` matches the RN `@lockedin/first_session_reminder`
 /// semantics.
+///
+/// Permission UX: when the user taps Schedule Session, we check the current
+/// `UNAuthorizationStatus` and gate accordingly:
+///   - `.authorized` / `.provisional` / `.ephemeral` — schedule + advance.
+///   - `.notDetermined` — fire the system prompt; schedule on grant; advance
+///     regardless (silently skip if they decline).
+///   - `.denied` — surface an alert offering one more chance: "Open Settings"
+///     deep-links into the app's iOS Settings page; "Continue Without
+///     Reminder" advances without scheduling. After enabling notifications
+///     in Settings and returning, the screen detects the foreground
+///     transition via `@Environment(\.scenePhase)` and auto-retries.
 struct ScheduleSessionScreen: View {
     @Environment(OnboardingState.self) private var state
     let onContinue: () -> Void
@@ -17,11 +30,23 @@ struct ScheduleSessionScreen: View {
     /// coordinator so this view stays UI-only.
     let scheduleNotification: (_ hour: Int, _ minute: Int) async -> Void
 
+    @Environment(\.scenePhase) private var scenePhase
+
     @State private var tracker = OnboardingScreenTracker(.scheduleSession)
     @State private var hour = 7
     @State private var minute = 0
     @State private var screenOpacity: Double = 0
     @State private var isAdvancing = false
+    /// True while the "Notifications are off" alert is visible. Drives
+    /// the post-Settings auto-retry path: when the screen returns to
+    /// `.active` after the user came back from Settings, we re-check
+    /// authorization and proceed automatically if they enabled it.
+    @State private var showNotificationAlert = false
+    /// Set when the user taps "Open Settings". On scene reactivation we
+    /// only retry the schedule when this is true — otherwise scene
+    /// changes unrelated to the alert (e.g. notification banners) would
+    /// trigger redundant checks.
+    @State private var awaitingSettingsReturn = false
 
     init(
         onContinue: @escaping () -> Void,
@@ -126,12 +151,42 @@ struct ScheduleSessionScreen: View {
             withAnimation(.easeOut(duration: 0.4)) { screenOpacity = 1 }
         }
         .onDisappear { tracker.didDisappear() }
+        .onChange(of: scenePhase) { _, newPhase in
+            // User came back from iOS Settings — if they enabled
+            // notifications, retry the schedule and advance.
+            guard newPhase == .active, awaitingSettingsReturn else { return }
+            awaitingSettingsReturn = false
+            Task { await retryAfterSettingsReturn() }
+        }
+        .alert("Notifications are off", isPresented: $showNotificationAlert) {
+            Button("Open Settings") {
+                awaitingSettingsReturn = true
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+                // Don't advance — wait for the user to come back. The
+                // `.onChange(of: scenePhase)` handler retries.
+            }
+            Button("Continue Without Reminder", role: .cancel) {
+                // User explicitly opted out — proceed without scheduling.
+                OnboardingAnalytics.track(OnboardingAnalytics.answerSubmitted, properties: [
+                    "screen": OnboardingRoute.scheduleSession.rawValue,
+                    "notifications_denied_continued": true,
+                ])
+                fadeAndContinue()
+            }
+        } message: {
+            Text("Daily reminders keep the habit alive. Enable them in Settings — we'll schedule one for \(timeLabel) as soon as you do.")
+        }
     }
+
+    // MARK: - Confirm flow
 
     private func handleConfirm() {
         guard !isAdvancing else { return }
         isAdvancing = true
         HapticsService.shared.medium()
+
         let stored = "\(OnboardingEngine.pad(hour)):\(OnboardingEngine.pad(minute))"
         state.setScheduledSessionTime(stored)
         OnboardingAnalytics.track(OnboardingAnalytics.answerSubmitted, properties: [
@@ -139,8 +194,59 @@ struct ScheduleSessionScreen: View {
             "answer": stored,
             "duration_min": durationMin,
         ])
-        Task { await scheduleNotification(hour, minute) }
 
+        Task { await confirmWithAuthCheck() }
+    }
+
+    /// Branch on the current notification authorization status:
+    ///  - granted → schedule and advance
+    ///  - notDetermined → fire system prompt, schedule if granted, advance
+    ///    regardless (silent skip on decline matches platform conventions
+    ///    for the first denial)
+    ///  - denied → surface the "give them another chance" alert
+    private func confirmWithAuthCheck() async {
+        let status = await NotificationService.shared.currentAuthorizationStatus()
+        switch status {
+        case .authorized, .provisional, .ephemeral:
+            await scheduleNotification(hour, minute)
+            await MainActor.run { fadeAndContinue() }
+
+        case .notDetermined:
+            let granted = await NotificationService.shared.requestAuthorization()
+            if granted {
+                await scheduleNotification(hour, minute)
+            }
+            await MainActor.run { fadeAndContinue() }
+
+        case .denied:
+            await MainActor.run {
+                isAdvancing = false  // let them re-tap if they cancel the alert
+                showNotificationAlert = true
+            }
+
+        @unknown default:
+            await MainActor.run { fadeAndContinue() }
+        }
+    }
+
+    /// Called when scenePhase returns to `.active` after the user tapped
+    /// "Open Settings" on the alert. If they enabled notifications, we
+    /// schedule the reminder and advance automatically — no second tap
+    /// of Schedule Session required.
+    private func retryAfterSettingsReturn() async {
+        let status = await NotificationService.shared.currentAuthorizationStatus()
+        switch status {
+        case .authorized, .provisional, .ephemeral:
+            await scheduleNotification(hour, minute)
+            await MainActor.run { fadeAndContinue() }
+        default:
+            // Still denied (or notDetermined again somehow) — leave them
+            // on the screen so they can tap again or cancel out.
+            await MainActor.run { isAdvancing = false }
+        }
+    }
+
+    private func fadeAndContinue() {
         withAnimation(.easeOut(duration: 0.4)) { screenOpacity = 0 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onContinue() }
     }

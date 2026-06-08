@@ -1,6 +1,19 @@
 import Foundation
 import Supabase
 
+/// Typed outcome for `GuildService.leaveGuild` / `GuildState.leaveGuild`.
+///
+/// Previously the leave path returned a raw `Bool` — falsey paths (owner
+/// block, missing membership, network error) all collapsed into the same
+/// silent dismissal in `GuildDetailScreen`. This enum lets the UI surface
+/// the right alert per failure mode.
+public enum LeaveResult: Sendable, Equatable {
+    case success
+    case ownerCannotLeave
+    case notMember
+    case networkError(String)
+}
+
 /// GuildService — Swift port of
 /// `apps/mobile/src/features/leaderboard/GuildService.ts`.
 ///
@@ -26,7 +39,7 @@ import Supabase
 ///     session completes; the server upserts per-guild weekly scores.
 ///
 /// Persisted keys (preserved verbatim from RN):
-///   - `@lockedin/guild_week_stats`  — `WeeklyGuildStats` JSON
+///   - `@lockedin/guild_month_stats` — `MonthlyGuildStats` JSON
 ///   - `@lockedin/has_active_guild`  — boolean string `'true' / 'false'`
 public final class GuildService {
     public static let shared = GuildService()
@@ -34,7 +47,7 @@ public final class GuildService {
     // MARK: - Persisted key names (match RN exactly)
 
     /// Weekly stats JSON. (`GuildService.ts:4`).
-    public static let weekStatsKey = "@lockedin/guild_week_stats"
+    public static let monthStatsKey = "@lockedin/guild_month_stats"
 
     /// Boolean string flag for notification scheduling. (`GuildService.ts:7`).
     public static let hasActiveGuildKey = "@lockedin/has_active_guild"
@@ -50,6 +63,7 @@ public final class GuildService {
         public let guild_id: String
         public let name: String
         public let invite_code: String
+        public let owner_id: String
         public let member_count: Int
         public let my_rank: Int
         public let my_score: Int
@@ -94,14 +108,14 @@ public final class GuildService {
         public let joined: Bool
     }
 
-    public struct WeeklyGuildStats: Codable, Equatable, Sendable {
-        public var week_key: String
+    public struct MonthlyGuildStats: Codable, Equatable, Sendable {
+        public var period_key: String
         public var focus_minutes: Int
         public var missions_done: Int
         public var streak_days: Int
 
-        public init(week_key: String, focus_minutes: Int = 0, missions_done: Int = 0, streak_days: Int = 0) {
-            self.week_key = week_key
+        public init(period_key: String, focus_minutes: Int = 0, missions_done: Int = 0, streak_days: Int = 0) {
+            self.period_key = period_key
             self.focus_minutes = focus_minutes
             self.missions_done = missions_done
             self.streak_days = streak_days
@@ -122,18 +136,21 @@ public final class GuildService {
         self.client = client
     }
 
-    // MARK: - ISO week key (matches the server edge function)
+    // MARK: - Month period key (matches the server edge function)
 
-    /// ISO week key from UTC clock (`YYYY-Www`), matching the server
-    /// `complete-mission` edge function. Same algorithm as
-    /// `GuildService.ts:68`.
-    public static func currentWeekKey(now: Date = Date()) -> String {
-        var cal = Calendar(identifier: .iso8601)
+    /// Calendar-month key from the UTC clock (`YYYY-MM`), matching the server
+    /// `complete-mission` edge function. Guild scores are bucketed per month;
+    /// the leaderboard resets at the UTC month boundary (1st, 00:00 UTC).
+    ///
+    /// (Stored in the `guild_scores.week_key` column — the column name is
+    /// legacy; the value is now a month key, not an ISO week.)
+    public static func currentMonthKey(now: Date = Date()) -> String {
+        var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!
-        let components = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
-        let year = components.yearForWeekOfYear ?? 1970
-        let week = components.weekOfYear ?? 1
-        return String(format: "%04d-W%02d", year, week)
+        let components = cal.dateComponents([.year, .month], from: now)
+        let year = components.year ?? 1970
+        let month = components.month ?? 1
+        return String(format: "%04d-%02d", year, month)
     }
 
     // MARK: - Active-guild flag sync
@@ -170,6 +187,7 @@ public final class GuildService {
         let id: String
         let name: String
         let invite_code: String
+        let owner_id: String
     }
     private struct WeekScoreRow: Decodable {
         let guild_id: String
@@ -194,13 +212,13 @@ public final class GuildService {
         // 2) guild rows
         let guilds: [GuildRow] = try await client
             .from("guilds")
-            .select("id, name, invite_code")
+            .select("id, name, invite_code, owner_id")
             .in("id", values: guildIds)
             .execute()
             .value
         if guilds.isEmpty { return [] }
 
-        let weekKey = Self.currentWeekKey()
+        let monthKey = Self.currentMonthKey()
 
         // 3) member-count by guild (one query, count clientside)
         let allMembers: [MembershipRow] = try await client
@@ -219,7 +237,7 @@ public final class GuildService {
             .from("guild_scores")
             .select("guild_id, user_id, total_score")
             .in("guild_id", values: guildIds)
-            .eq("week_key", value: weekKey)
+            .eq("week_key", value: monthKey)
             .execute()
             .value
 
@@ -245,6 +263,7 @@ public final class GuildService {
                 guild_id: g.id,
                 name: g.name,
                 invite_code: g.invite_code,
+                owner_id: g.owner_id,
                 member_count: memberCountByGuild[g.id] ?? 0,
                 my_rank: myRank,
                 my_score: myScore,
@@ -317,7 +336,7 @@ public final class GuildService {
         let total_score: Int?
     }
 
-    public func getGuildLeaderboard(guildId: String, weekKey: String) async -> [GuildLeaderboardEntry] {
+    public func getGuildLeaderboard(guildId: String, monthKey: String) async -> [GuildLeaderboardEntry] {
         do {
             let currentUid = try? await currentUserId()
 
@@ -355,7 +374,7 @@ public final class GuildService {
                 .from("guild_scores")
                 .select("user_id, focus_minutes, missions_done, streak_days, total_score")
                 .eq("guild_id", value: guildId)
-                .eq("week_key", value: weekKey)
+                .eq("week_key", value: monthKey)
                 .execute()
                 .value
             let scoreByUser: [String: ScoreRow] = Dictionary(uniqueKeysWithValues: scores.map { ($0.user_id, $0) })
@@ -452,9 +471,11 @@ public final class GuildService {
 
     private struct RoleRow: Decodable { let role: String }
 
-    public func leaveGuild(guildId: String) async -> Bool {
+    public func leaveGuild(guildId: String) async -> LeaveResult {
         do {
-            guard let userId = try? await currentUserId() else { return false }
+            guard let userId = try? await currentUserId() else {
+                return .networkError("Not signed in.")
+            }
             let row: RoleRow? = try await client
                 .from("guild_members")
                 .select("role")
@@ -463,10 +484,12 @@ public final class GuildService {
                 .single()
                 .execute()
                 .value
-            guard let row else { return false }
+            guard let row else {
+                return .notMember
+            }
             if row.role == "owner" {
                 print("[GuildService] leaveGuild blocked: user is owner")
-                return false
+                return .ownerCannotLeave
             }
             try await client
                 .from("guild_members")
@@ -474,10 +497,10 @@ public final class GuildService {
                 .eq("guild_id", value: guildId)
                 .eq("user_id", value: userId)
                 .execute()
-            return true
+            return .success
         } catch {
             print("[GuildService] leaveGuild failed:", error)
-            return false
+            return .networkError(error.localizedDescription)
         }
     }
 
@@ -521,18 +544,18 @@ public final class GuildService {
         }
     }
 
-    // MARK: - Weekly stats (local-only, AsyncStorage parity)
+    // MARK: - Monthly stats (local-only, AsyncStorage parity)
 
-    public func getWeeklyStats() -> WeeklyGuildStats {
-        let currentWeek = Self.currentWeekKey()
-        guard let raw = Defaults.codable(WeeklyGuildStats.self, Self.weekStatsKey) else {
-            let initial = WeeklyGuildStats(week_key: currentWeek)
-            Defaults.setCodable(initial, Self.weekStatsKey)
+    public func getMonthlyStats() -> MonthlyGuildStats {
+        let currentMonth = Self.currentMonthKey()
+        guard let raw = Defaults.codable(MonthlyGuildStats.self, Self.monthStatsKey) else {
+            let initial = MonthlyGuildStats(period_key: currentMonth)
+            Defaults.setCodable(initial, Self.monthStatsKey)
             return initial
         }
-        if raw.week_key != currentWeek {
-            let reset = WeeklyGuildStats(week_key: currentWeek)
-            Defaults.setCodable(reset, Self.weekStatsKey)
+        if raw.period_key != currentMonth {
+            let reset = MonthlyGuildStats(period_key: currentMonth)
+            Defaults.setCodable(reset, Self.monthStatsKey)
             return reset
         }
         return raw
@@ -540,19 +563,19 @@ public final class GuildService {
 
     /// Partial update mirror — only the provided fields override the cached
     /// snapshot. Use `nil` to keep the existing value.
-    public func updateWeeklyStats(
+    public func updateMonthlyStats(
         focusMinutes: Int? = nil,
         missionsDone: Int? = nil,
         streakDays: Int? = nil
     ) {
-        let existing = getWeeklyStats()
-        let next = WeeklyGuildStats(
-            week_key: Self.currentWeekKey(),
+        let existing = getMonthlyStats()
+        let next = MonthlyGuildStats(
+            period_key: Self.currentMonthKey(),
             focus_minutes: focusMinutes ?? existing.focus_minutes,
             missions_done: missionsDone ?? existing.missions_done,
             streak_days: streakDays ?? existing.streak_days
         )
-        Defaults.setCodable(next, Self.weekStatsKey)
+        Defaults.setCodable(next, Self.monthStatsKey)
     }
 
     // MARK: - completeMissionServerSide (edge function)
@@ -565,7 +588,7 @@ public final class GuildService {
     /// the server — we still forward it so request shape matches RN exactly.
     ///
     /// Wired by `MainNavigator.handleSessionFinish` (which reads
-    /// `getWeeklyStats()`, bumps locally, then forwards the new totals here).
+    /// `getMonthlyStats()`, bumps locally, then forwards the new totals here).
     /// `MissionsProvider.completeMission` separately triggers updates via
     /// `MissionsState.onMissionCompleted` — currently a no-op, but the hook is
     /// in place for the next iteration.

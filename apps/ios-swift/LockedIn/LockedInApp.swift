@@ -2,6 +2,7 @@ import SwiftUI
 import AppsFlyerLib
 import RevenueCat
 import PostHog
+import AppIntentsKit
 
 /// `@main` SwiftUI entry point. Configures third-party SDKs at launch and
 /// hands the scene off to `RootView`. `RootView` runs the post-launch
@@ -86,6 +87,15 @@ struct LockedInApp: App {
                     "platform": "ios",
                 ])
             }
+        }
+
+        // Wire the AppIntents service locator. Siri / Shortcuts / interactive
+        // widgets (Agent 5) call into this concrete impl via the protocol
+        // declared in AppIntentsKit. Must run before any intent can fire —
+        // we set it at the end of SDK configuration so all dependencies
+        // (PostHog, Supabase) are already up.
+        if #available(iOS 16.0, *) {
+            LockInIntentServiceLocator.shared = LockInIntentServiceImpl()
         }
     }
 }

@@ -13,6 +13,7 @@ struct AchievementsRow: View {
     let earnedCount: Int
     let totalCount: Int
     let entries: [Entry]
+    let onSelect: ((Entry) -> Void)?
 
     public struct Entry: Identifiable, Equatable {
         public let id: String
@@ -28,10 +29,16 @@ struct AchievementsRow: View {
         }
     }
 
-    init(earnedCount: Int = 0, totalCount: Int = 0, entries: [Entry] = []) {
+    init(
+        earnedCount: Int = 0,
+        totalCount: Int = 0,
+        entries: [Entry] = [],
+        onSelect: ((Entry) -> Void)? = nil
+    ) {
         self.earnedCount = earnedCount
         self.totalCount = totalCount
         self.entries = entries
+        self.onSelect = onSelect
     }
 
     var body: some View {
@@ -49,11 +56,16 @@ struct AchievementsRow: View {
                         }
                     } else {
                         ForEach(entries) { entry in
-                            badgeCell(
-                                name: entry.name,
-                                earned: entry.earned,
-                                color: entry.earned ? entry.categoryColor : SystemTokens.textMuted
-                            )
+                            Button {
+                                onSelect?(entry)
+                            } label: {
+                                badgeCell(
+                                    name: entry.name,
+                                    earned: entry.earned,
+                                    color: entry.earned ? entry.categoryColor : SystemTokens.textMuted
+                                )
+                            }
+                            .buttonStyle(PressOpacityButtonStyle())
                         }
                     }
                 }

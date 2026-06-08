@@ -62,6 +62,19 @@ public struct TabNavigator: View {
 
             customTabBar
         }
+        .fullScreenCover(isPresented: Binding(
+            get: { guild.showMonthEndPrompt },
+            set: { if !$0 { guild.dismissMonthEndPrompt() } }
+        )) {
+            GuildMonthEndDialog(
+                onViewBoard: {
+                    guild.dismissMonthEndPrompt()
+                    selectedTab = .board
+                },
+                onDismiss: { guild.dismissMonthEndPrompt() }
+            )
+            .presentationBackground(.clear)
+        }
     }
 
     // MARK: - Tabs
@@ -76,16 +89,7 @@ public struct TabNavigator: View {
             missionsCompletedCount: missions.completedCount,
             onActivateSession: { triggerLockInFlow() },
             onTapStatus: { selectedTab = .profile },
-            onTapMissions: { selectedTab = .missions },
-            onTapStreakRecovery: {
-                let status = StreakRecoveryService.getRecoveryStatus()
-                if status.available {
-                    lockIn.activeModal = .executionBlock(
-                        durationMinutes: StreakRecoveryService.requiredSessionMinutes,
-                        resumeEndTimestamp: nil
-                    )
-                }
-            }
+            onTapMissions: { selectedTab = .missions }
         )
     }
 
@@ -204,14 +208,30 @@ public struct TabNavigator: View {
         }
     }
 
+    /// Per-stat values for the missions tab UI (drives StatGrowthPanel's
+    /// "weakest stat" callout). After the per-stat XP migration the legacy
+    /// 1-99 numeric columns are no longer the source of truth — every
+    /// user's `.discipline` / `.focus` / etc. column stays pinned at 1
+    /// because nothing client-side writes to them anymore. Returning those
+    /// values made the panel always report DISCIPLINE as the weakest stat
+    /// (the iteration tiebreaker).
+    ///
+    /// Reads from the per-stat XP buckets via `UserStatsRow.counter(for:)`,
+    /// which is the same source the Profile tab tier UI uses — so the
+    /// weakest stat the user sees on the missions tab matches the lowest
+    /// letter tier on their profile.
     private func defaultStatValues() -> [Stat: Int] {
-        let cached = HomeService.shared.getCachedStats()
+        guard let cached = HomeService.shared.getCachedStats() else {
+            return [
+                .discipline:  0, .focus: 0, .execution: 0, .consistency: 0, .social: 0
+            ]
+        }
         return [
-            .discipline:  cached?.discipline ?? 1,
-            .focus:       cached?.focus ?? 1,
-            .execution:   cached?.execution ?? 1,
-            .consistency: cached?.consistency ?? 1,
-            .social:      cached?.social ?? 1,
+            .discipline:  cached.counter(for: .discipline),
+            .focus:       cached.counter(for: .focus),
+            .execution:   cached.counter(for: .execution),
+            .consistency: cached.counter(for: .consistency),
+            .social:      cached.counter(for: .social),
         ]
     }
 }

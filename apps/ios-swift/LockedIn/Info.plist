@@ -89,6 +89,18 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 
+	<!-- ─── Live Activities (ActivityKit) — Agent 2 ─── -->
+	<!-- Required for the main app to call Activity<...>.request(...).
+	     Without this key, ActivityKit silently refuses to start the
+	     Live Activity at runtime. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<!-- Allow frequent state pushes so the 1Hz timer countdown stays
+	     smooth. iOS still applies its own throttling — this opts us
+	     into the higher budget tier. -->
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<true/>
+
 	<!--
 		SKAdNetworkItems: AppsFlyer publishes ~70 IDs. Copy the full list from
 		the existing RN-generated Info.plist (apps/mobile/ios/LockedIn/Info.plist

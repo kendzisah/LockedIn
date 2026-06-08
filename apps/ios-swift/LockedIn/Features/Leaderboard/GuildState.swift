@@ -37,10 +37,53 @@ public final class GuildState {
     public private(set) var isLoadingDetail: Bool = false
     public private(set) var isRefreshingDetail: Bool = false
 
-    /// Selected ISO week offset (`0` = current week, negative = past weeks).
-    public var weekOffset: Int = 0
+    /// Selected month offset (`0` = current month, negative = past months).
+    public var monthOffset: Int = 0
+
+    /// Drives the month-end HUD nudge. Set by `evaluateMonthEndPrompt()` when
+    /// the user is in a guild on the last day of the month and hasn't been
+    /// nudged yet this month. Presented by `TabNavigator`.
+    public var showMonthEndPrompt: Bool = false
 
     public init() {}
+
+    // MARK: - Month-end prompt
+
+    /// Defaults key storing the `YYYY-MM` of the month we last showed the
+    /// month-end nudge for (so it fires at most once per month).
+    private static let monthEndPromptShownKey = "@lockedin/guild_monthend_prompt_shown"
+
+    /// Local-time `YYYY-MM` for the current month (dedupe key for the prompt).
+    public static func localMonthKey(now: Date = Date()) -> String {
+        let comps = Calendar.current.dateComponents([.year, .month], from: now)
+        return String(format: "%04d-%02d", comps.year ?? 1970, comps.month ?? 1)
+    }
+
+    /// True when `now` falls on the final calendar day of its local month.
+    public static func isLastDayOfMonth(now: Date = Date()) -> Bool {
+        let cal = Calendar.current
+        guard let range = cal.range(of: .day, in: .month, for: now) else { return false }
+        return cal.component(.day, from: now) == range.upperBound - 1
+    }
+
+    /// Show the month-end nudge when: the user is in a guild (cheap cached
+    /// flag — no network), today is the last day of the month, and we haven't
+    /// nudged yet this month. Safe to call repeatedly (boot + every foreground).
+    public func evaluateMonthEndPrompt(now: Date = Date()) {
+        guard !showMonthEndPrompt else { return }
+        guard Defaults.bool(GuildService.hasActiveGuildKey) else { return }
+        guard GuildState.isLastDayOfMonth(now: now) else { return }
+        let monthKey = GuildState.localMonthKey(now: now)
+        guard Defaults.string(GuildState.monthEndPromptShownKey) != monthKey else { return }
+        showMonthEndPrompt = true
+    }
+
+    /// Dismiss the nudge and mark it shown for this month (whether the user
+    /// tapped through to the board or closed it).
+    public func dismissMonthEndPrompt() {
+        showMonthEndPrompt = false
+        Defaults.setString(GuildState.localMonthKey(), GuildState.monthEndPromptShownKey)
+    }
 
     // MARK: - List (BoardTab / GuildList)
 
@@ -62,20 +105,22 @@ public final class GuildState {
 
     // MARK: - Detail (GuildDetail)
 
-    /// Compute the ISO week key for `weekOffset` (0 = current, -1 = last week, …).
-    /// Mirrors `GuildDetailScreen.tsx:getWeekKeyOffset`.
-    public func weekKey(forOffset offset: Int, now: Date = Date()) -> String {
-        let shifted = Calendar.current.date(byAdding: .day, value: offset * 7, to: now) ?? now
-        return GuildService.currentWeekKey(now: shifted)
+    /// Compute the month key for `monthOffset` (0 = current, -1 = last month, …).
+    /// Uses a UTC-anchored month shift to match `GuildService.currentMonthKey`.
+    public func monthKey(forOffset offset: Int, now: Date = Date()) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let shifted = cal.date(byAdding: .month, value: offset, to: now) ?? now
+        return GuildService.currentMonthKey(now: shifted)
     }
 
     /// Load both `getGuildDetails` + `getGuildLeaderboard` in parallel for
-    /// the supplied guild + the currently-selected week offset.
+    /// the supplied guild + the currently-selected month offset.
     public func loadDetail(guildId: String, silent: Bool = false) async {
         if !silent { isLoadingDetail = true }
-        let weekKey = weekKey(forOffset: weekOffset)
+        let monthKey = monthKey(forOffset: monthOffset)
         async let detailsTask = GuildService.shared.getGuildDetails(guildId: guildId)
-        async let lbTask = GuildService.shared.getGuildLeaderboard(guildId: guildId, weekKey: weekKey)
+        async let lbTask = GuildService.shared.getGuildLeaderboard(guildId: guildId, monthKey: monthKey)
         let (details, lb) = await (detailsTask, lbTask)
         if let details {
             detailsByGuild[guildId] = details
@@ -103,6 +148,7 @@ public final class GuildState {
             _ = await GuildService.shared.syncHasActiveGuildFlag()
             await loadMyGuilds(silent: true)
             NotificationService.shared.scheduleFirstGuildNudgeIfNeeded(hasActiveGuild: true)
+            NotificationService.shared.scheduleGuildMonthEndReminder(hasActiveGuild: true)
             NotificationService.shared.refreshScheduleWithStoredStreak()
         }
         return result
@@ -115,6 +161,7 @@ public final class GuildState {
             _ = await GuildService.shared.syncHasActiveGuildFlag()
             await loadMyGuilds(silent: true)
             NotificationService.shared.scheduleFirstGuildNudgeIfNeeded(hasActiveGuild: true)
+            NotificationService.shared.scheduleGuildMonthEndReminder(hasActiveGuild: true)
         }
         return result
     }
@@ -127,23 +174,30 @@ public final class GuildState {
             detailsByGuild.removeValue(forKey: guildId)
             leaderboardByGuild.removeValue(forKey: guildId)
             await loadMyGuilds(silent: true)
-            _ = await GuildService.shared.syncHasActiveGuildFlag()
+            let (_, hasGuildNow) = await GuildService.shared.syncHasActiveGuildFlag()
+            NotificationService.shared.scheduleGuildMonthEndReminder(hasActiveGuild: hasGuildNow)
             NotificationService.shared.refreshScheduleWithStoredStreak()
         }
         return ok
     }
 
     /// Non-owner: leave the guild. Owners must `deleteGuild` instead.
-    public func leaveGuild(guildId: String) async -> Bool {
-        let ok = await GuildService.shared.leaveGuild(guildId: guildId)
-        if ok {
+    ///
+    /// Returns the typed outcome so the UI can surface the right alert per
+    /// failure mode (owner block, missing membership, network error). Local
+    /// state cleanup + flag sync + notification refresh only run on
+    /// `.success`.
+    public func leaveGuild(guildId: String) async -> LeaveResult {
+        let result = await GuildService.shared.leaveGuild(guildId: guildId)
+        if case .success = result {
             detailsByGuild.removeValue(forKey: guildId)
             leaderboardByGuild.removeValue(forKey: guildId)
             await loadMyGuilds(silent: true)
-            _ = await GuildService.shared.syncHasActiveGuildFlag()
+            let (_, hasGuildNow) = await GuildService.shared.syncHasActiveGuildFlag()
+            NotificationService.shared.scheduleGuildMonthEndReminder(hasActiveGuild: hasGuildNow)
             NotificationService.shared.refreshScheduleWithStoredStreak()
         }
-        return ok
+        return result
     }
 
     /// Owner-only: kick a member. RPC `kick_guild_member` deletes the

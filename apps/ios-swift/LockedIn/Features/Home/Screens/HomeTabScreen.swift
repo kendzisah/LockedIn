@@ -42,11 +42,9 @@ struct HomeTabScreen: View {
     let onActivateSession: () -> Void
     let onTapStatus: () -> Void
     let onTapMissions: () -> Void
-    let onTapStreakRecovery: () -> Void
 
     // ── Local UI state ──
     @State private var tick: Int = 0
-    @State private var canRecover: Bool = false
 
     init(
         home: HomeState,
@@ -57,8 +55,7 @@ struct HomeTabScreen: View {
         missionsCompletedCount: Int = 0,
         onActivateSession: @escaping () -> Void = {},
         onTapStatus: @escaping () -> Void = {},
-        onTapMissions: @escaping () -> Void = {},
-        onTapStreakRecovery: @escaping () -> Void = {}
+        onTapMissions: @escaping () -> Void = {}
     ) {
         self.home = home
         self.dailyCommitmentMinutes = dailyCommitmentMinutes
@@ -69,7 +66,6 @@ struct HomeTabScreen: View {
         self.onActivateSession = onActivateSession
         self.onTapStatus = onTapStatus
         self.onTapMissions = onTapMissions
-        self.onTapStreakRecovery = onTapStreakRecovery
     }
 
     var body: some View {
@@ -105,14 +101,28 @@ struct HomeTabScreen: View {
                 )
             }
         }
+        .fullScreenCover(isPresented: Binding(
+            get: { home.streakBreak != nil },
+            set: { if !$0 { home.dismissStreakBreak() } }
+        )) {
+            if let brk = home.streakBreak {
+                StreakBreakOverlay(
+                    previousStreakDays: brk.previousStreakDays,
+                    recoverable: brk.recoverable,
+                    recoveriesRemaining: brk.recoveriesRemaining,
+                    onRestore: { home.recoverStreak() },
+                    onDismiss: { home.dismissStreakBreak() }
+                )
+            }
+        }
         .onAppear {
             if !home.isHydrated { home.hydrate() }
+            // Catch a streak broken while the app was closed.
+            home.reconcileStreak()
             // Trigger DAILY_GOAL_MET when we cross the threshold on first paint.
             if dailyGoalMet && home.dailyGoalMetDate != todayKey {
                 home.dailyGoalMet()
             }
-            // Pull live recovery availability.
-            canRecover = StreakRecoveryService.getRecoveryStatus().available
             // TODO(post-launch): WeeklyReportService.shouldShowReport()
             // → push `.weeklyReport` onto the main stack. Needs a
             //   `@EnvironmentObject MainNavigatorPath` accessor from this
@@ -145,13 +155,17 @@ struct HomeTabScreen: View {
     private func content(streakAtRisk: Bool, dailyFocused: Int, dailyGoalMet: Bool) -> some View {
         ScrollView {
             VStack(spacing: 12) {
-                if streakAtRisk && canRecover {
-                    StreakAtRiskBanner(onPress: onTapStreakRecovery)
+                if streakAtRisk {
+                    // Preventive nudge — tapping opens the normal lock-in flow
+                    // so the user can meet today's goal and keep the streak.
+                    // (The recovery *budget* is only spent post-break, in the
+                    // StreakBreakOverlay.)
+                    StreakAtRiskBanner(onPress: onActivateSession)
                 }
 
                 SystemStatusBar(
                     home: home,
-                    streakAtRisk: streakAtRisk && !canRecover,
+                    streakAtRisk: streakAtRisk,
                     isAnonymous: isAnonymous,
                     userId: currentUserId,
                     onTapStatus: onTapStatus
@@ -160,7 +174,7 @@ struct HomeTabScreen: View {
                 FocusRing(
                     focused: dailyFocused,
                     goal: dailyCommitmentMinutes,
-                    streakAtRisk: streakAtRisk && !canRecover,
+                    streakAtRisk: streakAtRisk,
                     onActivate: onActivateSession
                 )
 
@@ -175,11 +189,6 @@ struct HomeTabScreen: View {
             .padding(.horizontal, 16)
         }
         .scrollIndicators(.hidden)
-        // Streak-break overlay: the payload is published via
-        // `HomeState.streakBreak`. TODO(post-launch): when W7/W11 ship the
-        // `StreakBreakOverlay` view, render it here gated on
-        // `home.streakBreak != nil` and call `home.dismissStreakBreak()` on
-        // close.
     }
 }
 

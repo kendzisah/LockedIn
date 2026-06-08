@@ -15,6 +15,7 @@ struct HUDStatBar: View {
     let delay: Double
     let labelWidth: CGFloat
     let valueWidth: CGFloat
+    let valueAlignment: HorizontalAlignment
     let hideValue: Bool
     let height: CGFloat
 
@@ -26,6 +27,7 @@ struct HUDStatBar: View {
         delay: Double = 0,
         labelWidth: CGFloat = 32,
         valueWidth: CGFloat = 28,
+        valueAlignment: HorizontalAlignment = .trailing,
         hideValue: Bool = false,
         height: CGFloat = 18
     ) {
@@ -36,6 +38,7 @@ struct HUDStatBar: View {
         self.delay = delay
         self.labelWidth = labelWidth
         self.valueWidth = valueWidth
+        self.valueAlignment = valueAlignment
         self.hideValue = hideValue
         self.height = height
     }
@@ -57,11 +60,22 @@ struct HUDStatBar: View {
                     .font(.custom(FontFamily.headingSemiBold.rawValue, size: 11))
                     .tracking(0.3)
                     .foregroundColor(SystemTokens.textPrimary)
-                    .frame(width: valueWidth, alignment: .trailing)
+                    .frame(width: valueWidth, alignment: hudFrameAlignment)
                     .lineLimit(1)
             }
         }
         .frame(height: height)
+    }
+
+    /// Maps the `HorizontalAlignment` enum (used inside VStacks / HStacks)
+    /// to the `Alignment` value `.frame(width:alignment:)` expects.
+    private var hudFrameAlignment: Alignment {
+        switch valueAlignment {
+        case .leading:  return .leading
+        case .center:   return .center
+        case .trailing: return .trailing
+        default:        return .trailing
+        }
     }
 
     /// Convenience initializer taking `current / max` (matches the RN
@@ -75,6 +89,7 @@ struct HUDStatBar: View {
         delay: Double = 0,
         labelWidth: CGFloat = 32,
         valueWidth: CGFloat = 28,
+        valueAlignment: HorizontalAlignment = .trailing,
         hideValue: Bool = false,
         height: CGFloat = 18
     ) {
@@ -86,6 +101,7 @@ struct HUDStatBar: View {
             delay: delay,
             labelWidth: labelWidth,
             valueWidth: valueWidth,
+            valueAlignment: valueAlignment,
             hideValue: hideValue,
             height: height
         )

@@ -162,9 +162,9 @@ public enum OnboardingData {
         .init(minutes: 15,  primary: "15",  unit: "min"),
         .init(minutes: 30,  primary: "30",  unit: "min"),
         .init(minutes: 45,  primary: "45",  unit: "min"),
-        .init(minutes: 60,  primary: "1",   unit: "h"),
-        .init(minutes: 90,  primary: "1.5", unit: "h"),
-        .init(minutes: 120, primary: "2",   unit: "h"),
+        .init(minutes: 60,  primary: "60",  unit: "min"),
+        .init(minutes: 90,  primary: "90",  unit: "min"),
+        .init(minutes: 120, primary: "120", unit: "min"),
     ]
 
     // MARK: - Step 11: Why Now

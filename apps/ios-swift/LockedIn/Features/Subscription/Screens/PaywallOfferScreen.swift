@@ -5,12 +5,27 @@
 //  Mid-app modal paywall — presented as a fullScreenCover when a non-subscribed
 //  user taps Lock In. Hard gate before a paid session can begin.
 //
-//  Visual: deep-dark background with twin atmospheric glow orbs (cyan above,
-//  blue below), cyan headline, reclaimed-hours stat card, benefit checklist,
-//  projection bars (90d / 1y / 3y / 5y), solid Discipline-Blue Lock In CTA
-//  with shine, and a Maybe-later dismiss.
+//  Fourth-iteration layout. Prior attempts (sibling VStack around ScrollView,
+//  modifier-order swap, then safeAreaInset) all reproduced the same bug on
+//  iPhone 17 Pro hardware: the column shifted off the leading edge so the
+//  "What" of the headline and the leading digits of the projection labels
+//  got clipped, while the footer rendered correctly. The common factor was
+//  unbounded width proposals propagating upstream through chains of
+//  `.frame(maxWidth: .infinity)` and `.scaledToFill()` on the staircase
+//  image's `Image.resizable()` background — both of which broadcast
+//  "I want infinity" through the parent ZStack and inflated the apparent
+//  width of the column the inner content was leading-aligned within.
 //
-//  Port of `apps/mobile/src/features/subscription/PaywallOfferScreen.tsx`.
+//  This rewrite:
+//   - Wraps the entire body in a `GeometryReader` and pins **every layer**
+//     to `width: w` from the proxy — no `.frame(maxWidth: .infinity)`
+//     anywhere. Layout is fully deterministic.
+//   - Drops the staircase image. The deep gradient + glow orbs carry the
+//     "compounded effort" mood without the bounded-image risk surface.
+//   - Replaces the CTA with a genuinely glassy button: `.ultraThinMaterial`
+//     substrate, **cyan** glaze (matching the stat card / projection bar
+//     accent so it actually fits the screen palette), bevelled top rim,
+//     dual cyan glow shadows, and the preserved shineSweep.
 //
 
 import SwiftUI
@@ -56,42 +71,44 @@ public struct PaywallOfferScreen: View {
 
     public var body: some View {
         ZStack {
-            // Solid base — guarantees the screen reads dark before the image
-            // resolves and after the gradient fades to opaque at 65% down.
-            AppColors.background
+            // Background extends edge-to-edge under the Dynamic Island and
+            // home indicator. Pinned via GeometryReader inside the helper
+            // so it can't propose an over-wide frame.
+            backgroundFullBleed
                 .ignoresSafeArea()
 
-            // Staircase photo — visual metaphor for compounded effort. Sized
-            // `.fill` so it covers any aspect, ignores safe area so the photo
-            // bleeds under the status bar. Direct port of the RN treatment
-            // (`PaywallOfferScreen.tsx:155`).
-            Image("staircase-bg")
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-                .ignoresSafeArea()
-                .accessibilityHidden(true)
+            // Content respects the safe area — no more headline sliding
+            // under the Dynamic Island.
+            GeometryReader { proxy in
+                let w = proxy.size.width
+                let h = proxy.size.height
+                let innerW = max(0, w - 48) // 24pt horizontal padding each side
 
-            // Layered dark gradient: 30% opaque at top, deepening to fully
-            // opaque background by 65%. Mirrors RN locations [0, 0.25, 0.45,
-            // 0.65]. Below 0.65 the photo is completely hidden behind the
-            // background color so the content area reads as flat dark.
-            LinearGradient(
-                stops: [
-                    .init(color: AppColors.background.opacity(0.30), location: 0.00),
-                    .init(color: AppColors.background.opacity(0.70), location: 0.25),
-                    .init(color: AppColors.background.opacity(0.95), location: 0.45),
-                    .init(color: AppColors.background,               location: 0.65),
-                    .init(color: AppColors.background,               location: 1.00),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+                VStack(spacing: 0) {
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 24) {
+                            header(width: innerW)
+                            statCard(width: innerW)
+                            benefitsList(width: innerW)
+                            projectionsView(width: innerW)
+                                .opacity(projOpacity)
+                            // Bottom breathing room so the last row clears
+                            // the CTA footer with comfortable padding.
+                            Color.clear.frame(width: innerW, height: 120)
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.top, 24)
+                        .frame(width: w, alignment: .leading)
+                    }
+                    .frame(width: w)
+                    .scrollBounceBehavior(.basedOnSize)
+                    .scrollIndicators(.hidden)
+                    .opacity(screenOpacity)
 
-            content
-                .opacity(screenOpacity)
+                    footer(width: w)
+                }
+                .frame(width: w, height: h)
+            }
         }
         .preferredColorScheme(.dark)
         .paywall(
@@ -113,43 +130,62 @@ public struct PaywallOfferScreen: View {
         .onAppear(perform: runEntryAnimations)
     }
 
-    // MARK: - Content
+    // MARK: - Background
 
-    /// Body uses a `ScrollView` so the 4 projection rows, stat card, and
-    /// benefits list always fit on small devices (SE) without clipping.
-    /// Footer is anchored beneath via a sibling `VStack` so it stays at the
-    /// thumb-zone regardless of content height.
-    private var content: some View {
-        VStack(spacing: 0) {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    header
-                        .padding(.top, 8)
+    /// Edge-to-edge background. Wrapped in its own `GeometryReader` so
+    /// glow-orb offsets can be expressed relative to the full bleed area
+    /// (status bar + home indicator included) without inheriting the
+    /// safe-area-respecting frame of the content GeometryReader.
+    private var backgroundFullBleed: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            ZStack {
+                AppColors.background
+                    .frame(width: w, height: h)
 
-                    statCard
-                        .padding(.top, 22)
+                // Cyan accent glow, top-left — echoes the stat card tint.
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.30),
+                                Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.00),
+                            ],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 240
+                        )
+                    )
+                    .frame(width: 480, height: 480)
+                    .offset(x: -160, y: -200)
+                    .blur(radius: 40)
 
-                    benefitsView
-                        .padding(.top, 22)
-
-                    projectionsView
-                        .padding(.top, 22)
-                        .opacity(projOpacity)
-
-                    Spacer(minLength: 16)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
-                .padding(.bottom, 16)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Discipline-Blue glow, bottom-right — anchors the CTA region.
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                AppColors.primary.opacity(0.32),
+                                AppColors.primary.opacity(0.00),
+                            ],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 260
+                        )
+                    )
+                    .frame(width: 520, height: 520)
+                    .offset(x: w - 200, y: h - 220)
+                    .blur(radius: 60)
             }
-            .scrollBounceBehavior(.basedOnSize)
-
-            footer
+            .frame(width: w, height: h)
+            .clipped()
         }
     }
 
-    private var header: some View {
+    // MARK: - Header
+
+    private func header(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("What you stand\nto gain")
                 .font(.custom(FontFamily.heading.rawValue, size: 30))
@@ -164,12 +200,14 @@ public struct PaywallOfferScreen: View {
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(width: width, alignment: .leading)
         .opacity(headlineOpacity)
         .offset(y: headlineY)
     }
 
-    private var statCard: some View {
+    // MARK: - Stat card
+
+    private func statCard(width: CGFloat) -> some View {
         VStack(spacing: 6) {
             Text(Self.formatHours(projections.last?.hours ?? 0))
                 .font(.custom(FontFamily.heading.rawValue, size: 44))
@@ -183,18 +221,20 @@ public struct PaywallOfferScreen: View {
         }
         .padding(.vertical, 22)
         .padding(.horizontal, 20)
-        .frame(maxWidth: .infinity)
+        .frame(width: width)
         .background(
-            LinearGradient(
-                colors: [
-                    Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.10),
-                    Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.03),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.10),
+                            Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.03),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.18), lineWidth: 1)
@@ -203,7 +243,9 @@ public struct PaywallOfferScreen: View {
         .scaleEffect(statScale)
     }
 
-    private var benefitsView: some View {
+    // MARK: - Benefits list
+
+    private func benefitsList(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(Self.benefits.enumerated()), id: \.element) { index, benefit in
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -218,60 +260,66 @@ public struct PaywallOfferScreen: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: width, alignment: .leading)
                 .opacity(benefitOpacities.indices.contains(index) ? benefitOpacities[index] : 0)
             }
         }
+        .frame(width: width, alignment: .leading)
     }
 
-    private var projectionsView: some View {
+    // MARK: - Projections
+
+    private func projectionsView(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(projections.enumerated()), id: \.element.period) { index, p in
                 projectionRow(
                     index: index,
                     period: p.period,
                     hours: p.hours,
-                    isLast: index == projections.count - 1
+                    isLast: index == projections.count - 1,
+                    width: width
                 )
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(width: width, alignment: .leading)
     }
 
-    private func projectionRow(index: Int, period: String, hours: Int, isLast: Bool) -> some View {
+    private func projectionRow(
+        index: Int,
+        period: String,
+        hours: Int,
+        isLast: Bool,
+        width: CGFloat
+    ) -> some View {
         let maxH = projections.last?.hours ?? 1
         let pct = max(Double(hours) / Double(max(maxH, 1)), 0.12)
         let progress = projBarProgress.indices.contains(index) ? projBarProgress[index] : 0
+        let fillFraction = max(0, min(1, pct * progress))
+        // Bar width = row width − label widths (56+56) − spacings (10+10).
+        let barWidth = max(0, width - 56 - 56 - 20)
         return HStack(spacing: 10) {
             Text(period)
                 .font(.custom(FontFamily.body.rawValue, size: 12))
                 .foregroundColor(AppColors.textMuted)
+                .lineLimit(1)
                 .frame(width: 56, alignment: .leading)
 
-            // Bar — track + fill, sized via GeometryReader. Wrapped in an
-            // explicit maxWidth: .infinity + fixed-height frame so the
-            // GeometryReader's natural greedy sizing is bounded to the
-            // available row width (otherwise it propagates "want infinity"
-            // up through the HStack and pushes the whole screen past the
-            // device edge).
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.white.opacity(0.04))
-
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(barFill(isLast: isLast))
-                        .frame(width: max(0, geo.size.width * pct * progress))
-                }
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white.opacity(0.04))
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(barFill(isLast: isLast))
+                    .scaleEffect(x: fillFraction, y: 1, anchor: .leading)
             }
-            .frame(maxWidth: .infinity, maxHeight: 18)
+            .frame(width: barWidth, height: 18)
 
             Text(Self.formatHours(hours))
                 .font(.custom(FontFamily.heading.rawValue, size: 15))
                 .foregroundColor(isLast ? AppColors.accent : AppColors.textSecondary)
+                .lineLimit(1)
                 .frame(width: 56, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity)
+        .frame(width: width, alignment: .leading)
     }
 
     private func barFill(isLast: Bool) -> AnyShapeStyle {
@@ -279,20 +327,22 @@ public struct PaywallOfferScreen: View {
             return AnyShapeStyle(
                 LinearGradient(
                     colors: [
-                        Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.45),
-                        Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.18),
+                        Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.65),
+                        Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.25),
                     ],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
             )
         }
-        return AnyShapeStyle(Color.white.opacity(0.10))
+        return AnyShapeStyle(Color.white.opacity(0.12))
     }
 
-    private var footer: some View {
+    // MARK: - Footer
+
+    private func footer(width: CGFloat) -> some View {
         VStack(spacing: 0) {
-            ctaButton
+            ctaButton(width: width - 48) // mirror horizontal padding
 
             Button {
                 handleDismiss()
@@ -300,55 +350,105 @@ public struct PaywallOfferScreen: View {
                 Text("Maybe later")
                     .font(.custom(FontFamily.body.rawValue, size: 14))
                     .foregroundColor(AppColors.textMuted)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(PressOpacityButtonStyle())
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 12)
-        .padding(.bottom, 16)
-        .background(AppColors.background)
+        .frame(width: width)
+        .padding(.bottom, 8)
+        .background(
+            LinearGradient(
+                colors: [
+                    AppColors.background.opacity(0),
+                    AppColors.background.opacity(0.85),
+                    AppColors.background,
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(width: width)
+            .allowsHitTesting(false)
+        )
         .opacity(buttonOpacity)
     }
 
-    /// Solid Discipline-Blue CTA — owns the action color so the eye lands
-    /// there. Cyan accents elsewhere (stat card, projection bars) stay
-    /// supporting. Shine overlays via `.shineSweep` so layout never bloats.
-    private var ctaButton: some View {
+    /// Glassmorphic cyan-tinted CTA. Tuned to actually fit the paywall's
+    /// cyan/blue palette (the prior version's solid Discipline-Blue
+    /// pill clashed with the stat card and projection-bar cyan accents).
+    ///
+    /// Layer stack (back → front):
+    ///   1. Cyan-to-blue diagonal gradient — the visible "color".
+    ///   2. `.ultraThinMaterial` over the gradient — true glassy refraction
+    ///      that softens the gradient and reads as polished glass.
+    ///   3. Top-leading → bottom-trailing white gradient stroke — premium bevel.
+    ///   4. Inner 0.5pt highlight stroke — refracted-light rim.
+    ///   5. Cyan glow + black drop shadow.
+    ///   6. `.shineSweep` overlay — kept as requested for the moving glare.
+    private func ctaButton(width: CGFloat) -> some View {
         Button {
             HapticsService.shared.medium()
             AnalyticsService.shared.track("Paywall CTA Tapped", properties: ["source": "lock_in"])
             showingPaywall = true
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Text("Lock In")
                     .font(.custom(FontFamily.headingSemiBold.rawValue, size: 17))
-                    .tracking(0.2)
-                    .foregroundColor(AppColors.textPrimary)
+                    .tracking(0.6)
+                    .foregroundColor(.white)
                 Image(systemName: "arrow.right")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(AppColors.textPrimary.opacity(0.9))
+                    .foregroundColor(.white.opacity(0.95))
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 56)
+            .frame(width: width, height: 58)
             .background(
+                // L1 — cyan-to-blue color floor.
                 LinearGradient(
-                    colors: [AppColors.primary, AppColors.primary.opacity(0.88)],
-                    startPoint: .top,
-                    endPoint: .bottom
+                    colors: [
+                        Color(.sRGB, red: 0,  green: 194/255, blue: 255/255, opacity: 0.55),
+                        Color(.sRGB, red: 58/255, green: 102/255, blue: 255/255, opacity: 0.40),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
             )
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            .background(
+                // L2 — actual glass material. Sits over the color so the
+                // tint reads through softened.
+                Rectangle().fill(.ultraThinMaterial)
             )
-            .shadow(color: AppColors.primary.opacity(0.45), radius: 22, x: 0, y: 10)
-            .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 2)
+            .overlay(
+                // L3 — bevel rim.
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.55),
+                                Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.25),
+                                Color.white.opacity(0.10),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .overlay(
+                // L4 — inner refracted highlight (very subtle).
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .inset(by: 1)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(
+                color: Color(.sRGB, red: 0, green: 194/255, blue: 255/255, opacity: 0.45),
+                radius: 22, x: 0, y: 10
+            )
+            .shadow(color: AppColors.primary.opacity(0.30), radius: 14, x: 0, y: 6)
+            .shadow(color: .black.opacity(0.30), radius: 6, x: 0, y: 2)
         }
         .buttonStyle(PressOpacityButtonStyle())
-        .shineSweep(cornerRadius: 16, cycle: 4.0, translation: 1.6, peakAlpha: 0.16)
+        .shineSweep(cornerRadius: 18, cycle: 3.4, translation: 1.4, peakAlpha: 0.30)
     }
 
     // MARK: - Actions

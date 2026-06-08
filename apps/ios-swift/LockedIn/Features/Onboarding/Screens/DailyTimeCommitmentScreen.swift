@@ -3,22 +3,23 @@ import DesignKit
 
 /// DailyTimeCommitmentScreen — Step 10: daily focus minutes single-select.
 ///
-/// Port of `screens/DailyTimeCommitmentScreen.tsx`. Renders a 3-column
-/// grid of cards (vs. the standard option row layout).
+/// Port of `screens/DailyTimeCommitmentScreen.tsx`. Renders a wheel picker
+/// with the 6 preset durations (15 / 30 / 45 / 1h / 1.5h / 2h) inside a HUD
+/// glass panel + an explicit Continue button. The wheel matches the
+/// duration-picker UX used in the Session feature so the visual language
+/// stays consistent across the app.
 struct DailyTimeCommitmentScreen: View {
     @Environment(OnboardingState.self) private var state
     let onContinue: () -> Void
 
     @State private var tracker = OnboardingScreenTracker(.dailyTimeCommitment)
-    @State private var selected: Int? = nil
+    @State private var selectedMinutes: Int = 30
     @State private var screenOpacity: Double = 0
     @State private var isAdvancing = false
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10),
-    ]
+    private var options: [OnboardingData.DailyMinuteOption] {
+        OnboardingData.dailyMinuteOptions
+    }
 
     var body: some View {
         ZStack {
@@ -36,49 +37,17 @@ struct DailyTimeCommitmentScreen: View {
                     .foregroundColor(AppColors.textMuted)
                     .padding(.bottom, 24)
 
-                LazyVGrid(columns: columns, spacing: 10) {
-                    ForEach(OnboardingData.dailyMinuteOptions) { opt in
-                        Button(action: { handleSelect(opt) }) {
-                            VStack(spacing: 4) {
-                                Text(opt.primary)
-                                    .font(.custom(FontFamily.heading.rawValue, size: 30))
-                                    .tracking(-1)
-                                    .foregroundColor(selected == opt.minutes ? SystemTokens.glowAccent : AppColors.textPrimary)
-                                    .shadow(color: selected == opt.minutes ? SystemTokens.glowAccent : .clear, radius: 8)
-                                Text(opt.unit)
-                                    .font(.custom(FontFamily.display.rawValue, size: 9))
-                                    .tracking(1.6)
-                                    .foregroundColor(selected == opt.minutes ? SystemTokens.glowAccent : SystemTokens.textMuted)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .aspectRatio(1, contentMode: .fit)
-                            .background(
-                                selected == opt.minutes
-                                ? Color(.sRGB, red: 58/255, green: 102/255, blue: 255/255, opacity: 0.14)
-                                : SystemTokens.panelBg
-                            )
-                            .overlay(
-                                Rectangle()
-                                    .stroke(
-                                        selected == opt.minutes ? SystemTokens.glowAccent : SystemTokens.panelBorder,
-                                        lineWidth: 1
-                                    )
-                            )
-                            .overlay(alignment: .leading) {
-                                Rectangle()
-                                    .fill(selected == opt.minutes ? SystemTokens.glowAccent : Color.white.opacity(0.06))
-                                    .frame(width: 2)
-                            }
-                        }
-                        .buttonStyle(PressOpacityButtonStyle())
-                    }
-                }
+                wheelPanel
+                    .padding(.bottom, 16)
 
                 Text("Most users start with 30 minutes.")
                     .font(.custom(FontFamily.body.rawValue, size: 13))
                     .foregroundColor(SystemTokens.textMuted)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 20)
+                    .padding(.bottom, 24)
+
+                PrimaryButton("> CONTINUE", action: handleContinue)
+                    .frame(maxWidth: .infinity)
 
                 Spacer()
             }
@@ -87,26 +56,67 @@ struct DailyTimeCommitmentScreen: View {
             .opacity(screenOpacity)
         }
         .onAppear {
+            // Seed the wheel from persisted state if available.
+            if let saved = state.dailyMinutes,
+               options.contains(where: { $0.minutes == saved }) {
+                selectedMinutes = saved
+            }
             tracker.didAppear()
             withAnimation(.easeOut(duration: 0.4)) { screenOpacity = 1 }
         }
         .onDisappear { tracker.didDisappear() }
+        .onChange(of: selectedMinutes) { _, _ in
+            HapticsService.shared.selectionChanged()
+        }
     }
 
-    private func handleSelect(_ opt: OnboardingData.DailyMinuteOption) {
+    // MARK: - Wheel panel
+
+    private var wheelPanel: some View {
+        ZStack {
+            // HUD glass surface — matches DurationPickerSheet's idiom:
+            // dark panel background + 2pt cyan left-border accent.
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(SystemTokens.glowAccent.opacity(0.45))
+                    .frame(width: 2)
+                Color.white.opacity(0.02)
+            }
+            .overlay(
+                Rectangle()
+                    .stroke(SystemTokens.panelBorder, lineWidth: 1)
+            )
+
+            Picker("Daily minutes", selection: $selectedMinutes) {
+                ForEach(options) { opt in
+                    Text("\(opt.primary) \(opt.unit)")
+                        .font(.custom(FontFamily.heading.rawValue, size: 28))
+                        .foregroundColor(AppColors.textPrimary)
+                        .tag(opt.minutes)
+                }
+            }
+            .pickerStyle(.wheel)
+            .frame(height: 180)
+            .clipped()
+            .padding(.horizontal, 24)
+        }
+        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: - Actions
+
+    private func handleContinue() {
         guard !isAdvancing else { return }
-        selected = opt.minutes
-        state.setDailyMinutes(opt.minutes)
+        state.setDailyMinutes(selectedMinutes)
         OnboardingAnalytics.track(OnboardingAnalytics.answerSubmitted, properties: [
             "screen": OnboardingRoute.dailyTimeCommitment.rawValue,
-            "answer": "\(opt.minutes) min",
-            "daily_minutes": opt.minutes,
+            "answer": "\(selectedMinutes) min",
+            "daily_minutes": selectedMinutes,
         ])
         HapticsService.shared.light()
         isAdvancing = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            withAnimation(.easeOut(duration: 0.4)) { screenOpacity = 0 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onContinue() }
-        }
+        withAnimation(.easeOut(duration: 0.4)) { screenOpacity = 0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onContinue() }
     }
 }

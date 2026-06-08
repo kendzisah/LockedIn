@@ -22,9 +22,21 @@ public struct OnboardingNavigator: View {
     @Environment(SubscriptionState.self) private var subscription
 
     @State private var path: [OnboardingRoute] = []
-    @State private var authMode: OnboardingRoute.AuthMode = .signup
 
     public init() {}
+
+    /// Pop the current auth route (SignUp ↔ SignIn) and push the requested
+    /// twin on the next runloop tick. Mirrors `MainNavigator
+    /// .swapAuthRoute(to:)` for the Settings flow — separate routes give
+    /// NavigationStack a real route change to animate, and the deferred
+    /// re-push avoids the pop+push collision that previously froze the
+    /// SignIn→SignUp toggle.
+    private func swapAuthRoute(to route: OnboardingRoute) {
+        if !path.isEmpty { path.removeLast() }
+        DispatchQueue.main.async {
+            path.append(route)
+        }
+    }
 
     private var rootRoute: OnboardingRoute {
         // Resume-on-restart: if we have a persisted screen, use it.
@@ -86,7 +98,7 @@ public struct OnboardingNavigator: View {
         case .definition:
             DefinitionScreen(
                 onContinue: { advance(from: .definition) },
-                onSignIn: { authMode = .signin; push(.onboardingAuth) }
+                onSignIn: { path.append(.onboardingSignIn) }
             )
         case .phoneTimeQuiz:
             PhoneTimeQuizScreen(onContinue: { advance(from: .phoneTimeQuiz) })
@@ -156,12 +168,30 @@ public struct OnboardingNavigator: View {
             )
         case .accountPrompt:
             AccountPromptScreen(
-                onCreateAccount: { authMode = .signup; push(.onboardingAuth) },
-                onSignIn: { authMode = .signin; push(.onboardingAuth) },
+                onCreateAccount: { path.append(.onboardingSignUp) },
+                onSignIn: { path.append(.onboardingSignIn) },
                 onMaybeLater: { advance(from: .accountPrompt) }
             )
+        case .onboardingSignUp:
+            SignUpScreen(
+                goToSignIn: { swapAuthRoute(to: .onboardingSignIn) },
+                continueAsGuest: { exitAuthAndAdvance() },
+                onSignedUp: { exitAuthAndAdvance() }
+            )
+        case .onboardingSignIn:
+            SignInScreen(
+                goToSignUp: { swapAuthRoute(to: .onboardingSignUp) },
+                continueAsGuest: { exitAuthAndAdvance() },
+                onSignedIn: { exitAuthAndAdvance() }
+            )
         case .onboardingAuth:
-            authView
+            // Legacy fallback: if a persisted path still references the
+            // old combined route, default to SignUp.
+            SignUpScreen(
+                goToSignIn: { swapAuthRoute(to: .onboardingSignIn) },
+                continueAsGuest: { exitAuthAndAdvance() },
+                onSignedUp: { exitAuthAndAdvance() }
+            )
         case .commitment:
             CommitmentScreen(onContinue: { advance(from: .commitment) })
         case .scheduleSession:
@@ -189,21 +219,14 @@ public struct OnboardingNavigator: View {
         }
     }
 
-    @ViewBuilder
-    private var authView: some View {
-        switch authMode {
-        case .signup:
-            SignUpScreen(
-                goToSignIn: { authMode = .signin },
-                continueAsGuest: { goBack(); advance(from: .accountPrompt) },
-                onSignedUp: { goBack(); advance(from: .accountPrompt) }
-            )
-        case .signin:
-            SignInScreen(
-                goToSignUp: { authMode = .signup },
-                continueAsGuest: { goBack(); advance(from: .accountPrompt) },
-                onSignedIn: { goBack(); advance(from: .accountPrompt) }
-            )
+    /// Pop the auth destination and advance to the next onboarding screen
+    /// on the next runloop tick. Doing both in one closure left
+    /// NavigationStack animating a pop + push simultaneously, which on
+    /// device manifested as the screen freezing mid-transition.
+    private func exitAuthAndAdvance() {
+        if !path.isEmpty { path.removeLast() }
+        DispatchQueue.main.async {
+            advance(from: .accountPrompt)
         }
     }
 }

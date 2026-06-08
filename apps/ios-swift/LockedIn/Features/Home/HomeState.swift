@@ -31,6 +31,11 @@ public struct PersistedSessionState: Codable, Equatable, Sendable {
     public var dailyGoalMetDate: String?
     public var weekCompletedDays: [String]?
 
+    /// FOC XP already credited today — backs the unified per-stat XP daily
+    /// cap (180 XP / 3 hrs). Reset implicitly when `dailyFocusXpDate` rolls.
+    public var dailyFocusXpAwarded: Int?
+    public var dailyFocusXpDate: String?
+
     // Legacy migration fields
     public var startDayKey: String?
     public var completedDayKeys: [String]?
@@ -51,7 +56,9 @@ public struct PersistedSessionState: Codable, Equatable, Sendable {
         dailyFocusedMinutes: Int? = nil,
         dailyFocusDate: String? = nil,
         dailyGoalMetDate: String? = nil,
-        weekCompletedDays: [String]? = nil
+        weekCompletedDays: [String]? = nil,
+        dailyFocusXpAwarded: Int? = nil,
+        dailyFocusXpDate: String? = nil
     ) {
         self.programStartDate = programStartDate
         self.maxCompletedDay = maxCompletedDay
@@ -67,6 +74,8 @@ public struct PersistedSessionState: Codable, Equatable, Sendable {
         self.dailyFocusDate = dailyFocusDate
         self.dailyGoalMetDate = dailyGoalMetDate
         self.weekCompletedDays = weekCompletedDays
+        self.dailyFocusXpAwarded = dailyFocusXpAwarded
+        self.dailyFocusXpDate = dailyFocusXpDate
     }
 }
 
@@ -172,17 +181,34 @@ public final class HomeState {
     // ── Weekly completion history (day keys where daily goal was met) ──
     public var weekCompletedDays: [String] = []
 
+    // ── Daily FOC XP cap tracking ──
+    //
+    // Source of truth for the 180-XP/day cap on focus minutes. `awarded`
+    // resets implicitly whenever `date` doesn't match `todayKey()`.
+    public var dailyFocusXpAwarded: Int = 0
+    public var dailyFocusXpDate: String?
+
     // ── Hydration / phase ──
     public var isHydrated: Bool = false
 
-    /// Streak-break overlay payload. Set when streak transitions `>0 → 0`.
+    /// Streak-break overlay payload. Set by `reconcileStreak()` when a missed
+    /// day is detected on launch/foreground (streak transitions `>0 → 0`).
     public struct StreakBreak: Equatable {
         public let previousStreakDays: Int
-        public let previousRankId: RankId
+        /// True when exactly one day was missed AND the user still has a
+        /// recovery token this week — the overlay offers a one-tap restore.
+        public let recoverable: Bool
+        /// Recovery tokens left this week, surfaced in the restore button copy.
+        public let recoveriesRemaining: Int
 
-        public init(previousStreakDays: Int, previousRankId: RankId) {
+        public init(
+            previousStreakDays: Int,
+            recoverable: Bool = false,
+            recoveriesRemaining: Int = 0
+        ) {
             self.previousStreakDays = previousStreakDays
-            self.previousRankId = previousRankId
+            self.recoverable = recoverable
+            self.recoveriesRemaining = recoveriesRemaining
         }
     }
     public var streakBreak: StreakBreak?
@@ -193,12 +219,22 @@ public final class HomeState {
 
     /// Load persisted state from `Defaults.standard` and replay it into the
     /// observable. Called once on app launch.
+    ///
+    /// Hydration also triggers an initial widget snapshot publish so a fresh
+    /// install (or post-update boot) populates the App Group store before any
+    /// mutator fires.
     public func hydrate() {
-        defer { isHydrated = true }
+        defer {
+            isHydrated = true
+            publishWidgetSnapshot()
+        }
         guard let persisted = Defaults.codable(PersistedSessionState.self, HomeStorageKeys.sessionState) else {
             return
         }
         apply(persisted)
+        // Resolve any streak broken while the app was closed before the first
+        // widget snapshot publishes a stale streak value.
+        reconcileStreak()
     }
 
     /// Map a `PersistedSessionState` (possibly with legacy fields) into the
@@ -224,12 +260,17 @@ public final class HomeState {
         dailyFocusDate = p.dailyFocusDate
         dailyGoalMetDate = p.dailyGoalMetDate
         weekCompletedDays = p.weekCompletedDays ?? []
+        dailyFocusXpAwarded = p.dailyFocusXpAwarded ?? 0
+        dailyFocusXpDate = p.dailyFocusXpDate
     }
 
     // MARK: - Persistence
 
     /// Persist the current state under `@lockedin/session_state`. Called by
     /// every mutator. Cheap — `UserDefaults` writes are kernel-buffered.
+    ///
+    /// Also calls `publishWidgetSnapshot()` so the LockedInWidgets extension
+    /// and AppIntents see the new numbers within one WidgetKit refresh tick.
     public func persist() {
         guard isHydrated else { return }
         let snapshot = PersistedSessionState(
@@ -246,9 +287,82 @@ public final class HomeState {
             dailyFocusedMinutes: dailyFocusedMinutes,
             dailyFocusDate: dailyFocusDate,
             dailyGoalMetDate: dailyGoalMetDate,
-            weekCompletedDays: weekCompletedDays
+            weekCompletedDays: weekCompletedDays,
+            dailyFocusXpAwarded: dailyFocusXpAwarded,
+            dailyFocusXpDate: dailyFocusXpDate
         )
         Defaults.setCodable(snapshot, HomeStorageKeys.sessionState)
+        publishWidgetSnapshot()
+    }
+
+    // MARK: - Widget snapshot publishing
+
+    /// External hook used by `MissionsProvider` to inject the recommended
+    /// next mission title into the App Group snapshot without HomeState
+    /// taking a hard dependency on `MissionsState`. Optional — when nil,
+    /// `publishWidgetSnapshot()` writes `nil` for the mission title.
+    public var nextMissionTitleProvider: (() -> String?)?
+
+    /// External hook used by the coordinator to inject the user's
+    /// daily-focus commitment from `OnboardingState.dailyMinutes` without
+    /// HomeState taking a hard dependency on the Onboarding feature.
+    /// Defaults to 60 when nil (matches `HomeTabScreen.dailyCommitmentMinutes`
+    /// fallback).
+    public var dailyGoalMinutesProvider: (() -> Int)?
+
+    /// Build a fresh `WidgetSnapshot` from the current observable state and
+    /// forward it to `WidgetDataPublisher.shared.publish(...)`. Called by
+    /// every mutator that touches a field the widgets render.
+    ///
+    /// `currentSessionEndsAtMs` is owned by `SessionEngine` (it has the
+    /// canonical end timestamp). To avoid stomping that field on every
+    /// HomeState write, we read whatever the publisher already persisted
+    /// and preserve it unless it's stale (>1h old, which always means an
+    /// orphaned writer).
+    public func publishWidgetSnapshot() {
+        let dailyGoalMinutes = dailyGoalMinutesProvider?() ?? 60
+        let dailyGoalMet = dailyGoalMetDate == SessionDayEngine.todayKey()
+        // Widget snapshot rank: derived from cached server stats when
+        // available; falls back to NPC for fresh installs / pre-hydration.
+        let rankXp = HomeService.shared.getCachedStats()?.totalRankXp ?? 0
+        let rankTierId = RankHelpers.rankFromXp(rankXp).id.rawValue
+
+        // Read the previous snapshot to preserve fields owned by other
+        // features (Missions: today's mission progress + XP; Session: the
+        // active session end timestamp).
+        let prev = WidgetDataPublisher.shared.loadSnapshot()
+
+        // Preserve the publisher's existing `currentSessionEndsAtMs` when it's
+        // still fresh — SessionEngine writes it on session start and clears
+        // on session end. HomeState shouldn't override that.
+        let previousEndsMs: Double? = {
+            guard let endsMs = prev?.currentSessionEndsAtMs else { return nil }
+            // Drop the value once we're past the end timestamp (timer ran
+            // to completion but engine never cleared) — a 60s grace covers
+            // the gap between natural finish and the SessionEngine publish.
+            let nowMs = Date().timeIntervalSince1970 * 1000
+            return endsMs + 60_000 > nowMs ? endsMs : nil
+        }()
+
+        let snapshot = WidgetSnapshot(
+            consecutiveStreak: consecutiveStreak,
+            dailyFocusedMinutes: dailyFocusedMinutes,
+            dailyGoalMinutes: dailyGoalMinutes,
+            dailyGoalMet: dailyGoalMet,
+            lifetimeLongestStreak: lifetimeLongestStreak,
+            currentSessionEndsAtMs: previousEndsMs,
+            rankTierId: rankTierId,
+            nextMissionTitle: nextMissionTitleProvider?(),
+            // Missions-owned fields. Carry forward whatever MissionsState
+            // last published; safe defaults (0/3/0) match a fresh install
+            // before the missions tab has hydrated.
+            todayMissionsCompleted: prev?.todayMissionsCompleted ?? 0,
+            todayMissionsTotal: prev?.todayMissionsTotal ?? 3,
+            todayXpEarned: prev?.todayXpEarned ?? 0,
+            lifetimeFocusedMinutes: lifetimeTotalMinutes,
+            publishedAtMs: Date().timeIntervalSince1970 * 1000
+        )
+        WidgetDataPublisher.shared.publish(snapshot)
     }
 
     // MARK: - Derived helpers (used by HomeTabScreen)
@@ -259,12 +373,52 @@ public final class HomeState {
         return 0
     }
 
-    /// Streak is "at risk" when the user has a non-zero streak but hasn't
-    /// met today's goal yet.
+    /// Streak is "at risk" when it's genuinely one missed day from breaking:
+    /// a live streak whose last goal-met was *yesterday* and where today's
+    /// goal hasn't been met yet. Requiring `lastSessionDayKey == yesterday`
+    /// (rather than just "not met today") stops the banner from firing every
+    /// day — once the streak has already broken, `reconcileStreak()` has zeroed
+    /// it, so `consecutiveStreak > 0` is false and this returns false.
     public func streakAtRisk(todayKey: String, dailyGoal: Int) -> Bool {
-        let focused = dailyFocused(todayKey: todayKey)
-        let met = focused >= dailyGoal
-        return !met && consecutiveStreak > 0 && dailyGoalMetDate != todayKey
+        guard consecutiveStreak > 0 else { return false }
+        let met = dailyFocused(todayKey: todayKey) >= dailyGoal || dailyGoalMetDate == todayKey
+        guard !met else { return false }
+        return lastSessionDayKey == SessionDayEngine.yesterdayKey()
+    }
+
+    // MARK: - Daily FOC XP cap (unified per-stat XP model)
+
+    /// Daily cap on FOC XP earned from focus minutes. Tuned so a 24-hour
+    /// lock-in yields the same XP as a 3-hour one — focus-time abuse is
+    /// the primary game-able vector this cap defends.
+    public static let dailyFocusXpCap: Int = 180
+
+    /// FOC XP already credited today. Returns 0 when `dailyFocusXpDate` is
+    /// stale (day rolled).
+    public func dailyFocusXpAwardedToday(todayKey: String) -> Int {
+        guard dailyFocusXpDate == todayKey else { return 0 }
+        return dailyFocusXpAwarded
+    }
+
+    /// Compute the XP eligible to credit for `minutes` of focus today,
+    /// after applying the daily cap. Does NOT mutate state.
+    public func eligibleFocusXp(for minutes: Int, todayKey: String) -> Int {
+        let alreadyToday = dailyFocusXpAwardedToday(todayKey: todayKey)
+        let remaining = max(0, Self.dailyFocusXpCap - alreadyToday)
+        return max(0, min(minutes, remaining))
+    }
+
+    /// Record that `xp` FOC XP was awarded for today. Resets the counter
+    /// when the day key rolls. Caller is responsible for the server bump —
+    /// this only tracks the local cap.
+    public func recordFocusXpAwarded(_ xp: Int, todayKey: String) {
+        guard xp > 0 else { return }
+        if dailyFocusXpDate != todayKey {
+            dailyFocusXpAwarded = 0
+            dailyFocusXpDate = todayKey
+        }
+        dailyFocusXpAwarded += xp
+        persist()
     }
 
     // MARK: - Mutators (mirror the RN reducer actions)
@@ -303,7 +457,6 @@ public final class HomeState {
         let today = SessionDayEngine.todayKey()
         if dailyGoalMetDate == today { return }
 
-        let prevStreak = consecutiveStreak
         let newStreak = SessionDayEngine.computeNewStreak(
             lastSessionDayKey: lastSessionDayKey,
             currentStreak: consecutiveStreak,
@@ -321,16 +474,9 @@ public final class HomeState {
         lastSessionDayKey = today
         dailyGoalMetDate = today
         weekCompletedDays = Array(Set(updated)).sorted()
-
-        // Mirror RN: detect a streak-broken transition (prev > 0, next == 0).
-        // dailyGoalMet doesn't normally cause this, but the explicit reset on
-        // future "missed day" logic does — keep symmetry for safety.
-        if prevStreak > 0 && newStreak == 0 {
-            streakBreak = StreakBreak(
-                previousStreakDays: prevStreak,
-                previousRankId: rankIdFromStreak(prevStreak)
-            )
-        }
+        // Meeting a goal can only grow or hold the streak (never break it), so
+        // there's no break detection here. Missed-day breaks are caught by
+        // `reconcileStreak()` on launch/foreground.
         persist()
     }
 
@@ -359,44 +505,146 @@ public final class HomeState {
         streakBreak = nil
     }
 
-    // MARK: - Streak helpers
+    // MARK: - Missed-day reconciliation
 
-    /// Mirrors `RankService.rankFromStreak` (`apps/mobile/src/services/RankService.ts`).
-    /// Walks descending through `RankTiers.all` until `streak >= tier.minDays`.
-    private func rankIdFromStreak(_ streak: Int) -> RankId {
-        let sorted = RankTiers.all.sorted { $0.minDays > $1.minDays }
-        for tier in sorted where streak >= tier.minDays {
-            return tier.id
+    /// Detect a broken streak on launch / foreground and reset it.
+    ///
+    /// The streak only advances when the daily goal is met (`dailyGoalMet()`),
+    /// which can't run while the app is closed — so a missed day has to be
+    /// caught lazily the next time we're foregrounded. Without this the streak
+    /// would sit at its stale value until the user's *next* goal-met, silently
+    /// masking the break.
+    ///
+    /// Rule: `gap = days(lastSessionDayKey → today)`.
+    ///   - `gap <= 1` → last goal-met was today or yesterday → streak intact.
+    ///   - `gap >= 2` → at least one full day missed → break (reset to 0).
+    ///     A `gap == 2` (exactly yesterday missed) with budget left is flagged
+    ///     `recoverable` so the overlay can offer a restore.
+    ///
+    /// Idempotent: once the streak is 0 the guard short-circuits, so repeated
+    /// foreground calls won't re-fire the break overlay.
+    public func reconcileStreak() {
+        guard consecutiveStreak > 0, let last = lastSessionDayKey else { return }
+        let today = SessionDayEngine.todayKey()
+        let gap = SessionDayEngine.delta(start: last, end: today)
+        guard gap >= 2 else { return }
+
+        let prev = consecutiveStreak
+        let status = StreakRecoveryService.getRecoveryStatus()
+        let canRestore = (gap == 2) && status.available
+
+        consecutiveStreak = 0
+        streakBreak = StreakBreak(
+            previousStreakDays: prev,
+            recoverable: canRestore,
+            recoveriesRemaining: status.remaining
+        )
+        persist()
+        StatsService.setStreak(0)
+    }
+
+    /// Consume a recovery token to restore a just-broken streak.
+    ///
+    /// Called from the streak-break overlay's restore button. On success the
+    /// streak is restored to its pre-break length and `lastSessionDayKey` is
+    /// re-anchored to yesterday — the missed day is forgiven, but the user
+    /// still has to meet today's goal to continue (so recovery saves the
+    /// streak without also gifting today's progress).
+    ///
+    /// Returns `true` when a token was actually spent and the streak restored.
+    @discardableResult
+    public func recoverStreak() -> Bool {
+        guard let brk = streakBreak, brk.recoverable else { return false }
+        let result = StreakRecoveryService.useRecovery(currentStreak: brk.previousStreakDays)
+        guard result.recovered else {
+            // Budget was exhausted between reconcile and tap — drop the offer.
+            streakBreak = nil
+            return false
         }
-        return .npc
+
+        consecutiveStreak = result.newStreak
+        lastSessionDayKey = SessionDayEngine.yesterdayKey()
+        streakBreak = nil
+        persist()
+        StatsService.setStreak(consecutiveStreak)
+        AnalyticsService.shared.track("Streak Recovered", properties: [
+            "streak_days": result.newStreak,
+        ])
+        return true
     }
 }
 
 // MARK: - Convenience: rank helpers exposed for HomeTabScreen
+//
+// Ranks are driven by **total rank XP** (the sum of the five per-stat XP
+// buckets). Streaks no longer gate rank-ups — they act as an XP earning
+// multiplier instead (`streakXpMultiplier`), so consistency accelerates
+// progression without the "lose a day, lose your rank" cliff.
 
 public enum RankHelpers {
-    /// Current rank tier for a given streak length.
-    public static func rankFromStreak(_ streak: Int) -> RankTier {
-        let sorted = RankTiers.all.sorted { $0.minDays > $1.minDays }
-        for tier in sorted where streak >= tier.minDays {
+    /// Current rank tier for a given total rank XP value. Walks descending
+    /// through `RankTiers.all` until `xp >= tier.minXp`.
+    public static func rankFromXp(_ xp: Int) -> RankTier {
+        let sorted = RankTiers.all.sorted { $0.minXp > $1.minXp }
+        for tier in sorted where xp >= tier.minXp {
             return tier
         }
         return RankTiers.all.first { $0.id == .npc } ?? RankTiers.all[0]
     }
 
     /// Next rank above the current one (nil at MAX RANK).
-    public static func nextRank(streak: Int) -> RankTier? {
-        let asc = RankTiers.all.sorted { $0.minDays < $1.minDays }
-        return asc.first { $0.minDays > streak }
+    public static func nextRankByXp(_ xp: Int) -> RankTier? {
+        let asc = RankTiers.all.sorted { $0.minXp < $1.minXp }
+        return asc.first { $0.minXp > xp }
     }
 
     /// Progress 0…1 toward the next rank threshold.
-    public static func progressToNext(streak: Int) -> Double {
-        let current = rankFromStreak(streak)
-        guard let next = nextRank(streak: streak) else { return 1.0 }
-        let span = Double(next.minDays - current.minDays)
+    public static func progressToNextByXp(_ xp: Int) -> Double {
+        let current = rankFromXp(xp)
+        guard let next = nextRankByXp(xp) else { return 1.0 }
+        let span = Double(next.minXp - current.minXp)
         guard span > 0 else { return 1.0 }
-        return min(1.0, max(0.0, Double(streak - current.minDays) / span))
+        return min(1.0, max(0.0, Double(xp - current.minXp) / span))
+    }
+
+    /// XP remaining until the next rank threshold. 0 at MAX RANK.
+    public static func xpToNext(_ xp: Int) -> Int {
+        guard let next = nextRankByXp(xp) else { return 0 }
+        return max(0, next.minXp - xp)
+    }
+
+    // MARK: - Streak XP multiplier
+    //
+    // Streaks reward consistency by multiplying mission XP and the daily-goal /
+    // perfect-day XP bumps. Capped at 1.5× so it's meaningful (and noticeable
+    // when you cross a milestone) but never absurd — the user explicitly asked
+    // for "not too much".
+    //
+    // **NOT** applied to:
+    //   - Focus minute XP (already daily-capped at 180; multiplying defeats
+    //     the cap's purpose).
+    //   - +5 DIS per-session reward (rounding swallows it anyway).
+
+    /// Returns the XP multiplier for a given consecutive-streak length.
+    /// `1.0` (no bonus) for streaks under 3 days; ramps up through milestones
+    /// to a `1.5×` cap at 180+ days.
+    public static func streakXpMultiplier(currentStreak: Int) -> Double {
+        switch currentStreak {
+        case ..<3:      return 1.00
+        case 3..<7:     return 1.05
+        case 7..<30:    return 1.10
+        case 30..<60:   return 1.20
+        case 60..<90:   return 1.30
+        case 90..<180:  return 1.40
+        default:        return 1.50
+        }
+    }
+
+    /// Apply the streak multiplier to a base XP amount. Rounds to the
+    /// nearest int so we never write fractional XP to the server.
+    public static func applyStreakMultiplier(baseXp: Int, streak: Int) -> Int {
+        let raw = Double(baseXp) * streakXpMultiplier(currentStreak: streak)
+        return Int(raw.rounded())
     }
 }
 

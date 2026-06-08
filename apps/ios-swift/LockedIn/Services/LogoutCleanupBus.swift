@@ -91,7 +91,8 @@ public final class LogoutCleanupBus {
             // via the public `cacheUserRank` zero-out is wrong, so we just
             // remove the persisted cache and let the next focus refetch.
             Defaults.remove(GuildService.cachedRankKey)
-            Defaults.remove(GuildService.weekStatsKey)
+            Defaults.remove(GuildService.monthStatsKey)
+            Defaults.remove("@lockedin/guild_week_stats")  // legacy weekly cache
             Defaults.remove(GuildService.hasActiveGuildKey)
             // GuildState doesn't expose a reset(); future API could add one.
             _ = guild

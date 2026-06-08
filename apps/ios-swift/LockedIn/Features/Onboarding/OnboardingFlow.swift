@@ -33,8 +33,22 @@ public enum OnboardingRoute: String, CaseIterable, Codable, Sendable, Identifiab
     case screenTimePreFrame  = "ScreenTimePreFrame"
     case notificationPreFrame = "NotificationPreFrame"
     case accountPrompt       = "AccountPrompt"
-    /// Auth form lives in `Features/Auth/`; the route shares step 22 with
+    /// Auth form lives in `Features/Auth/`; the routes share step 22 with
     /// `accountPrompt` so the progress bar doesn't jump when users tap in.
+    ///
+    /// We use **two** distinct cases (SignUp / SignIn) rather than a
+    /// single `.onboardingAuth` route + external `authMode` state.
+    /// NavigationStack caches destination views per-route, so swapping
+    /// between SignUp ↔ SignIn via external state alone was unreliable
+    /// (cached view stuck around, toggle silently no-op'd). Distinct
+    /// routes make the toggle = a real pop + push, which NavigationStack
+    /// handles cleanly — same pattern MainNavigator uses for the
+    /// post-onboarding Settings flow.
+    case onboardingSignUp    = "OnboardingSignUp"
+    case onboardingSignIn    = "OnboardingSignIn"
+    /// Legacy case retained so any persisted "OnboardingAuth" string from
+    /// older builds still decodes. New code should push
+    /// `.onboardingSignUp` or `.onboardingSignIn` directly.
     case onboardingAuth      = "OnboardingAuth"
     case commitment          = "Commitment"
     case scheduleSession     = "ScheduleSession"
@@ -71,6 +85,8 @@ public enum OnboardingRoute: String, CaseIterable, Codable, Sendable, Identifiab
         case .screenTimePreFrame:  return 20
         case .notificationPreFrame: return 21
         case .accountPrompt:       return 22
+        case .onboardingSignUp:    return 22
+        case .onboardingSignIn:    return 22
         case .onboardingAuth:      return 22
         case .commitment:          return 23
         case .scheduleSession:     return 24

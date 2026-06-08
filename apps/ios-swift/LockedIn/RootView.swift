@@ -14,6 +14,7 @@ struct RootView: View {
     @State private var subscription  = SubscriptionState()
     @State private var settings      = SettingsState()
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var didBoot = false
 
     var body: some View {
@@ -28,6 +29,35 @@ struct RootView: View {
             .environment(settings)
             .task {
                 await bootIfNeeded()
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                // Sweep orphaned Live Activities every time we come back to
+                // foreground — without this, a session that completed while
+                // the app was backgrounded leaves the Lock Screen banner
+                // stranded showing the last pushed `remainingSeconds`. The
+                // sweep also runs at cold start (bootIfNeeded), but
+                // backgrounded sessions never trigger that path.
+                guard newPhase == .active else { return }
+                if #available(iOS 16.2, *) {
+                    SessionEngine.performColdStartLiveActivitySweep()
+                }
+                // Catch a streak broken across midnight while the app was
+                // open-but-backgrounded — `reconcileStreak()` is idempotent.
+                if home.isHydrated { home.reconcileStreak() }
+                // Month-end guild nudge + re-arm the reset reminder (rolls it
+                // to next month after it fires). Both gate on the cached
+                // has-guild flag, so no network call here.
+                let hasGuild = Defaults.bool(GuildService.hasActiveGuildKey)
+                guild.evaluateMonthEndPrompt()
+                NotificationService.shared.scheduleGuildMonthEndReminder(hasActiveGuild: hasGuild)
+            }
+            // Global achievement-unlock toast. Listens for the
+            // `.achievementsUnlocked` notification and queues one toast per
+            // newly-earned id so the user sees every badge, not just the
+            // last one in the batch.
+            .overlay(alignment: .top) {
+                AchievementUnlockToastHost()
+                    .allowsHitTesting(true)
             }
     }
 
@@ -48,11 +78,30 @@ struct RootView: View {
             subscription: subscription
         )
 
+        // Wire the widget-snapshot provider closures BEFORE hydration so the
+        // first `publishWidgetSnapshot()` call (inside `home.hydrate()`) sees
+        // accurate `nextMissionTitle` and `dailyGoalMinutes` values instead of
+        // the nil / 60-default fallback.
+        home.nextMissionTitleProvider = { [weak missions] in
+            missions?.nextMissionTitle
+        }
+        home.dailyGoalMinutesProvider = { [weak onboarding] in
+            onboarding?.dailyMinutes ?? 60
+        }
+
         // Hydrate persisted state up-front.
         await onboarding.hydrate()
         home.hydrate()
         missions.hydrate()
         session.hydrateFromDefaults()
+
+        // Live Activity cold-start cleanup. If a session id from a prior
+        // launch is still in the App Group but no active execution block
+        // exists, the user killed the app mid-session and we have an
+        // orphaned Lock Screen banner to dismiss.
+        if #available(iOS 16.2, *) {
+            SessionEngine.performColdStartLiveActivitySweep()
+        }
 
         // Boot auth (anonymous fallback + listener).
         await auth.start()
@@ -65,7 +114,9 @@ struct RootView: View {
                 "os_version": UIDevice.current.systemVersion,
                 "is_subscribed": subscription.isSubscribed,
                 "current_streak": home.consecutiveStreak,
-                "current_rank_id": RankHelpers.rankFromStreak(home.consecutiveStreak).id.rawValue,
+                "current_rank_id": RankHelpers.rankFromXp(
+                    HomeService.shared.getCachedStats()?.totalRankXp ?? 0
+                ).id.rawValue,
             ])
             AnalyticsService.shared.setUserPropertiesOnce([
                 "first_seen": ISO8601DateFormatter().string(from: Date()),
@@ -89,6 +140,12 @@ struct RootView: View {
         // Cache the streak for the notification scheduler.
         Defaults.setInt(home.consecutiveStreak, "@lockedin/streak_for_notifs")
         Defaults.setInt(onboarding.dailyMinutes ?? 60, "@lockedin/daily_minutes")
+
+        // Arm the month-end guild reminder + surface the nudge if today is the
+        // last day of the month. Gated on the cached has-guild flag.
+        let hasGuild = Defaults.bool(GuildService.hasActiveGuildKey)
+        NotificationService.shared.scheduleGuildMonthEndReminder(hasActiveGuild: hasGuild)
+        guild.evaluateMonthEndPrompt()
     }
 }
 

@@ -11,7 +11,7 @@ struct BenefitGuildsScreen: View {
     private struct Row: Identifiable {
         let rank: Int
         let name: String
-        let ovr: Int
+        let ovrTier: StatTier
         let tier: String
         let tierColor: Color
         let points: Int
@@ -25,11 +25,15 @@ struct BenefitGuildsScreen: View {
         RankTiers.byId[id]?.color ?? SystemTokens.textMuted
     }
 
+    // Sample OVR letters match the per-row rank tier so the preview reads
+    // consistently with the live `SystemStatsCard` letter-tier UI.
+    // Marcus (Elite/gold) → A-, Jayden (Rising/cyan) → C+, Lance
+    // (Grinder/blue) → D, You (NPC/gray) → F-.
     private let rows: [Row] = [
-        .init(rank: 1, name: "Marcus", ovr: 45, tier: "Elite",   tierColor: BenefitGuildsScreen.tierColor(.elite),   points: 1240, isYou: false),
-        .init(rank: 2, name: "Jayden", ovr: 31, tier: "Rising",  tierColor: BenefitGuildsScreen.tierColor(.rising),  points: 890,  isYou: false),
-        .init(rank: 3, name: "Lance",  ovr: 23, tier: "Recruit", tierColor: BenefitGuildsScreen.tierColor(.grinder), points: 640,  isYou: false),
-        .init(rank: 4, name: "You",    ovr: 1,  tier: "NPC",     tierColor: BenefitGuildsScreen.tierColor(.npc),     points: 0,    isYou: true),
+        .init(rank: 1, name: "Marcus", ovrTier: .aMinus, tier: "Elite",   tierColor: BenefitGuildsScreen.tierColor(.elite),   points: 1240, isYou: false),
+        .init(rank: 2, name: "Jayden", ovrTier: .cPlus,  tier: "Rising",  tierColor: BenefitGuildsScreen.tierColor(.rising),  points: 890,  isYou: false),
+        .init(rank: 3, name: "Lance",  ovrTier: .d,      tier: "Recruit", tierColor: BenefitGuildsScreen.tierColor(.grinder), points: 640,  isYou: false),
+        .init(rank: 4, name: "You",    ovrTier: .fMinus, tier: "NPC",     tierColor: BenefitGuildsScreen.tierColor(.npc),     points: 0,    isYou: true),
     ]
 
     var body: some View {
@@ -37,7 +41,7 @@ struct BenefitGuildsScreen: View {
             panelLabel: "GUILDS",
             headline: "GUILDS",
             headlineColor: SystemTokens.purple,
-            body: "Create a guild. Invite your guild. Compete on a weekly leaderboard. Every session, mission, and streak day earns points. See who's actually locked in and who's just talking.",
+            body: "Create a guild. Invite your guild. Compete on a monthly leaderboard. Every session, mission, and streak day earns points. See who's actually locked in and who's just talking.",
             graphic: { board },
             onContinue: onContinue
         )
@@ -47,7 +51,7 @@ struct BenefitGuildsScreen: View {
 
     private var board: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("WEEKLY LEADERBOARD")
+            Text("MONTHLY LEADERBOARD")
                 .font(.custom(FontFamily.headingSemiBold.rawValue, size: 11))
                 .tracking(1.4)
                 .foregroundColor(AppColors.textSecondary)
@@ -77,10 +81,17 @@ struct BenefitGuildsScreen: View {
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text("OVR \(r.ovr)")
-                        .font(.custom(FontFamily.headingSemiBold.rawValue, size: 10))
-                        .foregroundColor(AppColors.textPrimary)
-                        .frame(width: 44, alignment: .leading)
+                    HStack(spacing: 4) {
+                        Text("OVR")
+                            .font(.custom(FontFamily.headingSemiBold.rawValue, size: 9))
+                            .tracking(1.0)
+                            .foregroundColor(AppColors.textMuted)
+                        Text(r.ovrTier.rawValue)
+                            .font(.custom(FontFamily.headingBold.rawValue, size: 12))
+                            .monospacedDigit()
+                            .foregroundColor(r.ovrTier.color)
+                    }
+                    .frame(width: 56, alignment: .leading)
 
                     Text(r.tier)
                         .font(.custom(FontFamily.headingSemiBold.rawValue, size: 9))

@@ -17,21 +17,37 @@ struct BenefitReportScreen: View {
         )
     }
 
-    private var ovr: Int {
-        let total = stats.reduce(0) { $0 + $1.value }
-        return Int(Double(total) / Double(max(1, stats.count)).rounded())
+    /// Map a 0-100 projected `value` (legacy numeric scale from
+    /// `OnboardingEngine.projectStats`) onto the new letter-tier ladder.
+    /// 78 → A-, 72 → B+, 64 → B-, 58 → C+ etc. Keeps the visual progression
+    /// monotonic without rebuilding the projection engine.
+    private func projectedTier(forValue value: Int) -> StatTier {
+        switch value {
+        case 85...:      return .aPlus
+        case 78..<85:    return .aMinus
+        case 72..<78:    return .bPlus
+        case 66..<72:    return .b
+        case 60..<66:    return .bMinus
+        case 54..<60:    return .cPlus
+        case 48..<54:    return .c
+        case 42..<48:    return .cMinus
+        case 36..<42:    return .dPlus
+        case 30..<36:    return .d
+        case 24..<30:    return .dMinus
+        case 18..<24:    return .fPlus
+        case 12..<18:    return .f
+        default:         return .fMinus
+        }
+    }
+
+    /// OVR letter tier for the Day-90 projection — average of the 5 projected
+    /// tier ordinals.
+    private var projectedOvrTier: StatTier {
+        OvrTier.compute(stats.map { projectedTier(forValue: $0.value) })
     }
 
     private var sessions: Int { 90 }
     private var minutes: Int { sessions * (state.dailyMinutes ?? 30) }
-
-    private let statColor: [OnboardingEngine.StatKey: Color] = [
-        .discipline:  SystemTokens.glowAccent,
-        .focus:       SystemTokens.cyan,
-        .execution:   SystemTokens.green,
-        .consistency: SystemTokens.gold,
-        .social:      SystemTokens.purple,
-    ]
 
     private let statLabel: [OnboardingEngine.StatKey: String] = [
         .discipline:  "Discipline",
@@ -69,50 +85,61 @@ struct BenefitReportScreen: View {
                     .font(.custom(FontFamily.headingSemiBold.rawValue, size: 10))
                     .tracking(1.4)
                     .foregroundColor(AppColors.textMuted)
-                Text("S")
-                    .font(.custom(FontFamily.heading.rawValue, size: 56))
-                    .foregroundColor(AppColors.warning)
-                    .shadow(color: SystemTokens.gold.opacity(0.4), radius: 14)
+                Text(projectedOvrTier.rawValue)
+                    .font(.custom(FontFamily.headingBold.rawValue, size: 56))
+                    .monospacedDigit()
+                    .foregroundColor(projectedOvrTier.color)
+                    .luminousTierGlow(projectedOvrTier, strength: 1.5)
             }
             .padding(.top, 8)
 
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 Text("OVR")
-                    .font(.custom(FontFamily.headingSemiBold.rawValue, size: 11))
-                    .tracking(1)
-                    .foregroundColor(AppColors.textSecondary)
-                Text("\(ovr)")
-                    .font(.custom(FontFamily.heading.rawValue, size: 22))
-                    .foregroundColor(AppColors.textPrimary)
-                Text("LEGEND")
-                    .font(.custom(FontFamily.headingSemiBold.rawValue, size: 12))
-                    .tracking(1.2)
-                    .foregroundColor(SystemTokens.purple)
+                    .font(.custom(FontFamily.display.rawValue, size: 10))
+                    .tracking(1.6)
+                    .foregroundColor(AppColors.textMuted)
+                Text("F-")
+                    .font(.custom(FontFamily.headingBold.rawValue, size: 18))
+                    .monospacedDigit()
+                    .foregroundColor(StatTier.fMinus.color)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(AppColors.textMuted)
+                Text(projectedOvrTier.rawValue)
+                    .font(.custom(FontFamily.headingBold.rawValue, size: 22))
+                    .monospacedDigit()
+                    .foregroundColor(projectedOvrTier.color)
+                    .luminousTierGlow(projectedOvrTier)
             }
             .padding(.top, 4)
 
             VStack(spacing: 6) {
                 ForEach(stats) { row in
+                    let endTier = projectedTier(forValue: row.value)
+                    // Grades are left-packed after the fixed-width stat label
+                    // (no leading Spacer) so the "F- → X" transition starts at
+                    // the same X on every row. Fixed sub-columns keep the arrow
+                    // + end-grade aligned regardless of letter width.
                     HStack(spacing: 8) {
                         Text(statLabel[row.key] ?? row.key.rawValue)
                             .font(.custom(FontFamily.body.rawValue, size: 11))
                             .foregroundColor(AppColors.textSecondary)
                             .frame(width: 80, alignment: .leading)
-                        GeometryReader { proxy in
-                            ZStack(alignment: .leading) {
-                                Rectangle()
-                                    .fill(Color.white.opacity(0.05))
-                                Rectangle()
-                                    .fill(statColor[row.key] ?? SystemTokens.glowAccent)
-                                    .frame(width: proxy.size.width * Double(row.value) / 100.0)
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                        }
-                        .frame(height: 6)
-                        Text("\(row.value)")
-                            .font(.custom(FontFamily.headingSemiBold.rawValue, size: 11))
-                            .foregroundColor(AppColors.textPrimary)
-                            .frame(width: 24, alignment: .trailing)
+                        Text("F-")
+                            .font(.custom(FontFamily.headingBold.rawValue, size: 14))
+                            .monospacedDigit()
+                            .foregroundColor(StatTier.fMinus.color)
+                            .frame(width: 24, alignment: .leading)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(AppColors.textMuted)
+                        Text(endTier.rawValue)
+                            .font(.custom(FontFamily.headingBold.rawValue, size: 16))
+                            .monospacedDigit()
+                            .foregroundColor(endTier.color)
+                            .luminousTierGlow(endTier)
+                            .frame(width: 36, alignment: .leading)
+                        Spacer(minLength: 0)
                     }
                 }
             }
@@ -121,7 +148,11 @@ struct BenefitReportScreen: View {
             HStack {
                 metric("\(sessions)",        label: "Sessions")
                 metric("\(minutes.formatted())", label: "Minutes")
-                metric("90",                  label: "Streak")
+                // The Day-90 streak reads in its own tier color (3-month = cyan)
+                // so it pops as the milestone it is.
+                metric("90", label: "Streak",
+                       valueColor: getStreakTierInfo(streak: 90).color,
+                       glow: true)
             }
             .padding(.top, 12)
             .padding(.top, 10)
@@ -151,11 +182,12 @@ struct BenefitReportScreen: View {
         .clipShape(RoundedRectangle(cornerRadius: 18))
     }
 
-    private func metric(_ value: String, label: String) -> some View {
+    private func metric(_ value: String, label: String, valueColor: Color = AppColors.textPrimary, glow: Bool = false) -> some View {
         VStack(spacing: 2) {
             Text(value)
                 .font(.custom(FontFamily.heading.rawValue, size: 16))
-                .foregroundColor(AppColors.textPrimary)
+                .foregroundColor(valueColor)
+                .shadow(color: glow ? valueColor.opacity(0.6) : .clear, radius: glow ? 8 : 0)
             Text(label)
                 .font(.custom(FontFamily.body.rawValue, size: 10))
                 .tracking(0.5)

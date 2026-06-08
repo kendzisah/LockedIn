@@ -76,7 +76,7 @@ struct BenefitRanksScreen: View {
                                 )
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                         } else {
-                            Text("Day \(tier.minDays)+")
+                            Text("\(tier.minXp.formatted(.number.notation(.compactName))) XP")
                                 .font(.custom(FontFamily.body.rawValue, size: 10))
                                 .tracking(0.4)
                                 .foregroundColor(AppColors.textMuted)

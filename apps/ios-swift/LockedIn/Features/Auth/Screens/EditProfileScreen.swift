@@ -46,6 +46,13 @@ public struct EditProfileScreen: View {
     @State private var photoMenuPickerVisible: Bool = false
     @State private var uploading: Bool = false
     @State private var saving: Bool = false
+
+    /// User explicitly tapped "Remove Photo". We have to distinguish this
+    /// from "user didn't touch the avatar" so the save handler knows to
+    /// send `avatar_url: nil` and actually clear the DB column — without
+    /// this flag, the update body falls back to a name-only patch and the
+    /// previous URL stays put.
+    @State private var didRemoveAvatar: Bool = false
     @State private var alertTitle: String = ""
     @State private var alertMessage: String = ""
     @State private var showAlert: Bool = false
@@ -86,6 +93,7 @@ public struct EditProfileScreen: View {
                     pickedImage = nil
                     pickedMime = nil
                     avatarURL = nil
+                    didRemoveAvatar = true
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -280,7 +288,7 @@ public struct EditProfileScreen: View {
     }
 
     private var canSave: Bool {
-        !trimmedName.isEmpty || pickedImage != nil || avatarURL != nil
+        !trimmedName.isEmpty || pickedImage != nil || avatarURL != nil || didRemoveAvatar
     }
 
     // MARK: - Photo selection
@@ -291,6 +299,9 @@ public struct EditProfileScreen: View {
             guard let data = try await item.loadTransferable(type: Data.self),
                   let image = UIImage(data: data) else { return }
             pickedImage = image
+            // Picking a new photo cancels any prior removal intent — we'll
+            // upload this one instead of clearing.
+            didRemoveAvatar = false
             // Best-effort MIME inference from the picker item's supported types.
             let identifier = item.supportedContentTypes.first?.identifier ?? ""
             if identifier.contains("png") {
@@ -401,17 +412,52 @@ public struct EditProfileScreen: View {
         }
 
         // Update profiles row.
+        //
+        // Three branches, in priority order:
+        //  1. `didRemoveAvatar` → explicitly null out `avatar_url` so the DB
+        //     reflects the removal. Without this branch the column stays
+        //     stuck at its previous value.
+        //  2. `publicURL != nil` → either a fresh upload or the existing URL
+        //     is being preserved; write it back.
+        //  3. Otherwise → name-only patch, leaving `avatar_url` untouched
+        //     (the user never touched the avatar UI).
         do {
-            struct ProfileUpdateWithAvatar: Encodable {
+            // Custom `encode(to:)` so the `avatar_url` key is always emitted
+            // (Swift's auto-synthesized Encodable uses `encodeIfPresent` for
+            // optionals — silently stripping `nil` values from the PATCH body
+            // and leaving the DB column untouched, which is exactly the bug
+            // this profile-removal flow is fighting).
+            struct ProfileUpdateAvatarExplicit: Encodable {
                 let display_name: String?
-                let avatar_url: String?
+                let avatar_url: String?  // nil → encodes as JSON null
+
+                enum CodingKeys: String, CodingKey {
+                    case display_name
+                    case avatar_url
+                }
+
+                func encode(to encoder: Encoder) throws {
+                    var c = encoder.container(keyedBy: CodingKeys.self)
+                    // `encode(_:forKey:)` (not `encodeIfPresent`) emits an
+                    // explicit `null` when the optional is `nil`.
+                    try c.encode(display_name, forKey: .display_name)
+                    try c.encode(avatar_url, forKey: .avatar_url)
+                }
             }
             struct ProfileUpdateNameOnly: Encodable {
                 let display_name: String?
             }
             let nameOrNil: String? = trimmedName.isEmpty ? nil : trimmedName
-            if let publicURL {
-                let body = ProfileUpdateWithAvatar(display_name: nameOrNil, avatar_url: publicURL)
+
+            if didRemoveAvatar {
+                let body = ProfileUpdateAvatarExplicit(display_name: nameOrNil, avatar_url: nil)
+                _ = try await LockedInSupabase.shared.client
+                    .from("profiles")
+                    .update(body)
+                    .eq("id", value: userId.uuidString.lowercased())
+                    .execute()
+            } else if let publicURL {
+                let body = ProfileUpdateAvatarExplicit(display_name: nameOrNil, avatar_url: publicURL)
                 _ = try await LockedInSupabase.shared.client
                     .from("profiles")
                     .update(body)

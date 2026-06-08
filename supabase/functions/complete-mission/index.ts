@@ -18,15 +18,16 @@ function computeTotalScore(focusMinutes: number, missionsDone: number, streakDay
   return focusMinutes * 2 + missionsDone * 15 + streakDays * 10;
 }
 
-/** ISO week key (YYYY-Www) from server UTC clock. */
-function getWeekKey(): string {
+/**
+ * Calendar-month key (YYYY-MM) from the server UTC clock. Guild scores are
+ * bucketed per month and reset at the UTC month boundary (1st, 00:00 UTC).
+ * Stored in the legacy-named `guild_scores.week_key` column.
+ */
+function getPeriodKey(): string {
   const d = new Date();
-  d.setUTCHours(0, 0, 0, 0);
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const isoYear = d.getUTCFullYear();
-  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
-  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return `${isoYear}-W${String(weekNo).padStart(2, '0')}`;
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth() + 1; // 0-indexed → 1-12
+  return `${year}-${String(month).padStart(2, '0')}`;
 }
 
 Deno.serve(async (req: Request) => {
@@ -94,7 +95,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const userId = user.id;
-    const weekKey = getWeekKey();
+    const weekKey = getPeriodKey();
     const totalScore = computeTotalScore(focusMinutes, missionsDone, streakDays);
 
     // Get all guilds the user belongs to
