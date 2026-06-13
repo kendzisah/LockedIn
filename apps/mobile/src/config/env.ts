@@ -53,4 +53,14 @@ export const ENV = {
     'EXPO_PUBLIC_APPSFLYER_APP_ID',
     process.env.EXPO_PUBLIC_APPSFLYER_APP_ID,
   ),
+
+  /** PostHog project API key (phc_*) */
+  POSTHOG_API_KEY: requireEnv(
+    'EXPO_PUBLIC_POSTHOG_API_KEY',
+    process.env.EXPO_PUBLIC_POSTHOG_API_KEY,
+  ),
+
+  /** PostHog API host (US: https://us.i.posthog.com, EU: https://eu.i.posthog.com) */
+  POSTHOG_HOST:
+    process.env.EXPO_PUBLIC_POSTHOG_HOST?.trim() || 'https://us.i.posthog.com',
 };

@@ -35,15 +35,10 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (!mounted.current) return;
 
-      // Identify user in Mixpanel with RevenueCat anonymous ID
-      try {
-        const customerInfo = await Purchases.getCustomerInfo();
-        const userId = customerInfo.originalAppUserId;
-        if (userId) {
-          await Analytics.identify(userId);
-          await Analytics.setUserPropertiesOnce({ '$name': userId, first_seen: new Date().toISOString() });
-        }
-      } catch {}
+      // Identity is owned by App.tsx, keyed on Supabase auth.users.id (the
+      // canonical user id). Do NOT call Analytics.identify with RevenueCat's
+      // originalAppUserId here — it would fragment the Person row on every
+      // cold boot. Mirrors apps/ios-swift/.../SubscriptionState.swift:65-72.
 
       removeListener = SubscriptionService.addListener((info) => {
         if (!mounted.current) return;
@@ -123,7 +118,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({
     return unsubscribe;
   }, []);
 
-  // Keep Mixpanel super properties and user profile in sync with subscription status
+  // Keep PostHog super properties and user profile in sync with subscription status
   useEffect(() => {
     if (isLoading) return;
     Analytics.setIsSubscribed(isSubscribed);

@@ -131,7 +131,7 @@ export function useOnboardingTracking(screen: OnboardingScreenName, step?: numbe
       total_steps: TOTAL_STEPS,
     });
 
-    // Start Mixpanel timed event for this screen
+    // Start timed event for this screen (PostHog duration emulation)
     Analytics.timeEvent('Onboarding Screen Exited');
 
     // Persist current screen for resume-on-restart

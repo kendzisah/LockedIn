@@ -1,0 +1,502 @@
+import UIKit
+import FamilyControls
+import ManagedSettings
+import DeviceActivity
+import SwiftUI
+
+/// Native Swift port of the Expo `ScreenTimeModule`. Exposes a plain Swift
+/// API (no Expo bridges) used by the Session/Lock-In feature (Worker W11).
+///
+/// Lifecycle: instantiate once at app launch and reuse. `loadSelection()` is
+/// called automatically by `init`.
+public final class ScreenTimeModule: @unchecked Sendable {
+
+    public static let shared = ScreenTimeModule()
+
+    public enum AuthorizationState: String {
+        case notDetermined = "not_determined"
+        case approved
+        case denied
+    }
+
+    private var _store: ManagedSettingsStore?
+    private var selection = FamilyActivitySelection()
+    private var shielding = false
+    private var authorized = false
+
+    private var store: ManagedSettingsStore? {
+        if let s = _store { return s }
+        var created: ManagedSettingsStore?
+        do {
+            try ObjCExceptionCatcher.execute {
+                if #available(iOS 16.0, *) {
+                    created = ManagedSettingsStore(named: .init(SharedScreenTime.managedSettingsStoreName))
+                } else {
+                    created = ManagedSettingsStore()
+                }
+            }
+        } catch {
+            Task { @MainActor in
+                AnalyticsService.shared.captureException(error, properties: [
+                    "context": "screen_time_store_init",
+                    "ios_version": UIDevice.current.systemVersion,
+                ])
+                AnalyticsService.shared.track("screen_time_store_init_failed", properties: [
+                    "ios_version": UIDevice.current.systemVersion,
+                ])
+            }
+            return nil
+        }
+        if let c = created {
+            _store = c
+            return c
+        }
+        return nil
+    }
+
+    public init() {
+        loadSelection()
+    }
+
+    // MARK: - Authorization
+
+    /// Request Family Controls authorization. Returns the resolved state.
+    @discardableResult
+    public func requestAuthorization() async -> AuthorizationState {
+        guard #available(iOS 16.0, *) else { return .denied }
+
+        return await Task { @MainActor in
+            var currentStatus: FamilyControls.AuthorizationStatus = .notDetermined
+            var checkSuccess = false
+
+            do {
+                try ObjCExceptionCatcher.execute {
+                    currentStatus = AuthorizationCenter.shared.authorizationStatus
+                    checkSuccess = true
+                }
+            } catch {
+                AnalyticsService.shared.captureException(error, properties: [
+                    "context": "family_controls_auth_check",
+                    "ios_version": UIDevice.current.systemVersion,
+                ])
+                AnalyticsService.shared.track("family_controls_auth_check_failed", properties: [
+                    "ios_version": UIDevice.current.systemVersion,
+                ])
+                return AuthorizationState.denied
+            }
+
+            if !checkSuccess { return .denied }
+
+            if currentStatus == .approved {
+                self.authorized = true
+                return .approved
+            }
+
+            if currentStatus == .denied {
+                return .denied
+            }
+
+            do {
+                try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+                self.authorized = true
+                return .approved
+            } catch {
+                return .denied
+            }
+        }.value
+    }
+
+    /// Current authorization status (no prompt).
+    public func getAuthorizationStatus() -> AuthorizationState {
+        guard #available(iOS 16.0, *) else { return .notDetermined }
+        var status: AuthorizationState = .notDetermined
+        do {
+            try ObjCExceptionCatcher.execute {
+                switch AuthorizationCenter.shared.authorizationStatus {
+                case .notDetermined: status = .notDetermined
+                case .approved:
+                    self.authorized = true
+                    status = .approved
+                case .denied: status = .denied
+                @unknown default: status = .notDetermined
+                }
+            }
+        } catch {
+            let iosVersion = UIDevice.current.systemVersion
+            Task { @MainActor in
+                AnalyticsService.shared.captureException(error, properties: [
+                    "context": "family_controls_status_check",
+                    "ios_version": iosVersion,
+                ])
+                AnalyticsService.shared.track("family_controls_status_check_failed", properties: [
+                    "ios_version": iosVersion,
+                ])
+            }
+        }
+        return status
+    }
+
+    // MARK: - App Picker
+
+    /// Present the SwiftUI `FamilyActivityPicker` modally. Returns the
+    /// number of selected applications + categories.
+    @discardableResult
+    @MainActor
+    public func showAppPicker() async -> Int {
+        // Ensure authorization before presenting the picker.
+        if !self.authorized, #available(iOS 16.0, *) {
+            var status: FamilyControls.AuthorizationStatus = .notDetermined
+            do {
+                try ObjCExceptionCatcher.execute {
+                    status = AuthorizationCenter.shared.authorizationStatus
+                }
+            } catch {
+                AnalyticsService.shared.captureException(error, properties: [
+                    "context": "family_controls_picker_auth_check",
+                    "ios_version": UIDevice.current.systemVersion,
+                ])
+                AnalyticsService.shared.track("family_controls_picker_auth_check_failed", properties: [
+                    "ios_version": UIDevice.current.systemVersion,
+                ])
+                return 0
+            }
+
+            if status == .approved {
+                self.authorized = true
+            } else if status == .denied {
+                return 0
+            } else {
+                do {
+                    try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+                    self.authorized = true
+                } catch { return 0 }
+            }
+        }
+
+        guard self.authorized else { return 0 }
+
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { [self] in
+                let model = AppPickerModel(selection: self.selection)
+                var resolved = false
+
+                model.onComplete = { [weak self] newSelection in
+                    guard !resolved else { return }
+                    resolved = true
+                    self?.selection = newSelection
+                    self?.saveSelection()
+                    continuation.resume(returning: newSelection.applicationTokens.count)
+                }
+
+                let sheet = AppPickerSheet(model: model)
+                let host = UIHostingController(rootView: sheet)
+                host.modalPresentationStyle = .pageSheet
+
+                if let pc = host.sheetPresentationController {
+                    pc.detents = [.large()]
+                    pc.prefersGrabberVisible = true
+                }
+
+                guard let root = self.topViewController() else {
+                    resolved = true
+                    continuation.resume(returning: self.selection.applicationTokens.count)
+                    return
+                }
+
+                root.present(host, animated: true)
+            }
+        }
+    }
+
+    // MARK: - Shield Control
+    //
+    // `beginSession` applies the shield immediately (so apps are blocked the
+    // moment the user taps Lock In) AND schedules a DeviceActivityMonitor
+    // interval ending at `now + durationSeconds`. The extension's
+    // intervalDidEnd callback un-shields via the same named ManagedSettingsStore
+    // even if iOS has killed the main app process.
+    //
+    // The app layer also removes the shield on normal completion / hold-to-unlock
+    // (via `endSession`), so both a normal end and a background-killed end are
+    // covered.
+
+    /// Start a Lock-In session of `durationSeconds`. Applies the shield and
+    /// schedules the DAM extension to clean up at session end.
+    @discardableResult
+    public func beginSession(durationSeconds: Int) -> Bool {
+        guard let s = self.store else { return false }
+        self.applyShield(on: s)
+
+        let endDate = Date().addingTimeInterval(TimeInterval(durationSeconds))
+        SharedScreenTime.sharedDefaults()?.set(
+            endDate.timeIntervalSince1970 * 1000,
+            forKey: SharedScreenTime.Keys.sessionEndTimestamp
+        )
+
+        guard #available(iOS 16.0, *) else {
+            self.shielding = true
+            return true
+        }
+
+        var scheduleSuccess = false
+        var monitorStartError: Error?
+        do {
+            try ObjCExceptionCatcher.execute {
+                let startComponents = Calendar.current.dateComponents([.hour, .minute, .second], from: Date())
+                let endComponents = Calendar.current.dateComponents([.hour, .minute, .second], from: endDate)
+                let schedule = DeviceActivitySchedule(
+                    intervalStart: startComponents,
+                    intervalEnd: endComponents,
+                    repeats: false
+                )
+                let center = DeviceActivityCenter()
+                center.stopMonitoring([DeviceActivityName(SharedScreenTime.activityName)])
+                do {
+                    try center.startMonitoring(
+                        DeviceActivityName(SharedScreenTime.activityName),
+                        during: schedule
+                    )
+                    scheduleSuccess = true
+                } catch {
+                    scheduleSuccess = false
+                    monitorStartError = error
+                }
+            }
+        } catch {
+            scheduleSuccess = false
+            monitorStartError = error
+        }
+
+        if !scheduleSuccess {
+            let iosVersion = UIDevice.current.systemVersion
+            let durationSec = durationSeconds
+            let capturedError = monitorStartError
+            Task { @MainActor in
+                if let err = capturedError {
+                    AnalyticsService.shared.captureException(err, properties: [
+                        "context": "device_activity_monitor_start",
+                        "ios_version": iosVersion,
+                        "duration_seconds": durationSec,
+                    ])
+                }
+                AnalyticsService.shared.track("device_activity_monitor_start_failed", properties: [
+                    "ios_version": iosVersion,
+                    "duration_seconds": durationSec,
+                ])
+            }
+        }
+
+        self.shielding = true
+        return scheduleSuccess
+    }
+
+    /// Legacy entry point. Prefer `beginSession(durationSeconds:)`.
+    public func shieldApps() {
+        guard let s = self.store else { return }
+        self.applyShield(on: s)
+        self.shielding = true
+    }
+
+    /// Remove the shield (normal completion / hold-to-unlock path).
+    public func removeShield() {
+        guard let s = self.store else { return }
+        do {
+            try ObjCExceptionCatcher.execute {
+                s.shield.applications = nil
+                s.shield.applicationCategories = nil
+                s.shield.webDomains = nil
+                s.shield.webDomainCategories = nil
+                self.shielding = false
+            }
+        } catch {
+            let iosVersion = UIDevice.current.systemVersion
+            Task { @MainActor in
+                AnalyticsService.shared.captureException(error, properties: [
+                    "context": "screen_time_shield_removal",
+                    "ios_version": iosVersion,
+                ])
+                AnalyticsService.shared.track("screen_time_shield_removal_failed", properties: [
+                    "ios_version": iosVersion,
+                ])
+            }
+        }
+
+        SharedScreenTime.sharedDefaults()?.removeObject(
+            forKey: SharedScreenTime.Keys.sessionEndTimestamp
+        )
+
+        if #available(iOS 16.0, *) {
+            do {
+                try ObjCExceptionCatcher.execute {
+                    DeviceActivityCenter().stopMonitoring(
+                        [DeviceActivityName(SharedScreenTime.activityName)]
+                    )
+                }
+            } catch {
+                let iosVersion = UIDevice.current.systemVersion
+                Task { @MainActor in
+                    AnalyticsService.shared.captureException(error, properties: [
+                        "context": "device_activity_monitor_stop",
+                        "ios_version": iosVersion,
+                    ])
+                    AnalyticsService.shared.track("device_activity_monitor_stop_failed", properties: [
+                        "ios_version": iosVersion,
+                    ])
+                }
+            }
+        }
+    }
+
+    public func isShielding() -> Bool {
+        return self.shielding
+    }
+
+    public func getSelectedAppCount() -> Int {
+        var count = 0
+        do {
+            try ObjCExceptionCatcher.execute {
+                count = self.selection.applicationTokens.count + self.selection.categoryTokens.count
+            }
+        } catch {
+            let iosVersion = UIDevice.current.systemVersion
+            Task { @MainActor in
+                AnalyticsService.shared.track("screen_time_selection_count_failed", properties: [
+                    "ios_version": iosVersion,
+                ])
+            }
+        }
+        return count
+    }
+
+    // MARK: - Shield Helper
+
+    private func applyShield(on s: ManagedSettingsStore) {
+        do {
+            try ObjCExceptionCatcher.execute {
+                s.shield.applications = self.selection.applicationTokens.isEmpty ? nil : self.selection.applicationTokens
+                s.shield.applicationCategories = self.selection.categoryTokens.isEmpty
+                    ? nil
+                    : ShieldSettings.ActivityCategoryPolicy.specific(self.selection.categoryTokens)
+                s.shield.webDomains = self.selection.webDomainTokens.isEmpty ? nil : self.selection.webDomainTokens
+                s.shield.webDomainCategories = self.selection.categoryTokens.isEmpty
+                    ? nil
+                    : ShieldSettings.ActivityCategoryPolicy.specific(self.selection.categoryTokens)
+            }
+        } catch {
+            let iosVersion = UIDevice.current.systemVersion
+            let appCount = self.selection.applicationTokens.count
+            let categoryCount = self.selection.categoryTokens.count
+            let webDomainCount = self.selection.webDomainTokens.count
+            Task { @MainActor in
+                AnalyticsService.shared.captureException(error, properties: [
+                    "context": "screen_time_apply_shield",
+                    "ios_version": iosVersion,
+                    "application_count": appCount,
+                    "category_count": categoryCount,
+                ])
+                AnalyticsService.shared.track("screen_time_apply_shield_failed", properties: [
+                    "ios_version": iosVersion,
+                    "application_count": appCount,
+                    "category_count": categoryCount,
+                ])
+                // Separate event for the web-domain branch — the single catch
+                // wraps both application + web-domain shield writes.
+                if webDomainCount > 0 {
+                    AnalyticsService.shared.captureException(error, properties: [
+                        "context": "screen_time_shield_web_domains",
+                        "ios_version": iosVersion,
+                        "web_domain_count": webDomainCount,
+                    ])
+                    AnalyticsService.shared.track("screen_time_shield_web_domains_failed", properties: [
+                        "ios_version": iosVersion,
+                        "web_domain_count": webDomainCount,
+                    ])
+                }
+            }
+        }
+    }
+
+    // MARK: - Persistence (shared App Group suite with legacy migration)
+
+    private func saveSelection() {
+        guard let data = try? PropertyListEncoder().encode(selection) else { return }
+        let defaults = SharedScreenTime.sharedDefaults() ?? UserDefaults.standard
+        defaults.set(data, forKey: SharedScreenTime.Keys.selection)
+    }
+
+    private func loadSelection() {
+        do {
+            try ObjCExceptionCatcher.execute {
+                let shared = SharedScreenTime.sharedDefaults()
+                if let data = shared?.data(forKey: SharedScreenTime.Keys.selection),
+                   let saved = try? PropertyListDecoder().decode(FamilyActivitySelection.self, from: data) {
+                    self.selection = saved
+                    return
+                }
+                // Legacy fallback: selection was previously written to .standard.
+                if let data = UserDefaults.standard.data(forKey: SharedScreenTime.Keys.selection),
+                   let saved = try? PropertyListDecoder().decode(FamilyActivitySelection.self, from: data) {
+                    self.selection = saved
+                    shared?.set(data, forKey: SharedScreenTime.Keys.selection)
+                    UserDefaults.standard.removeObject(forKey: SharedScreenTime.Keys.selection)
+                }
+            }
+        } catch {}
+    }
+
+    // MARK: - View Controller Helpers
+
+    private func topViewController() -> UIViewController? {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = scene.windows.first(where: \.isKeyWindow)
+        else { return nil }
+
+        var vc = window.rootViewController
+        while let presented = vc?.presentedViewController {
+            vc = presented
+        }
+        return vc
+    }
+}
+
+// MARK: - SwiftUI App Picker
+
+final class AppPickerModel: ObservableObject {
+    @Published var selection: FamilyActivitySelection
+    var onComplete: ((FamilyActivitySelection) -> Void)?
+    private var completed = false
+
+    init(selection: FamilyActivitySelection) {
+        self.selection = selection
+    }
+
+    func complete() {
+        guard !completed else { return }
+        completed = true
+        onComplete?(selection)
+    }
+}
+
+struct AppPickerSheet: View {
+    @ObservedObject var model: AppPickerModel
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationView {
+            FamilyActivityPicker(selection: $model.selection)
+                .navigationTitle("Block Apps")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            model.complete()
+                            dismiss()
+                        }
+                    }
+                }
+        }
+        .onDisappear {
+            model.complete()
+        }
+    }
+}

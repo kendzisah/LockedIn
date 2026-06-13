@@ -1,37 +1,32 @@
 /**
- * ExecutionBlockScreen — Custom-duration focus session.
+ * ExecutionBlockScreen — full-screen view of an active Lock In session.
  *
- * Standalone lockdown timer (not tied to 90-day program, streaks, or audio).
- * Receives durationMinutes from route params. Uses LockModeService to shield apps.
- * Hold-to-unlock (2s) for early exit. Navigates to SessionComplete on finish.
+ * The timer itself lives in ActiveSessionProvider; this screen is a view over
+ * it. The user is no longer trapped here — "Minimize" returns to the app with
+ * the session still running (Home shows a minimized timer), "Take a Break"
+ * pauses the focus countdown, and hold-to-unlock ends the session early.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useRef } from 'react';
 import {
   Animated,
-  AppState,
-  type AppStateStatus,
   BackHandler,
   Easing,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 import { useKeepAwake } from 'expo-keep-awake';
 import * as Haptics from 'expo-haptics';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
-import { useSession } from './state/SessionProvider';
-import { useOnboarding } from '../onboarding/state/OnboardingProvider';
-import { getTodayKey, computeNewStreak } from './engine/SessionEngine';
-import { LockModeService } from '../../services/LockModeService';
-import { NotificationService } from '../../services/NotificationService';
-import { Analytics } from '../../services/AnalyticsService';
+import { useActiveSession, useActiveSessionActions } from './state/ActiveSessionProvider';
+import { BreakContext } from '../../navigation/BreakContext';
 import { Colors } from '../../design/colors';
 import { FontFamily } from '../../design/typography';
-
-export const ACTIVE_EB_KEY = '@lockedin/active_execution_block';
+import { SystemTokens } from './systemTokens';
 
 const HOLD_DURATION = 2000;
 
@@ -62,166 +57,21 @@ function getPhaseText(elapsed: number, total: number): string {
   return PHASE_TEXTS[4];
 }
 
-const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { durationMinutes, resumeEndTimestamp } = route.params;
-  const isResume = resumeEndTimestamp != null;
-  const { state, dispatch } = useSession();
-  const { state: onboardingState } = useOnboarding();
+const ExecutionBlockScreen: React.FC<Props> = ({ navigation }) => {
+  const { remaining, paused, breakRemaining, totalSeconds } = useActiveSession();
+  const { endSessionEarly, resumeFromBreak } = useActiveSessionActions();
+  const { openBreakPicker } = useContext(BreakContext);
   useKeepAwake();
 
-  const totalSeconds = durationMinutes * 60;
-  const endTimestampRef = useRef(resumeEndTimestamp ?? Date.now() + totalSeconds * 1000);
-  const [remaining, setRemaining] = useState(totalSeconds);
-  const [isComplete, setIsComplete] = useState(false);
-
   const timerOpacity = useRef(new Animated.Value(0)).current;
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const completedRef = useRef(false);
 
-  const computeStreakAfterCompletion = useCallback((sessionMinutes: number) => {
-    const todayKey = getTodayKey();
-    const dailyCommitment = onboardingState.dailyMinutes ?? 60;
-    const currentFocused = state.dailyFocusDate === todayKey ? state.dailyFocusedMinutes : 0;
-    const newFocused = currentFocused + sessionMinutes;
-    const goalAlreadyMet = state.dailyGoalMetDate === todayKey;
+  // Minimize: leave the timer page but keep the session running in the provider.
+  const minimize = useCallback(() => {
+    navigation.navigate('Tabs', { screen: 'HomeTab' });
+  }, [navigation]);
 
-    if (newFocused >= dailyCommitment && !goalAlreadyMet) {
-      dispatch({ type: 'DAILY_GOAL_MET' });
-      Analytics.track('Daily Goal Met', {
-        daily_commitment: dailyCommitment,
-        actual_minutes: newFocused,
-      });
-      const newStreak = computeNewStreak(state.lastSessionDayKey, state.consecutiveStreak, todayKey);
-      return newStreak;
-    }
-    return 0;
-  }, [state, onboardingState.dailyMinutes, dispatch]);
-
-  // Hold-to-unlock
-  const [holdProgress, setHoldProgress] = useState(0);
-  const holdStartRef = useRef<number | null>(null);
-  const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const holdRingScale = useRef(new Animated.Value(0)).current;
-
-  const getElapsedMinutes = useCallback(() => {
-    const elapsedSeconds = totalSeconds - Math.max(0, Math.ceil((endTimestampRef.current - Date.now()) / 1000));
-    return Math.max(1, Math.ceil(elapsedSeconds / 60));
-  }, [totalSeconds]);
-
-  const handleTimerComplete = useCallback(async () => {
-    if (completedRef.current) return;
-    completedRef.current = true;
-    setIsComplete(true);
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    LockModeService.endSession();
-    NotificationService.cancelExecutionBlockDone();
-    await AsyncStorage.removeItem(ACTIVE_EB_KEY);
-
-    dispatch({
-      type: 'COMPLETE_EXECUTION_BLOCK',
-      payload: { durationMinutes },
-    });
-    void NotificationService.onSessionCompletedToday();
-
-    const resultStreak = computeStreakAfterCompletion(durationMinutes);
-
-    Analytics.track('Session Completed', {
-      type: 'execution_block',
-      duration_minutes: durationMinutes,
-      streak_day: resultStreak || state.consecutiveStreak,
-    });
-
-    Animated.timing(timerOpacity, {
-      toValue: 0,
-      duration: 500,
-      useNativeDriver: true,
-    }).start(() => {
-      navigation.replace('SessionComplete', {
-        phase: 'execution_block',
-        durationMinutes,
-        streak: resultStreak,
-      });
-    });
-  }, [dispatch, durationMinutes, timerOpacity, navigation, computeStreakAfterCompletion, state.consecutiveStreak]);
-
-  const handleHoldComplete = useCallback(async () => {
-    if (completedRef.current) return;
-    completedRef.current = true;
-    setIsComplete(true);
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    LockModeService.endSession();
-    NotificationService.cancelExecutionBlockDone();
-    await AsyncStorage.removeItem(ACTIVE_EB_KEY);
-
-    const elapsedSeconds = totalSeconds - Math.max(0, Math.ceil((endTimestampRef.current - Date.now()) / 1000));
-
-    Analytics.track('Session Abandoned', {
-      type: 'execution_block',
-      duration_minutes: durationMinutes,
-      elapsed_seconds: elapsedSeconds,
-      reason: 'hold_to_unlock',
-    });
-
-    if (elapsedSeconds < 60) {
-      navigation.replace('Tabs' as any);
-      return;
-    }
-
-    const actualMinutes = Math.ceil(elapsedSeconds / 60);
-
-    dispatch({
-      type: 'COMPLETE_EXECUTION_BLOCK',
-      payload: { durationMinutes: actualMinutes },
-    });
-    void NotificationService.onSessionCompletedToday();
-
-    const resultStreak = computeStreakAfterCompletion(actualMinutes);
-
-    Animated.timing(timerOpacity, {
-      toValue: 0,
-      duration: 500,
-      useNativeDriver: true,
-    }).start(() => {
-      navigation.replace('SessionComplete', {
-        phase: 'execution_block',
-        durationMinutes: actualMinutes,
-        streak: resultStreak,
-      });
-    });
-  }, [dispatch, durationMinutes, totalSeconds, timerOpacity, navigation, computeStreakAfterCompletion, state.consecutiveStreak]);
-
-  // Persist execution block info, schedule notification, fade in timer
+  // Fade the timer in on mount.
   useEffect(() => {
-    if (!isResume) {
-      AsyncStorage.setItem(
-        ACTIVE_EB_KEY,
-        JSON.stringify({
-          startTimestamp: Date.now(),
-          endTimestamp: endTimestampRef.current,
-          durationMinutes,
-        }),
-      );
-
-      Analytics.track('Session Started', {
-        type: 'execution_block',
-        duration_minutes: durationMinutes,
-        streak_day: state.consecutiveStreak,
-      });
-      Analytics.timeEvent('Session Completed');
-    } else {
-      Analytics.track('Session Resumed', {
-        type: 'execution_block',
-        duration_minutes: durationMinutes,
-        remaining_seconds: Math.max(0, Math.ceil((endTimestampRef.current - Date.now()) / 1000)),
-      });
-    }
-
-    // Idempotent — scheduleExecutionBlockDone cancels any existing notification
-    // with the same ID before scheduling, so calling on resume is safe.
-    NotificationService.scheduleExecutionBlockDone(new Date(endTimestampRef.current));
-
     Animated.timing(timerOpacity, {
       toValue: 1,
       duration: 600,
@@ -229,42 +79,20 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
     }).start();
   }, [timerOpacity]);
 
-  // Timer tick — uses wall-clock time so backgrounding doesn't drift
+  // Android back = minimize (never ends the session).
   useEffect(() => {
-    if (isComplete) return;
+    const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      minimize();
+      return true;
+    });
+    return () => handler.remove();
+  }, [minimize]);
 
-    tickRef.current = setInterval(() => {
-      const r = Math.max(0, Math.ceil((endTimestampRef.current - Date.now()) / 1000));
-      setRemaining(r);
-
-      if (r <= 0) {
-        if (tickRef.current) clearInterval(tickRef.current);
-        tickRef.current = null;
-        handleTimerComplete();
-      }
-    }, 250);
-
-    return () => {
-      if (tickRef.current) clearInterval(tickRef.current);
-    };
-  }, [isComplete, handleTimerComplete]);
-
-  // Re-sync timer when app returns to foreground (covers sleep / background)
-  useEffect(() => {
-    const subscription = AppState.addEventListener(
-      'change',
-      (nextState: AppStateStatus) => {
-        if (nextState === 'active' && !isComplete) {
-          const r = Math.max(0, Math.ceil((endTimestampRef.current - Date.now()) / 1000));
-          setRemaining(r);
-          if (r <= 0) {
-            handleTimerComplete();
-          }
-        }
-      },
-    );
-    return () => subscription.remove();
-  }, [isComplete, handleTimerComplete]);
+  // ── Hold-to-unlock (end session early) ──
+  const [holdProgress, setHoldProgress] = React.useState(0);
+  const holdStartRef = useRef<number | null>(null);
+  const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const holdRingScale = useRef(new Animated.Value(0)).current;
 
   const handleHoldStart = useCallback(() => {
     holdStartRef.current = Date.now();
@@ -289,10 +117,10 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
       if (progress >= 1) {
         if (holdIntervalRef.current) clearInterval(holdIntervalRef.current);
         holdStartRef.current = null;
-        handleHoldComplete();
+        endSessionEarly();
       }
     }, 50);
-  }, [holdRingScale, handleHoldComplete]);
+  }, [holdRingScale, endSessionEarly]);
 
   const handleHoldRelease = useCallback(() => {
     holdStartRef.current = null;
@@ -310,13 +138,6 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
     }).start();
   }, [holdRingScale]);
 
-  // Block Android back button
-  useEffect(() => {
-    const handler = BackHandler.addEventListener('hardwareBackPress', () => true);
-    return () => handler.remove();
-  }, []);
-
-  // Cleanup hold interval on unmount
   useEffect(() => {
     return () => {
       if (holdIntervalRef.current) clearInterval(holdIntervalRef.current);
@@ -324,16 +145,52 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
   }, []);
 
   const elapsed = totalSeconds - remaining;
-  const phaseText = getPhaseText(elapsed, totalSeconds);
+  const phaseText = paused ? 'On break — resumes automatically.' : getPhaseText(elapsed, totalSeconds);
+  const displaySeconds = paused ? breakRemaining : remaining;
 
   return (
     <View style={styles.container}>
+      {/* Minimize */}
+      <TouchableOpacity
+        style={styles.minimizeBtn}
+        onPress={minimize}
+        hitSlop={12}
+        activeOpacity={0.8}
+        accessibilityLabel="Minimize timer"
+      >
+        <Ionicons name="chevron-down" size={18} color={Colors.textMuted} />
+        <Text style={styles.minimizeText}>MINIMIZE</Text>
+      </TouchableOpacity>
+
       <Animated.View style={[styles.centerContent, { opacity: timerOpacity }]}>
-        <Text style={styles.timer}>{formatTime(remaining)}</Text>
+        {paused && <Text style={styles.breakLabel}>ON BREAK</Text>}
+        <Text style={[styles.timer, paused && styles.timerPaused]}>
+          {formatTime(displaySeconds)}
+        </Text>
         <Text style={styles.phaseText}>{phaseText}</Text>
       </Animated.View>
 
-      {!isComplete && (
+      <View style={styles.actions}>
+        {paused ? (
+          <TouchableOpacity
+            style={[styles.breakBtn, styles.resumeBtn]}
+            onPress={resumeFromBreak}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="play" size={14} color={SystemTokens.glowAccent} />
+            <Text style={styles.breakText}>RESUME</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.breakBtn}
+            onPress={openBreakPicker}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="pause" size={14} color={SystemTokens.cyan} />
+            <Text style={[styles.breakText, { color: SystemTokens.cyan }]}>TAKE A BREAK</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={styles.holdSection}>
           <View
             style={styles.holdButton}
@@ -356,7 +213,7 @@ const ExecutionBlockScreen: React.FC<Props> = ({ navigation, route }) => {
           </View>
           <Text style={styles.holdHint}>Hold to end session</Text>
         </View>
-      )}
+      </View>
     </View>
   );
 };
@@ -366,11 +223,33 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.lockInBackground,
   },
+  minimizeBtn: {
+    position: 'absolute',
+    top: 64,
+    right: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    zIndex: 2,
+  },
+  minimizeText: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 11,
+    letterSpacing: 1.6,
+    color: Colors.textMuted,
+  },
   centerContent: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
+  },
+  breakLabel: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 13,
+    letterSpacing: 3,
+    color: SystemTokens.cyan,
+    marginBottom: 12,
   },
   timer: {
     fontFamily: FontFamily.headingBold,
@@ -380,6 +259,9 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
     marginBottom: 24,
   },
+  timerPaused: {
+    color: SystemTokens.cyan,
+  },
   phaseText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 16,
@@ -387,11 +269,36 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
   },
-  holdSection: {
+  actions: {
     position: 'absolute',
-    bottom: 60,
+    bottom: 56,
     left: 0,
     right: 0,
+    alignItems: 'center',
+    gap: 20,
+  },
+  breakBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 13,
+    paddingHorizontal: 28,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,194,255,0.3)',
+  },
+  resumeBtn: {
+    borderColor: 'rgba(58,102,255,0.45)',
+    backgroundColor: 'rgba(58,102,255,0.14)',
+  },
+  breakText: {
+    fontFamily: FontFamily.headingBold,
+    fontSize: 12,
+    letterSpacing: 1.8,
+    color: SystemTokens.glowAccent,
+  },
+  holdSection: {
     alignItems: 'center',
   },
   holdButton: {

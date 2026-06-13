@@ -14,6 +14,7 @@ import Purchases, {
 } from 'react-native-purchases';
 import { ENV } from '../config/env';
 import { AppsFlyerService } from './AppsFlyerService';
+import { Analytics } from './AnalyticsService';
 
 const ENTITLEMENT_ID = 'Inner_Circle';
 
@@ -37,8 +38,13 @@ async function initialize(): Promise<boolean> {
     // Send device identifiers (IDFA/IDFV) to RevenueCat for attribution
     try {
       Purchases.collectDeviceIdentifiers();
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[SubscriptionService] collectDeviceIdentifiers failed (non-fatal):', e);
+      Analytics.track('subscription_collect_identifiers_failed', {
+        error_type: 'collect_device_identifiers',
+        error_code: e?.code,
+        error_message: e?.message,
+      });
     }
 
     // Send AppsFlyer ID to RevenueCat for S2S integration
@@ -48,15 +54,29 @@ async function initialize(): Promise<boolean> {
         Purchases.setAppsflyerID(afUID);
         console.log('[SubscriptionService] AppsFlyer ID set on RevenueCat:', afUID);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[SubscriptionService] setAppsflyerID failed (non-fatal):', e);
+      Analytics.track('subscription_appsflyer_id_failed', {
+        error_type: 'set_appsflyer_id',
+        error_code: e?.code,
+        error_message: e?.message,
+      });
     }
 
     // Restore purchases to cover reinstall / new anonymous-ID scenarios.
     try {
       await Purchases.restorePurchases();
-    } catch (restoreErr) {
+    } catch (restoreErr: any) {
       console.warn('[SubscriptionService] restorePurchases failed (non-fatal):', restoreErr);
+      Analytics.captureException(restoreErr, {
+        error_type: 'restore_purchases_init',
+        error_code: restoreErr?.code,
+      });
+      Analytics.track('subscription_restore_init_failed', {
+        error_type: 'restore_purchases_init',
+        error_code: restoreErr?.code,
+        error_message: restoreErr?.message,
+      });
     }
 
     console.log('[SubscriptionService] Initialized');
@@ -68,8 +88,8 @@ async function initialize(): Promise<boolean> {
   }
 }
 
-function hasEntitlement(info: CustomerInfo): boolean {
-  return ENTITLEMENT_ID in (info.entitlements.active ?? {});
+function hasEntitlement(info: CustomerInfo | null): boolean {
+  return !!info && ENTITLEMENT_ID in (info.entitlements.active ?? {});
 }
 
 async function checkSubscription(): Promise<boolean> {
@@ -89,8 +109,17 @@ async function logIn(userId: string): Promise<boolean> {
   try {
     const { customerInfo } = await Purchases.logIn(userId);
     return hasEntitlement(customerInfo);
-  } catch (e) {
+  } catch (e: any) {
     console.warn('[SubscriptionService] logIn failed:', e);
+    Analytics.captureException(e, {
+      error_type: 'revenuecat_login',
+      error_code: e?.code,
+    });
+    Analytics.track('subscription_login_rn_failed', {
+      error_type: 'revenuecat_login',
+      error_code: e?.code,
+      error_message: e?.message,
+    });
     return false;
   }
 }
@@ -102,8 +131,13 @@ async function logIn(userId: string): Promise<boolean> {
 async function logOut(): Promise<void> {
   try {
     await Purchases.logOut();
-  } catch (e) {
+  } catch (e: any) {
     console.warn('[SubscriptionService] logOut failed:', e);
+    Analytics.track('subscription_logout_rn_failed', {
+      error_type: 'revenuecat_logout',
+      error_code: e?.code,
+      error_message: e?.message,
+    });
   }
 }
 
@@ -111,7 +145,16 @@ async function restore(): Promise<boolean> {
   try {
     const info = await Purchases.restorePurchases();
     return hasEntitlement(info);
-  } catch {
+  } catch (e: any) {
+    Analytics.captureException(e, {
+      error_type: 'restore_purchases_manual',
+      error_code: e?.code,
+    });
+    Analytics.track('subscription_restore_manual_rn_failed', {
+      error_type: 'restore_purchases_manual',
+      error_code: e?.code,
+      error_message: e?.message,
+    });
     return false;
   }
 }

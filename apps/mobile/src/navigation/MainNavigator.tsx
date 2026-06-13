@@ -17,17 +17,19 @@ import GuildDetailScreen from '../features/leaderboard/screens/GuildDetailScreen
 import CreateGuildScreen from '../features/leaderboard/screens/CreateGuildScreen';
 import JoinGuildScreen from '../features/leaderboard/screens/JoinGuildScreen';
 import ScrollPicker from '../features/home/components/ScrollPicker';
+import BreakPickerSheet from '../features/home/components/BreakPickerSheet';
 import type { MainStackParamList } from '../types/navigation';
 import { rootNavigationRef } from './rootNavigationRef';
 import { Colors } from '../design/colors';
 import { FontFamily } from '../design/typography';
 import { useSubscription } from '../features/subscription/SubscriptionProvider';
 import { Analytics } from '../services/AnalyticsService';
-import { LockModeService } from '../services/LockModeService';
+import { useActiveSessionActions } from '../features/home/state/ActiveSessionProvider';
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
 import { LockInContext } from './LockInContext';
+import { BreakContext } from './BreakContext';
 
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120] as const;
 const HOURS_VALUES = Array.from({ length: 24 }, (_, i) => i);
@@ -39,13 +41,22 @@ const MainNavigator: React.FC = () => {
   const [showCustomTime, setShowCustomTime] = useState(false);
   const [customHours, setCustomHours] = useState(0);
   const [customMinutes, setCustomMinutes] = useState(30);
+  const [showBreakPicker, setShowBreakPicker] = useState(false);
+
+  const { startBreak } = useActiveSessionActions();
 
   const handleLockInPress = useCallback(() => {
     setShowDurationPicker(true);
   }, []);
 
+  const breakContextValue = React.useMemo(
+    () => ({ openBreakPicker: () => setShowBreakPicker(true) }),
+    [],
+  );
+
   return (
     <LockInContext.Provider value={handleLockInPress}>
+     <BreakContext.Provider value={breakContextValue}>
       <View style={{ flex: 1 }}>
         <Stack.Navigator
           screenOptions={{
@@ -118,7 +129,14 @@ const MainNavigator: React.FC = () => {
           onHideCustomTime={() => setShowCustomTime(false)}
           onClose={() => { setShowCustomTime(false); setShowDurationPicker(false); }}
         />
+
+        <BreakPickerSheet
+          visible={showBreakPicker}
+          onClose={() => setShowBreakPicker(false)}
+          onSelect={startBreak}
+        />
       </View>
+     </BreakContext.Provider>
     </LockInContext.Provider>
   );
 };
@@ -147,6 +165,7 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
   onClose,
 }) => {
   const { isSubscribed } = useSubscription();
+  const { startSession } = useActiveSessionActions();
   const [pressedOption, setPressedOption] = useState<number | null>(null);
 
   const handleSelect = useCallback((minutes: number) => {
@@ -159,13 +178,15 @@ const DurationPickerModal: React.FC<DurationPickerModalProps> = ({
       return;
     }
     Analytics.track('Lock In Started', { duration_minutes: minutes });
-    LockModeService.beginSession(minutes);
+    // Provider owns the timer (shield, persistence, notification, completion);
+    // the screen is just a view over it.
+    startSession(minutes);
     rootNavigationRef.navigate('Main', {
       screen: 'ExecutionBlock',
       params: { durationMinutes: minutes },
     });
     onClose();
-  }, [isSubscribed, onClose]);
+  }, [isSubscribed, onClose, startSession]);
 
   const formatDuration = (mins: number): { value: string; label: string } =>
     mins >= 60

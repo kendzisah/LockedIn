@@ -1,0 +1,22 @@
+# LLDB tuning for on-device debug attach speed.
+#
+# The default behavior is to read symbols for every loaded image from the
+# device's memory before letting the app continue past `main()`. With Supabase
+# + RevenueCat + AppsFlyer + PostHog + Lottie + a DAM extension, that's many
+# thousands of Swift type symbols round-tripped over USB on attach — exactly
+# what produces the "Launching ... is taking longer than expected. LLDB is
+# likely reading from device memory to resolve symbols." dialog.
+#
+# These settings defer symbol load until something actually needs them
+# (breakpoint, backtrace, `po`, crash). Cold launch becomes ~seconds instead
+# of minutes; breakpoints still work, you just pay the symbol cost on first
+# hit per image.
+
+# Don't read symbols for every loaded library on attach.
+settings set target.preload-symbols false
+
+# Load Swift symbol tables on demand (per image, when needed).
+settings set symbols.load-on-demand true
+
+# Skip the kernel-extension scan that doesn't apply to iOS apps anyway.
+settings set plugin.dynamic-loader.darwin-kernel.scan-type none

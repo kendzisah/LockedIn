@@ -81,8 +81,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         // Then check current session (listener may have already fired, setUser is idempotent)
         const { user: currentUser } = await AuthService.getCurrentUser();
         setUser(currentUser);
-      } catch (err) {
+      } catch (err: any) {
         console.warn('[AuthProvider] Failed to initialize auth:', err);
+        Analytics.captureException(err, {
+          error_type: 'auth_init',
+          error_code: err?.code,
+        });
+        Analytics.track('auth_init_failed', {
+          error_type: 'auth_init',
+          error_code: err?.code,
+          error_message: err?.message,
+        });
       } finally {
         setIsLoading(false);
       }
