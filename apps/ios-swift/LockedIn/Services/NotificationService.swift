@@ -72,6 +72,8 @@ public final class NotificationService {
         public static let missionReminder       = "lockedin.mission_reminder"
         public static let firstSessionReminder  = "lockedin.first_session_reminder"
         public static let guildMonthEnd         = "lockedin.guild_month_end"
+        /// Prefix for per-occurrence scheduled-session "starting now" notifications.
+        public static let scheduledSessionPrefix = "lockedin.scheduled_session"
     }
 
     // MARK: - Authorization
@@ -117,6 +119,51 @@ public final class NotificationService {
         UNUserNotificationCenter.current().removePendingNotificationRequests(
             withIdentifiers: [ID.dailyReminder]
         )
+    }
+
+    // MARK: - Scheduled sessions
+
+    /// Re-schedule the "starting now" heads-up notifications for every enabled
+    /// scheduled session (one per recurring weekday, or one fire-once for a
+    /// one-off). Cancels all prior scheduled-session notifications first. Also
+    /// the standalone fallback when Family Controls auto-block is unavailable.
+    public func resyncScheduledSessionNotifications(_ sessions: [ScheduledSession]) {
+        let center = UNUserNotificationCenter.current()
+        center.getPendingNotificationRequests { requests in
+            let stale = requests
+                .map(\.identifier)
+                .filter { $0.hasPrefix(ID.scheduledSessionPrefix) }
+            if !stale.isEmpty {
+                center.removePendingNotificationRequests(withIdentifiers: stale)
+            }
+
+            for s in sessions where s.enabled && s.isValid {
+                let content = UNMutableNotificationContent()
+                content.title = s.label.isEmpty ? "Locking in now" : "\(s.label) — locking in"
+                content.body = "Your scheduled focus session is starting. Distractions are blocked."
+                content.sound = .default
+
+                if s.isOneOff {
+                    guard let next = s.nextOccurrence() else { continue }
+                    let comps = Calendar.current.dateComponents(
+                        [.year, .month, .day, .hour, .minute], from: next
+                    )
+                    let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+                    let id = "\(ID.scheduledSessionPrefix).\(s.id).oneoff"
+                    center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger)) { _ in }
+                } else {
+                    for wd in s.weekdays {
+                        var comps = DateComponents()
+                        comps.weekday = wd
+                        comps.hour = s.startHour
+                        comps.minute = s.startMinute
+                        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
+                        let id = "\(ID.scheduledSessionPrefix).\(s.id).\(wd)"
+                        center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger)) { _ in }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Execution block done

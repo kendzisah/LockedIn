@@ -104,12 +104,40 @@ public final class LockModeService {
         return scheduled
     }
 
+    /// Re-apply the shield for a precise number of seconds. Used when resuming
+    /// from a Pause Protocol break: the original DeviceActivity schedule was
+    /// torn down on pause (which un-shields at the *original* end), so resume
+    /// re-arms it for the remaining time. Seconds-accurate to avoid drift.
+    @discardableResult
+    public func beginSession(durationSeconds: Int) async -> Bool {
+        let auth = await ScreenTimeModule.shared.requestAuthorization()
+        if auth != .approved { return false }
+
+        let secs = max(1, durationSeconds)
+        let now = Date()
+        let endTimestampMs = (now.timeIntervalSince1970 + TimeInterval(secs)) * 1000.0
+        let active = ActiveExecutionBlock(
+            startTimestamp: now.timeIntervalSince1970 * 1000.0,
+            endTimestamp: endTimestampMs,
+            durationMinutes: max(1, Int(ceil(Double(secs) / 60.0)))
+        )
+        Defaults.setCodable(active, SessionState.activeExecutionBlockKey, scope: .appGroup)
+        Defaults.setCodable(active, SessionState.activeExecutionBlockKey, scope: .standard)
+
+        let scheduled = ScreenTimeModule.shared.beginSession(durationSeconds: secs)
+        if !scheduled {
+            ScreenTimeModule.shared.shieldApps()
+        }
+        return scheduled
+    }
+
     /// End the current session — un-shield apps, cancel the DAM schedule,
     /// and clear the App Group keys the extension reads.
     public func endSession() {
         ScreenTimeModule.shared.removeShield()
         Defaults.remove(SessionState.activeExecutionBlockKey, scope: .appGroup)
         Defaults.remove(SessionState.activeExecutionBlockKey, scope: .standard)
+        Defaults.remove(SessionState.activeBlockHardcoreKey)
     }
 
     /// `true` while the main process is shielding (DAM extension may still

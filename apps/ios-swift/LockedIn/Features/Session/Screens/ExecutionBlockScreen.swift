@@ -1,80 +1,58 @@
 //
 //  ExecutionBlockScreen.swift
-//  LockedIn — Worker W11 (Session / Lock-In feature)
+//  LockedIn — Session / Lock-In feature
 //
-//  Port of `apps/mobile/src/features/home/ExecutionBlockScreen.tsx`. Standalone
-//  immersive lock-in timer:
-//   - Lock-in background `#090C10` (`AppColors.lockInBackground`).
-//   - Monospace-style countdown (uses Inter Tight Bold + `.monospacedDigit()`),
-//     72pt, letterSpacing −1, fades in over 600ms.
-//   - Phase text cycles every 20% elapsed (mirrors RN `getPhaseText`).
-//   - Hold-to-end (2s) custom touch button at the bottom — light haptic
-//     every 500ms, success haptic on release.
-//   - Idle timer disabled while on-screen (`isIdleTimerDisabled = true`).
-//   - On natural completion or hold-to-end, replaces with SessionCompleteScreen
-//     via `onFinish` (navigation owned by parent, matching RN `replace`).
-//
-//  Route params equivalent (passed via initializer):
-//   - `durationMinutes: Int`
-//   - `resumeEndTimestamp: Date?` (when non-nil, this is a resume from a
-//     persisted active block — mirrors `route.params.resumeEndTimestamp`).
+//  Full-screen immersive view of the active manual lock-in. The timer + pause
+//  state now live in `ActiveSessionStore` (shared with the minimized Home
+//  tracker), so this screen is a pure view over the store: it drives the quit
+//  gate, the Pause Protocol break, hardcore no-exit, and minimize, but it does
+//  not own the engine or the completion side-effects.
 //
 
 import SwiftUI
 import UIKit
 import DesignKit
 
-public struct ExecutionBlockScreenParams: Equatable {
-    public let durationMinutes: Int
-    public let resumeEndTimestamp: Date?
-
-    public init(durationMinutes: Int, resumeEndTimestamp: Date? = nil) {
-        self.durationMinutes = durationMinutes
-        self.resumeEndTimestamp = resumeEndTimestamp
-    }
-}
-
 public struct ExecutionBlockScreen: View {
-    public let params: ExecutionBlockScreenParams
+    @Environment(ActiveSessionStore.self) private var store
 
-    /// The user's primary goal, surfaced in the quit-confirmation dialog so a
-    /// momentary urge to bail is met with a reminder of what they're chasing.
-    public let goal: String?
+    /// Leave the timer and return to the app — the session keeps running in the
+    /// background (shield + Live Activity stay up). Nil hides the minimize
+    /// control.
+    public let onMinimize: (() -> Void)?
 
-    /// Called when the session ends. `actualMinutes` matches the value
-    /// the SessionComplete screen should receive; `wasNatural` indicates
-    /// whether the timer hit zero (true) or the user held to end (false).
-    public let onFinish: (_ actualMinutes: Int, _ wasNatural: Bool) -> Void
+    /// Multi-stage gate after a completed hold-to-end. We never end the session
+    /// straight from the hold — the user walks past both prompts AND a forced
+    /// cool-down before the exit unlocks.
+    private enum QuitStage { case none, firstConfirm, secondConfirm, cooldown }
 
-    /// Two-stage gate after a completed hold-to-end. We never end the session
-    /// straight from the hold anymore — the user has to walk past both prompts.
-    private enum QuitStage { case none, firstConfirm, secondConfirm }
-
-    @State private var engine: SessionEngine?
     @State private var timerOpacity: Double = 0.0
     @State private var holdProgress: Double = 0.0
     @State private var holdStartedAt: Date? = nil
     @State private var holdTickTimer: Timer? = nil
-    @State private var isComplete: Bool = false
     @State private var quitStage: QuitStage = .none
+    @State private var showBreakPrompt: Bool = false
+    @State private var breakQuote: String = ""
+    @State private var cooldownRemaining: Int = Self.cooldownSeconds
+    @State private var cooldownTimer: Timer? = nil
     @Environment(\.scenePhase) private var scenePhase
 
-    public init(
-        params: ExecutionBlockScreenParams,
-        goal: String? = nil,
-        onFinish: @escaping (_ actualMinutes: Int, _ wasNatural: Bool) -> Void
-    ) {
-        self.params = params
-        self.goal = goal
-        self.onFinish = onFinish
+    /// Forced "sit with the urge" delay before the exit unlocks at the final
+    /// quit step. Impulse urges to bail pass within ~a minute.
+    private static let cooldownSeconds: Int = 60
+
+    public init(onMinimize: (() -> Void)? = nil) {
+        self.onMinimize = onMinimize
     }
+
+    private var isOnBreak: Bool { store.isOnBreak }
 
     public var body: some View {
         ZStack {
             AppColors.lockInBackground
                 .ignoresSafeArea()
 
-            if let engine {
+            if let engine = store.engine {
                 VStack(spacing: 24) {
                     Text(SessionTimeFormatter.format(seconds: engine.remainingSeconds))
                         .font(.custom(FontFamily.heading.rawValue, size: 72))
@@ -94,18 +72,49 @@ public struct ExecutionBlockScreen: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            // Hold-to-end button pinned to the bottom.
-            if !isComplete && quitStage == .none {
-                VStack(spacing: 8) {
+            // Minimize (top-right) — leave the timer; session keeps running.
+            if let onMinimize, store.isActive, quitStage == .none, !showBreakPrompt, !isOnBreak {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button(action: onMinimize) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text("MINIMIZE")
+                                    .font(.custom(FontFamily.display.rawValue, size: 10))
+                                    .tracking(1.6)
+                            }
+                            .foregroundColor(AppColors.textMuted)
+                        }
+                        .buttonStyle(PressOpacityButtonStyle())
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16)
                     Spacer()
-                    holdButton
-                    Text("Hold to end session")
-                        .font(.custom(FontFamily.body.rawValue, size: 11))
-                        .tracking(0.3)
-                        .foregroundColor(AppColors.textMuted)
-                        .opacity(0.4)
-                        .padding(.bottom, 60)
                 }
+            }
+
+            // Bottom controls. Hardcore hides every exit; otherwise Pause
+            // Protocol + hold-to-end.
+            if store.isActive, quitStage == .none, !showBreakPrompt, !isOnBreak {
+                VStack(spacing: 18) {
+                    Spacer()
+                    if store.hardcore {
+                        hardcoreIndicator
+                    } else {
+                        pauseProtocolButton
+                        VStack(spacing: 8) {
+                            holdButton
+                            Text("Hold to end session")
+                                .font(.custom(FontFamily.body.rawValue, size: 11))
+                                .tracking(0.3)
+                                .foregroundColor(AppColors.textMuted)
+                                .opacity(0.4)
+                        }
+                    }
+                }
+                .padding(.bottom, 60)
             }
 
             // Two-stage quit confirmation (shown after a completed hold).
@@ -113,15 +122,22 @@ public struct ExecutionBlockScreen: View {
                 quitDialogOverlay
                     .transition(.opacity)
             }
+
+            // Pause Protocol deterrent (Tate quote) + paused break state.
+            if showBreakPrompt {
+                breakPromptOverlay
+                    .transition(.opacity)
+            }
+            if isOnBreak {
+                breakOverlay
+                    .transition(.opacity)
+            }
         }
         .statusBarHidden(true)
         .onAppear { handleAppear() }
         .onDisappear { handleDisappear() }
         .onChange(of: scenePhase) { _, newPhase in
-            // Re-sync timer when foregrounding (covers sleep / background).
-            if newPhase == .active {
-                engine?.sync()
-            }
+            if newPhase == .active { store.syncOnForeground() }
         }
     }
 
@@ -131,7 +147,6 @@ public struct ExecutionBlockScreen: View {
 
     private var holdButton: some View {
         ZStack {
-            // Pulsing ring shows hold progress (scales 0 → 1 over hold duration).
             Circle()
                 .stroke(AppColors.accent, lineWidth: 2)
                 .frame(width: 56, height: 56)
@@ -139,8 +154,6 @@ public struct ExecutionBlockScreen: View {
                 .opacity(holdProgress > 0 ? 0.4 : 0)
                 .animation(.linear(duration: 0.05), value: holdProgress)
 
-            // Lock body — `lock_close.json` Lottie driven by the hold
-            // progress so the lock visually closes as the user holds.
             LockLottieView(progress: holdProgress)
                 .frame(width: 32, height: 32)
         }
@@ -160,11 +173,19 @@ public struct ExecutionBlockScreen: View {
     // MARK: - Quit dialog UI
 
     private var remainingMinutes: Int {
-        max(0, Int(ceil(Double(engine?.remainingSeconds ?? 0) / 60.0)))
+        max(0, Int(ceil(Double(store.remainingSeconds) / 60.0)))
     }
 
+    private var elapsedSeconds: Int { store.elapsedSeconds }
+
+    /// Quitting under 60s elapsed earns nothing at all (mirrors the engine's
+    /// `endedEarly` < 60s → 0 rule).
+    private var willCountAsZero: Bool { elapsedSeconds < 60 }
+
+    private var bankedMinutes: Int { max(0, elapsedSeconds / 60) }
+
     private var goalText: String? {
-        guard let g = goal?.trimmingCharacters(in: .whitespacesAndNewlines), !g.isEmpty else { return nil }
+        guard let g = store.goal?.trimmingCharacters(in: .whitespacesAndNewlines), !g.isEmpty else { return nil }
         return g
     }
 
@@ -176,6 +197,7 @@ public struct ExecutionBlockScreen: View {
             switch quitStage {
             case .firstConfirm: firstQuitPanel
             case .secondConfirm: secondQuitPanel
+            case .cooldown: cooldownPanel
             case .none: EmptyView()
             }
         }
@@ -205,13 +227,35 @@ public struct ExecutionBlockScreen: View {
                         .background(SystemTokens.glowAccentSoft)
                         .overlay(Rectangle().stroke(SystemTokens.panelBorder, lineWidth: 1))
                     }
-                    Text(remainingMinutes > 0
-                         ? "\(remainingMinutes) min left on the clock. Quit now and this session doesn't count."
-                         : "You're almost there. Quit now and this session doesn't count.")
-                        .font(.custom(FontFamily.body.rawValue, size: 14))
-                        .foregroundColor(SystemTokens.textSecondary)
-                        .lineSpacing(5)
-                        .multilineTextAlignment(.center)
+                    // Concrete stakes — what quitting actually costs right now.
+                    VStack(spacing: 10) {
+                        Text("\(remainingMinutes) MIN LEFT")
+                            .font(.custom(FontFamily.headingBold.rawValue, size: 18))
+                            .tracking(1)
+                            .foregroundColor(AppColors.textPrimary)
+
+                        if willCountAsZero {
+                            Text("Under a minute in — quit now and you get ZERO. No minutes, no XP.")
+                                .font(.custom(FontFamily.body.rawValue, size: 14))
+                                .foregroundColor(SystemTokens.red)
+                                .lineSpacing(5)
+                                .multilineTextAlignment(.center)
+                        } else {
+                            Text("You'll keep the \(bankedMinutes) min you've banked — but forfeit the final \(remainingMinutes) and the completed-session bonus.")
+                                .font(.custom(FontFamily.body.rawValue, size: 14))
+                                .foregroundColor(SystemTokens.textSecondary)
+                                .lineSpacing(5)
+                                .multilineTextAlignment(.center)
+                        }
+
+                        if store.streak > 0 {
+                            Text("🔥 \(store.streak)-day streak on the line. Don't be the reason it dies.")
+                                .font(.custom(FontFamily.headingSemiBold.rawValue, size: 13))
+                                .foregroundColor(SystemTokens.gold)
+                                .lineSpacing(4)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
                 }
             },
             backLabel: "LOCK BACK IN",
@@ -237,7 +281,39 @@ public struct ExecutionBlockScreen: View {
             backLabel: "NO — STAY LOCKED IN",
             backAction: { dismissQuit(reconsideredAtStage: 2) },
             quitLabel: "Yes, I quit",
-            quitAction: { confirmQuit() }
+            quitAction: { beginCooldown() }
+        )
+    }
+
+    // MARK: - Cool-down gate
+
+    private var cooldownPanel: some View {
+        quitPanel(
+            eyebrow: "// COOL-DOWN",
+            icon: "hourglass",
+            iconColor: SystemTokens.cyan,
+            title: cooldownRemaining > 0 ? "Sit with the urge." : "Still want out?",
+            bodyContent: {
+                VStack(spacing: 14) {
+                    Text(cooldownRemaining > 0
+                         ? "The urge to quit is a spike — it passes. Breathe. If you still want out when the timer hits zero, the door opens."
+                         : "The urge has had its minute. Walk back in, or leave — your choice now.")
+                        .font(.custom(FontFamily.body.rawValue, size: 14))
+                        .foregroundColor(SystemTokens.textSecondary)
+                        .lineSpacing(5)
+                        .multilineTextAlignment(.center)
+                    if cooldownRemaining > 0 {
+                        Text(SessionTimeFormatter.format(seconds: cooldownRemaining))
+                            .font(.custom(FontFamily.heading.rawValue, size: 40))
+                            .monospacedDigit()
+                            .foregroundColor(AppColors.textPrimary)
+                    }
+                }
+            },
+            backLabel: "STAY LOCKED IN",
+            backAction: { dismissCooldown() },
+            quitLabel: cooldownRemaining > 0 ? "Leave (\(cooldownRemaining)s)" : "Leave anyway",
+            quitAction: { if cooldownRemaining <= 0 { confirmQuit() } }
         )
     }
 
@@ -280,7 +356,6 @@ public struct ExecutionBlockScreen: View {
                 bodyContent()
                     .padding(.bottom, 24)
 
-                // Encouraged action — HUD accent button.
                 Button(action: backAction) {
                     ZStack {
                         Rectangle()
@@ -306,7 +381,6 @@ public struct ExecutionBlockScreen: View {
                 .buttonStyle(PressOpacityButtonStyle())
                 .padding(.bottom, 10)
 
-                // Quit action — muted danger, deliberately understated.
                 Button(action: quitAction) {
                     Text(quitLabel)
                         .font(.custom(FontFamily.body.rawValue, size: 13))
@@ -326,57 +400,184 @@ public struct ExecutionBlockScreen: View {
         .padding(.horizontal, 28)
     }
 
+    // MARK: - Pause Protocol UI
+
+    private var hardcoreIndicator: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "flame.fill").font(.system(size: 12))
+                Text("HARDCORE — NO EXIT")
+                    .font(.custom(FontFamily.display.rawValue, size: 11))
+                    .tracking(1.8)
+            }
+            .foregroundColor(SystemTokens.red)
+            Text("You committed. Finish it.")
+                .font(.custom(FontFamily.body.rawValue, size: 11))
+                .foregroundColor(AppColors.textMuted)
+                .opacity(0.6)
+        }
+    }
+
+    private var pauseProtocolButton: some View {
+        let hasBreaks = store.breaksRemainingToday > 0
+        return Button(action: {
+            guard hasBreaks else { return }
+            breakQuote = TateQuotes.random()
+            HapticsService.shared.light()
+            withAnimation(.easeOut(duration: 0.25)) { showBreakPrompt = true }
+        }) {
+            HStack(spacing: 8) {
+                Image(systemName: "pause.fill").font(.system(size: 12, weight: .bold))
+                Text(hasBreaks ? "PAUSE PROTOCOL · \(store.breaksRemainingToday) LEFT" : "NO BREAKS LEFT TODAY")
+                    .font(.custom(FontFamily.display.rawValue, size: 11))
+                    .tracking(1.8)
+            }
+            .foregroundColor(hasBreaks ? SystemTokens.cyan : SystemTokens.textMuted)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 12)
+            .background(Color.white.opacity(0.04))
+            .overlay(Rectangle().stroke((hasBreaks ? SystemTokens.cyan : SystemTokens.textMuted).opacity(0.3), lineWidth: 1))
+        }
+        .buttonStyle(PressOpacityButtonStyle())
+        .disabled(!hasBreaks)
+    }
+
+    // Tate-quote deterrent + break-length picker.
+    private var breakPromptOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.85).ignoresSafeArea()
+            VStack(spacing: 0) {
+                Text("// PAUSE PROTOCOL")
+                    .font(.custom(FontFamily.display.rawValue, size: 11))
+                    .tracking(2.5)
+                    .foregroundColor(SystemTokens.glowAccent)
+                    .padding(.bottom, 16)
+                Image(systemName: "pause.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(SystemTokens.gold)
+                    .padding(.bottom, 16)
+                Text("Taking a break?")
+                    .font(.custom(FontFamily.heading.rawValue, size: 22))
+                    .tracking(-0.3)
+                    .foregroundColor(AppColors.textPrimary)
+                    .padding(.bottom, 12)
+                Text("\"\(breakQuote)\"")
+                    .font(.custom(FontFamily.bodyMedium.rawValue, size: 15))
+                    .italic()
+                    .foregroundColor(SystemTokens.cyan)
+                    .lineSpacing(5)
+                    .multilineTextAlignment(.center)
+                    .padding(.bottom, 18)
+
+                Text("\(store.breaksRemainingToday) of \(ActiveSessionStore.maxBreaksPerDay) breaks left today")
+                    .font(.custom(FontFamily.display.rawValue, size: 9))
+                    .tracking(1.4)
+                    .foregroundColor(SystemTokens.textMuted)
+                    .padding(.bottom, 12)
+
+                // Break-length chips — auto-resumes when the timer ends.
+                HStack(spacing: 8) {
+                    ForEach(ActiveSessionStore.breakOptions, id: \.self) { secs in
+                        Button(action: {
+                            withAnimation(.easeOut(duration: 0.25)) { showBreakPrompt = false }
+                            store.startBreak(seconds: secs)
+                        }) {
+                            Text(breakLabel(secs))
+                                .font(.custom(FontFamily.headingBold.rawValue, size: 14))
+                                .foregroundColor(SystemTokens.cyan)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 46)
+                                .background(SystemTokens.cyan.opacity(0.10))
+                                .overlay(Rectangle().stroke(SystemTokens.cyan.opacity(0.3), lineWidth: 1))
+                        }
+                        .buttonStyle(PressOpacityButtonStyle())
+                    }
+                }
+                .padding(.bottom, 14)
+
+                Button(action: { withAnimation(.easeOut(duration: 0.25)) { showBreakPrompt = false } }) {
+                    Text("▸  STAY LOCKED IN")
+                        .font(.custom(FontFamily.display.rawValue, size: 12))
+                        .tracking(2.0)
+                        .foregroundColor(AppColors.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(SystemTokens.glowAccentSoft)
+                        .overlay(Rectangle().stroke(SystemTokens.bracketColor, lineWidth: 1))
+                }
+                .buttonStyle(PressOpacityButtonStyle())
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 28)
+            .background(
+                Rectangle()
+                    .fill(SystemTokens.panelBg)
+                    .overlay(Rectangle().stroke(SystemTokens.panelBorder, lineWidth: 1))
+            )
+            .padding(.horizontal, 24)
+        }
+    }
+
+    private func breakLabel(_ seconds: Int) -> String {
+        seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m"
+    }
+
+    private var breakOverlay: some View {
+        ZStack {
+            AppColors.lockInBackground.ignoresSafeArea()
+            VStack(spacing: 20) {
+                Text("ON BREAK")
+                    .font(.custom(FontFamily.display.rawValue, size: 12))
+                    .tracking(3)
+                    .foregroundColor(SystemTokens.gold)
+                Text(SessionTimeFormatter.format(seconds: store.breakRemainingSeconds))
+                    .font(.custom(FontFamily.heading.rawValue, size: 64))
+                    .monospacedDigit()
+                    .foregroundColor(AppColors.textPrimary)
+                Text("Resumes automatically. Focus time is frozen.")
+                    .font(.custom(FontFamily.body.rawValue, size: 14))
+                    .foregroundColor(AppColors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                Button(action: { store.endBreakEarly() }) {
+                    Text("▸  END BREAK NOW")
+                        .font(.custom(FontFamily.display.rawValue, size: 13))
+                        .tracking(2)
+                        .foregroundColor(AppColors.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(SystemTokens.glowAccentSoft)
+                        .overlay(Rectangle().stroke(SystemTokens.bracketColor, lineWidth: 1))
+                }
+                .buttonStyle(PressOpacityButtonStyle())
+                .padding(.horizontal, 40)
+                .padding(.top, 12)
+            }
+        }
+    }
+
     // MARK: - Lifecycle
 
     private func handleAppear() {
-        // Keep screen awake.
         UIApplication.shared.isIdleTimerDisabled = true
-
-        // Spin up the engine once.
-        if engine == nil {
-            engine = SessionEngine(
-                durationMinutes: params.durationMinutes,
-                resumeEndTimestamp: params.resumeEndTimestamp,
-                onComplete: { status in
-                    Task { @MainActor in handleEngineFinish(status: status) }
-                }
-            )
-            engine?.start()
-        }
-
-        // Fade timer in.
+        timerOpacity = 0
         withAnimation(.easeInOut(duration: 0.6)) { timerOpacity = 1.0 }
-
-        // Schedule the "block done" local notification (covers background
-        // case so the user gets a ping even if the app is killed).
-        if let endTs = params.resumeEndTimestamp {
-            NotificationService.shared.scheduleExecutionBlockDone(endsAt: endTs)
-        } else {
-            let endsAt = Date().addingTimeInterval(TimeInterval(params.durationMinutes * 60))
-            NotificationService.shared.scheduleExecutionBlockDone(endsAt: endsAt)
-        }
-        AnalyticsService.shared.track(
-            params.resumeEndTimestamp == nil ? "Session Started" : "Session Resumed",
-            properties: ["duration_minutes": params.durationMinutes]
-        )
+        // Re-sync in case we re-entered from a minimize after a background gap.
+        store.syncOnForeground()
     }
 
     private func handleDisappear() {
         UIApplication.shared.isIdleTimerDisabled = false
         holdTickTimer?.invalidate()
         holdTickTimer = nil
+        cooldownTimer?.invalidate()
+        cooldownTimer = nil
     }
 
     // MARK: - Hold lifecycle
 
     private func startHold() {
-        // Bail out when the quit gate is already open. Without this, a
-        // lingering DragGesture.onChanged event (fired right as the hold
-        // button was being removed from the view tree) would see
-        // `holdStartedAt == nil` (cleared by `completeHold`) and kick off a
-        // fresh 2-second hold — eventually firing the quit dialog a second
-        // time on the same press.
-        guard !isComplete, quitStage == .none else { return }
+        guard store.isActive, quitStage == .none else { return }
         holdStartedAt = Date()
 
         holdTickTimer?.invalidate()
@@ -387,7 +588,6 @@ public struct ExecutionBlockScreen: View {
                 let progress = min(1.0, elapsed / Self.holdDurationSeconds)
                 holdProgress = progress
 
-                // Light haptic every 500ms while holding.
                 let bucket = Int(elapsed * 1000.0) % 500
                 if bucket < 50 {
                     HapticsService.shared.light()
@@ -411,85 +611,62 @@ public struct ExecutionBlockScreen: View {
         holdTickTimer?.invalidate()
         holdTickTimer = nil
         holdStartedAt = nil
-        // The hold no longer ends the session directly — it opens the
-        // two-stage "are you sure" gate. Reset the lock visual and surface
-        // the first prompt.
         HapticsService.shared.warning()
         withAnimation(.easeOut(duration: 0.2)) { holdProgress = 0 }
         withAnimation(.easeOut(duration: 0.25)) { quitStage = .firstConfirm }
         AnalyticsService.shared.track("Session Quit Prompt Shown", properties: [
-            "duration_minutes": params.durationMinutes,
+            "duration_minutes": store.durationMinutes,
         ])
     }
 
     // MARK: - Quit gate
 
-    /// User backed out at either stage — keep them locked in.
     private func dismissQuit(reconsideredAtStage stage: Int) {
         HapticsService.shared.light()
         withAnimation(.easeOut(duration: 0.25)) { quitStage = .none }
         AnalyticsService.shared.track("Session Quit Reconsidered", properties: [
-            "duration_minutes": params.durationMinutes,
+            "duration_minutes": store.durationMinutes,
             "stage": stage,
         ])
     }
 
-    /// User pushed through both prompts — end the session for real.
-    private func confirmQuit() {
-        HapticsService.shared.rigid()
-        quitStage = .none
-        engine?.endEarly()
+    private func beginCooldown() {
+        cooldownRemaining = Self.cooldownSeconds
+        withAnimation(.easeOut(duration: 0.25)) { quitStage = .cooldown }
+        HapticsService.shared.warning()
+        AnalyticsService.shared.track("Session Quit Cooldown Started", properties: [
+            "duration_minutes": store.durationMinutes,
+        ])
+        cooldownTimer?.invalidate()
+        cooldownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            Task { @MainActor in
+                guard quitStage == .cooldown, cooldownRemaining > 0 else { return }
+                cooldownRemaining -= 1
+                if cooldownRemaining <= 0 {
+                    HapticsService.shared.light()
+                    cooldownTimer?.invalidate()
+                    cooldownTimer = nil
+                }
+            }
+        }
     }
 
-    // MARK: - Engine finish dispatch
+    private func dismissCooldown() {
+        cooldownTimer?.invalidate()
+        cooldownTimer = nil
+        HapticsService.shared.light()
+        withAnimation(.easeOut(duration: 0.25)) { quitStage = .none }
+        AnalyticsService.shared.track("Session Quit Reconsidered", properties: [
+            "duration_minutes": store.durationMinutes,
+            "stage": 3,
+        ])
+    }
 
-    private func handleEngineFinish(status: SessionEngine.Status) {
-        guard !isComplete else { return }
-        isComplete = true
-        // If the timer completes naturally while the quit gate is open, drop
-        // the dialog — this is a win, not a quit.
+    private func confirmQuit() {
+        cooldownTimer?.invalidate()
+        cooldownTimer = nil
+        HapticsService.shared.rigid()
         quitStage = .none
-
-        // Side effects mirror ExecutionBlockScreen.tsx:111-145 / :148-193.
-        HapticsService.shared.success()
-        LockModeService.shared.endSession()
-
-        NotificationService.shared.cancelExecutionBlockDone()
-        NotificationService.shared.onSessionCompletedToday()
-        let isNatural: Bool = {
-            if case .completedNaturally = status { return true }
-            return false
-        }()
-        AnalyticsService.shared.track(
-            isNatural ? "Session Completed" : "Session Abandoned",
-            properties: ["duration_minutes": params.durationMinutes]
-        )
-
-        // Clear the active execution block snapshot.
-        Defaults.remove(SessionState.activeExecutionBlockKey, scope: .standard)
-        Defaults.remove(SessionState.activeExecutionBlockKey, scope: .appGroup)
-
-        // Fade out before handing off.
-        withAnimation(.easeInOut(duration: 0.5)) { timerOpacity = 0 }
-
-        switch status {
-        case .completedNaturally:
-            onFinish(params.durationMinutes, true)
-
-        case .endedEarly(let actualMinutes):
-            // RN: when elapsed < 60s, return to Tabs without completion.
-            // We surface the same value here so the parent can short-circuit.
-            let elapsedSeconds = (params.durationMinutes * 60) - (engine?.remainingSeconds ?? 0)
-            if elapsedSeconds < 60 {
-                // Caller is expected to navigate back to Tabs on (0, false).
-                onFinish(0, false)
-            } else {
-                onFinish(actualMinutes, false)
-            }
-
-        case .idle, .running:
-            // Should not happen — engine only fires onComplete in terminal states.
-            break
-        }
+        store.endEarly()
     }
 }

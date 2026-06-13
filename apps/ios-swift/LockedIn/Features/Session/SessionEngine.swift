@@ -26,19 +26,37 @@ import ActivityKit
 // MARK: - Phase text (mirror engine/SessionEngine.getPhaseText)
 
 public enum SessionPhaseText {
-    /// Returns the phase text for the active ExecutionBlock. Mirrors the
-    /// RN file `ExecutionBlockScreen.tsx` `PHASE_TEXTS` table (NOT the
-    /// `engine/SessionEngine.ts` table — the on-screen text uses the
-    /// shorter array in `ExecutionBlockScreen.tsx`).
+    /// Rotating lock-in messages (Andrew Tate × game style). The on-screen line
+    /// cycles through this pool during a session — add more here and they get
+    /// picked up everywhere (manual timer, scheduled timer, Live Activity).
+    public static let messages: [String] = [
+        "You are now Locked In.",
+        "Stay Locked In.",
+        "Discipline equals freedom. Execute.",
+        "While they scroll, you build.",
+        "The standard is the standard. No excuses.",
+        "Distraction is for the average. You are not average.",
+        "Every second locked in, they fall further behind.",
+        "Become the man your future self respects.",
+        "Comfort is the enemy of greatness.",
+        "Champions are built in silence.",
+        "The grind doesn't care how you feel. Move.",
+        "No distractions. No mercy. Just work.",
+        "Greatness is a habit, not a moment.",
+        "You vs you. Win the next minute.",
+    ]
+
+    /// Seconds each message stays on screen before advancing to the next.
+    private static let rotationSeconds = 15
+
+    /// Returns the current rotating message. Advances every `rotationSeconds`
+    /// of elapsed time, deterministic from the timer so it stays in sync across
+    /// the screen and the Live Activity without a separate timer.
     public static func text(elapsedSeconds: Int, totalSeconds: Int) -> String {
-        let pct: Double = totalSeconds > 0 ? Double(elapsedSeconds) / Double(totalSeconds) : 0
-        switch pct {
-        case ..<0.2: return "You are now Locked In."
-        case ..<0.4: return "Stay Locked In."
-        case ..<0.6: return "Execute."
-        case ..<0.8: return "No distractions."
-        default:     return "Build the standard."
-        }
+        guard !messages.isEmpty else { return "" }
+        _ = totalSeconds // retained for call-site compatibility
+        let idx = (max(0, elapsedSeconds) / rotationSeconds) % messages.count
+        return messages[idx]
     }
 }
 
@@ -52,6 +70,7 @@ public final class SessionEngine {
     public enum Status: Equatable {
         case idle
         case running
+        case paused                   // Pause Protocol break
         case completedNaturally       // hit zero
         case endedEarly(actualMinutes: Int) // hold-to-unlock
     }
@@ -60,7 +79,20 @@ public final class SessionEngine {
     public private(set) var remainingSeconds: Int
     public let totalSeconds: Int
     public let durationMinutes: Int
-    public let endTimestamp: Date
+    /// Mutable so a Pause Protocol break can push the end out on resume.
+    public private(set) var endTimestamp: Date
+
+    // ── Timed break (Pause Protocol) ──
+    /// True while a timed break is counting down (the focus clock is frozen).
+    public private(set) var onBreak = false
+    /// Seconds left in the current break (drives the UI + Live Activity).
+    public private(set) var breakRemainingSeconds = 0
+    @ObservationIgnored private var breakEndTimestamp: Date?
+    @ObservationIgnored private var pausedFocusRemaining: Int?
+    /// Fired with the focus seconds remaining when a break ends (auto at the
+    /// break timer's zero, or via `endBreakEarly()`). The owner (store)
+    /// re-arms the distraction shield for that remaining time.
+    @ObservationIgnored public var onBreakEnded: ((Int) -> Void)?
 
     // Internal plumbing — not UI state, so excluded from observation tracking.
     // `Timer` is thread-safe to invalidate from any context; `nonisolated(unsafe)`
@@ -131,13 +163,55 @@ public final class SessionEngine {
     }
 
     /// Snapshot the current state without ticking — used by views that need
-    /// to sync after AppState foreground transitions.
+    /// to sync after AppState foreground transitions. No-op while paused (the
+    /// countdown is frozen during a Pause Protocol break).
     public func sync(now: Date = Date()) {
+        guard status == .running else { return }
+        if onBreak {
+            let br = max(0, Int(ceil((breakEndTimestamp ?? now).timeIntervalSince(now))))
+            breakRemainingSeconds = br
+            if br <= 0 { finishBreak(now: now) }  // break elapsed while backgrounded
+            return
+        }
         let r = max(0, Int(ceil(endTimestamp.timeIntervalSince(now))))
         remainingSeconds = r
-        if r <= 0, status == .running {
+        if r <= 0 {
             finishNaturally()
         }
+    }
+
+    // MARK: - Pause Protocol (timed break)
+
+    /// Start a timed break: freeze the focus countdown, run a `seconds` break
+    /// countdown (surfaced on the Live Activity), and auto-resume focus at the
+    /// break's end. The ticker keeps running throughout.
+    public func startBreak(seconds: Int, now: Date = Date()) {
+        guard status == .running, !onBreak, seconds > 0 else { return }
+        pausedFocusRemaining = max(0, Int(ceil(endTimestamp.timeIntervalSince(now))))
+        breakEndTimestamp = now.addingTimeInterval(TimeInterval(seconds))
+        breakRemainingSeconds = seconds
+        onBreak = true
+        if #available(iOS 16.2, *) { forceLiveActivityUpdate(now: now) }
+    }
+
+    /// End the break now and resume the focus countdown.
+    public func endBreakEarly(now: Date = Date()) {
+        guard onBreak else { return }
+        finishBreak(now: now)
+    }
+
+    /// Resume focus after a break — push the end out by the frozen remaining so
+    /// the break adds no focus credit, then notify the owner to re-arm the shield.
+    private func finishBreak(now: Date = Date()) {
+        let rem = pausedFocusRemaining ?? max(0, Int(ceil(endTimestamp.timeIntervalSince(now))))
+        endTimestamp = now.addingTimeInterval(TimeInterval(rem))
+        remainingSeconds = rem
+        onBreak = false
+        breakEndTimestamp = nil
+        breakRemainingSeconds = 0
+        pausedFocusRemaining = nil
+        if #available(iOS 16.2, *) { forceLiveActivityUpdate(now: now) }
+        onBreakEnded?(rem)
     }
 
     /// Hold-to-unlock path. Computes the actual minutes the user ran for and
@@ -185,6 +259,19 @@ public final class SessionEngine {
 
     private func tick() {
         let now = Date()
+
+        // On a break, the focus clock is frozen — count the break down instead
+        // and auto-resume focus when it hits zero.
+        if onBreak {
+            let br = max(0, Int(ceil((breakEndTimestamp ?? now).timeIntervalSince(now))))
+            breakRemainingSeconds = br
+            if #available(iOS 16.2, *) {
+                updateLiveActivityIfNeeded(now: now)
+            }
+            if br <= 0 { finishBreak(now: now) }
+            return
+        }
+
         let r = max(0, Int(ceil(endTimestamp.timeIntervalSince(now))))
         remainingSeconds = r
 
@@ -361,21 +448,50 @@ extension SessionEngine {
         let sec = Int(now.timeIntervalSince1970)
         guard sec != lastLiveActivityUpdateSecond else { return }
         lastLiveActivityUpdateSecond = sec
+        pushLiveActivity(handle: handle, now: now)
+    }
 
+    /// Push the current state immediately, bypassing the 1Hz coalescing gate —
+    /// used on break start/end so the island flips to the break (or focus)
+    /// countdown the instant it changes.
+    func forceLiveActivityUpdate(now: Date) {
+        guard let handle = self._liveActivityStorage as? LiveActivityHandle else { return }
+        lastLiveActivityUpdateSecond = Int(now.timeIntervalSince1970)
+        pushLiveActivity(handle: handle, now: now)
+    }
+
+    private func pushLiveActivity(handle: LiveActivityHandle, now: Date) {
         let nowMs = now.timeIntervalSince1970 * 1000.0
-        let state = SessionActivityAttributes.ContentState(
-            remainingSeconds: remainingSeconds,
-            phaseLabel: SessionPhaseText.text(
-                elapsedSeconds: totalSeconds - remainingSeconds,
-                totalSeconds: totalSeconds
-            ),
-            isPaused: false,
-            lastTickMs: nowMs,
-            endTimestampMs: endTimestamp.timeIntervalSince1970 * 1000.0
-        )
-        let staleDate = now.addingTimeInterval(Double(remainingSeconds) + 300)
-        let content = ActivityContent(state: state, staleDate: staleDate)
+        let state: SessionActivityAttributes.ContentState
+        let staleSeconds: Int
 
+        if onBreak, let breakEnd = breakEndTimestamp {
+            // The Dynamic Island shows the BREAK countdown (not the frozen
+            // focus timer) by pointing `endTimestampMs` at the break's end.
+            state = SessionActivityAttributes.ContentState(
+                remainingSeconds: breakRemainingSeconds,
+                phaseLabel: "On break",
+                isPaused: false,
+                lastTickMs: nowMs,
+                endTimestampMs: breakEnd.timeIntervalSince1970 * 1000.0
+            )
+            staleSeconds = breakRemainingSeconds
+        } else {
+            state = SessionActivityAttributes.ContentState(
+                remainingSeconds: remainingSeconds,
+                phaseLabel: SessionPhaseText.text(
+                    elapsedSeconds: totalSeconds - remainingSeconds,
+                    totalSeconds: totalSeconds
+                ),
+                isPaused: false,
+                lastTickMs: nowMs,
+                endTimestampMs: endTimestamp.timeIntervalSince1970 * 1000.0
+            )
+            staleSeconds = remainingSeconds
+        }
+
+        let staleDate = now.addingTimeInterval(Double(staleSeconds) + 300)
+        let content = ActivityContent(state: state, staleDate: staleDate)
         let activity = handle.activity
         Task { @MainActor in
             await activity.update(content)

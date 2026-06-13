@@ -9,6 +9,7 @@
  */
 
 import { type SupabaseClient } from '@supabase/supabase-js';
+import { AppState, type AppStateStatus } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -69,6 +70,24 @@ async function initialize(): Promise<boolean> {
     // Keep cached id in sync with the live session (sign-up / link / sign-out all change auth).
     client.auth.onAuthStateChange((_event, session) => {
       currentUserId = session?.user?.id ?? null;
+    });
+
+    // ── Drive token auto-refresh from AppState ──
+    // Supabase's refresh ticker relies on JS timers, which the OS suspends while
+    // the app is backgrounded — e.g. the phone is locked during a long "locked in"
+    // focus session. Without this, the access token can expire mid-session and the
+    // next request emits a SIGNED_OUT event, silently signing the user out (and
+    // dropping guild score / user_stats writes). Start the ticker now (app boots
+    // active) and toggle it as the app foregrounds/backgrounds, per Supabase's
+    // React Native guidance — on resume this forces an immediate refresh.
+    client.auth.startAutoRefresh();
+    AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (!client) return;
+      if (next === 'active') {
+        client.auth.startAutoRefresh();
+      } else {
+        client.auth.stopAutoRefresh();
+      }
     });
 
     initialized = true;

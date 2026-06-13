@@ -20,11 +20,9 @@ import { useSession } from '../state/SessionProvider';
 import { useOnboarding } from '../../onboarding/state/OnboardingProvider';
 import { ClockService } from '../../../services/ClockService';
 import { NotificationService } from '../../../services/NotificationService';
-import { LockModeService } from '../../../services/LockModeService';
 import { Analytics } from '../../../services/AnalyticsService';
 import { StreakRecoveryService } from '../../streak/StreakRecoveryService';
 import WeeklyReportService from '../../report/WeeklyReportService';
-import { ACTIVE_EB_KEY } from '../ExecutionBlockScreen';
 import { useMissions } from '../../missions/MissionsProvider';
 import { Colors } from '../../../design/colors';
 import StreakAtRiskBanner from '../components/StreakAtRiskBanner';
@@ -171,42 +169,6 @@ const HomeTab: React.FC = () => {
 
   useEffect(() => {
     if (!isHydrated) return;
-    async function recoverOrphanedEB() {
-      try {
-        const raw = await AsyncStorage.getItem(ACTIVE_EB_KEY);
-        if (!raw) return;
-        const info = JSON.parse(raw) as { startTimestamp: number; endTimestamp: number; durationMinutes: number };
-        if (Date.now() < info.endTimestamp) {
-          // Session is still active — the app was killed mid-session. iOS has
-          // kept the ManagedSettingsStore shield in place, so route the user
-          // back into the timer so they can see remaining time + hold-to-end.
-          const navState = navigation.getState();
-          const alreadyOnEB = navState?.routes.some((r) => r.name === 'ExecutionBlock');
-          if (alreadyOnEB) return;
-          navigation.navigate('ExecutionBlock', {
-            durationMinutes: info.durationMinutes,
-            resumeEndTimestamp: info.endTimestamp,
-          });
-          return;
-        }
-        await LockModeService.endSession();
-        const elapsedMs = info.endTimestamp - info.startTimestamp;
-        const elapsedMinutes = Math.ceil(Math.max(0, elapsedMs) / 60_000);
-        if (elapsedMinutes >= 1) {
-          dispatch({ type: 'COMPLETE_EXECUTION_BLOCK', payload: { durationMinutes: elapsedMinutes } });
-        }
-        await AsyncStorage.removeItem(ACTIVE_EB_KEY);
-      } catch { AsyncStorage.removeItem(ACTIVE_EB_KEY); }
-    }
-    recoverOrphanedEB();
-    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
-      if (next === 'active') recoverOrphanedEB();
-    });
-    return () => sub.remove();
-  }, [isHydrated, dispatch, navigation]);
-
-  useEffect(() => {
-    if (!isHydrated) return;
     WeeklyReportService.shouldShowReport().then((shouldShow: boolean) => {
       if (shouldShow) navigation.navigate('WeeklyReport');
     });
@@ -270,6 +232,12 @@ const HomeTab: React.FC = () => {
             focused={dailyFocused}
             goal={dailyCommitment}
             streakAtRisk={streakAtRisk && !canRecover}
+            onOpenTimer={() => {
+              const navState = navigation.getState();
+              const alreadyOnEB = navState?.routes.some((r) => r.name === 'ExecutionBlock');
+              if (alreadyOnEB) return;
+              navigation.navigate('ExecutionBlock');
+            }}
           />
           <CompactMissions
             onPress={() => navigation.navigate('MissionsTab' as never)}

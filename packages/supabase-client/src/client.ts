@@ -26,6 +26,10 @@ export function createMobileClient(
   return createClient<Database>(url, anonKey, {
     auth: {
       persistSession: true,
+      // Refresh the access token before it expires. In React Native the
+      // refresh ticker must be driven by AppState (see SupabaseService) so it
+      // runs when the app returns to foreground after a long focus session.
+      autoRefreshToken: true,
       ...(storage ? { storage } : {}),
     },
   });

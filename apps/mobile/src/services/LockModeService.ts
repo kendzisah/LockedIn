@@ -15,14 +15,24 @@ async function getScreenTime() {
 
 export class LockModeService {
   static async beginSession(durationMinutes: number): Promise<void> {
+    return LockModeService.beginSessionSeconds(durationMinutes * 60);
+  }
+
+  /**
+   * Seconds-accurate variant of beginSession. Used when restoring the shield
+   * after a break, where the remaining focus time is a precise number of
+   * seconds — passing whole minutes would drift the native auto-unshield
+   * deadline against the JS endTimestamp on every break cycle.
+   */
+  static async beginSessionSeconds(durationSeconds: number): Promise<void> {
     const mod = await getScreenTime();
     if (!mod) return;
-    const durationSeconds = Math.max(1, Math.floor(durationMinutes * 60));
+    const seconds = Math.max(1, Math.floor(durationSeconds));
     // Prefer the DeviceActivityMonitor-backed path so the extension
     // un-shields if iOS kills the JS thread mid-session. Falls back to
     // shieldApps() if monitoring fails to schedule (e.g. iOS < 16 or
     // unsupported build).
-    const scheduled = await mod.beginSession(durationSeconds);
+    const scheduled = await mod.beginSession(seconds);
     if (!scheduled) mod.shieldApps();
   }
 

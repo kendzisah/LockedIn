@@ -26,14 +26,33 @@ final class LockedInDeviceActivityMonitor: DeviceActivityMonitor {
 
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
-        guard activity.rawValue == SharedScreenTime.activityName else { return }
-        applyShieldFromSavedSelection()
+        // Manual session OR any user-scheduled session → block apps. Both use
+        // the same named ManagedSettingsStore, so applying twice is idempotent.
+        if activity.rawValue == SharedScreenTime.activityName
+            || activity.rawValue.hasPrefix(SharedScreenTime.scheduledActivityPrefix) {
+            applyShieldFromSavedSelection()
+        }
     }
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
-        guard activity.rawValue == SharedScreenTime.activityName else { return }
-        clearShield()
+
+        if activity.rawValue == SharedScreenTime.activityName {
+            clearShield(removeManualTimestamp: true)
+            return
+        }
+
+        guard activity.rawValue.hasPrefix(SharedScreenTime.scheduledActivityPrefix) else { return }
+
+        // A scheduled block ended. Record it for the app to credit on next open.
+        recordScheduledCompletion(activityName: activity.rawValue)
+
+        // Clear the shield UNLESS a manual session is still running (its
+        // fail-safe timestamp is in the future) — don't un-block apps out from
+        // under an in-progress manual lock-in. Never wipe the manual timestamp.
+        if !manualSessionActive() {
+            clearShield(removeManualTimestamp: false)
+        }
     }
 
     override func eventDidReachThreshold(
@@ -79,13 +98,60 @@ final class LockedInDeviceActivityMonitor: DeviceActivityMonitor {
             : ShieldSettings.ActivityCategoryPolicy.specific(selection.categoryTokens)
     }
 
-    private func clearShield() {
+    private func clearShield(removeManualTimestamp: Bool) {
         store.shield.applications = nil
         store.shield.applicationCategories = nil
         store.shield.webDomains = nil
         store.shield.webDomainCategories = nil
-        SharedScreenTime.sharedDefaults()?.removeObject(
-            forKey: SharedScreenTime.Keys.sessionEndTimestamp
+        if removeManualTimestamp {
+            SharedScreenTime.sharedDefaults()?.removeObject(
+                forKey: SharedScreenTime.Keys.sessionEndTimestamp
+            )
+        }
+    }
+
+    /// True while a manual lock-in session's fail-safe end timestamp is still in
+    /// the future — used so a scheduled interval ending mid-manual-session does
+    /// not prematurely un-block apps.
+    private func manualSessionActive() -> Bool {
+        guard let endMs = SharedScreenTime.sharedDefaults()?
+            .object(forKey: SharedScreenTime.Keys.sessionEndTimestamp) as? Double
+        else { return false }
+        return endMs > Date().timeIntervalSince1970 * 1000
+    }
+
+    /// Append a `ScheduledCompletionRecord` to the App-Group queue. The app
+    /// drains + credits it (EXP/missions) on next open, deduped by occurrenceId.
+    private func recordScheduledCompletion(activityName: String) {
+        let shared = SharedScreenTime.sharedDefaults()
+
+        // Recover session id + duration for this activity from the map the app wrote.
+        guard let mapData = shared?.data(forKey: SharedScreenTime.Keys.scheduledActivityMap),
+              let map = try? JSONDecoder().decode([String: ScheduledActivityMeta].self, from: mapData),
+              let meta = map[activityName]
+        else { return }
+
+        let now = Date()
+        let record = ScheduledCompletionRecord(
+            occurrenceId: ScheduledCompletionRecord.makeOccurrenceId(sessionId: meta.sessionId, endDate: now),
+            sessionId: meta.sessionId,
+            durationMinutes: meta.durationMinutes,
+            endedAtMs: now.timeIntervalSince1970 * 1000
         )
+
+        var queue: [ScheduledCompletionRecord] = []
+        if let data = shared?.data(forKey: SharedScreenTime.Keys.pendingScheduledCompletions),
+           let existing = try? JSONDecoder().decode([ScheduledCompletionRecord].self, from: data) {
+            queue = existing
+        }
+        // Dedupe within the queue (defensive against duplicate intervalDidEnd).
+        guard !queue.contains(where: { $0.occurrenceId == record.occurrenceId }) else { return }
+        queue.append(record)
+        // Bound the queue if the app is never opened.
+        if queue.count > 50 { queue = Array(queue.suffix(50)) }
+
+        if let encoded = try? JSONEncoder().encode(queue) {
+            shared?.set(encoded, forKey: SharedScreenTime.Keys.pendingScheduledCompletions)
+        }
     }
 }

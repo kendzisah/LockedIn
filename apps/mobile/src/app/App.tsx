@@ -17,6 +17,7 @@ import { AuthProvider } from '../features/auth/AuthProvider';
 import { OnboardingProvider } from '../features/onboarding/state/OnboardingProvider';
 import { SubscriptionProvider } from '../features/subscription/SubscriptionProvider';
 import { SessionProvider } from '../features/home/state/SessionProvider';
+import { ActiveSessionProvider } from '../features/home/state/ActiveSessionProvider';
 import { MissionsProvider } from '../features/missions/MissionsProvider';
 import { useOnboarding } from '../features/onboarding/state/OnboardingProvider';
 import { useSession } from '../features/home/state/SessionProvider';
@@ -293,10 +294,12 @@ const App: React.FC = () => {
               <SubscriptionProvider>
                 <SessionProvider>
                   <MissionsBridge>
-                    <NavigationContainer ref={rootNavigationRef}>
-                      <StatusBar style="light" />
-                      <RootNavigator />
-                    </NavigationContainer>
+                    <ActiveSessionProvider>
+                      <NavigationContainer ref={rootNavigationRef}>
+                        <StatusBar style="light" />
+                        <RootNavigator />
+                      </NavigationContainer>
+                    </ActiveSessionProvider>
                   </MissionsBridge>
                 </SessionProvider>
               </SubscriptionProvider>

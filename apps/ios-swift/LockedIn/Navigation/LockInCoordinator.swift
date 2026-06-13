@@ -26,8 +26,12 @@ import SwiftUI
 public enum LockInModal: Identifiable, Equatable {
     case paywallOffer
     case durationPicker
-    case executionBlock(durationMinutes: Int, resumeEndTimestamp: Date?)
+    /// Full-screen view of the active manual session (state lives in
+    /// `ActiveSessionStore`, so this carries no payload).
+    case executionBlock
     case sessionComplete(durationMinutes: Int, streak: Int)
+    /// Live view of an in-progress auto-block scheduled session.
+    case scheduledLive(occurrenceId: String, durationMinutes: Int, endTimestamp: Date)
 
     public var id: String {
         switch self {
@@ -35,6 +39,7 @@ public enum LockInModal: Identifiable, Equatable {
         case .durationPicker: return "DurationPicker"
         case .executionBlock: return "ExecutionBlock"
         case .sessionComplete: return "SessionComplete"
+        case .scheduledLive: return "ScheduledLive"
         }
     }
 }
@@ -52,18 +57,6 @@ public final class LockInCoordinator: ObservableObject {
             activeModal = .durationPicker
         } else {
             activeModal = .paywallOffer
-        }
-    }
-
-    /// After the duration picker confirms, start the lock-mode session and
-    /// hand off to the execution block.
-    public func startSession(durationMinutes: Int) {
-        Task { @MainActor in
-            _ = await LockModeService.shared.beginSession(durationMinutes: durationMinutes)
-            AnalyticsService.shared.track("Session Started", properties: [
-                "duration_minutes": durationMinutes
-            ])
-            activeModal = .executionBlock(durationMinutes: durationMinutes, resumeEndTimestamp: nil)
         }
     }
 

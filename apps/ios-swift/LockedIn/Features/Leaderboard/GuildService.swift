@@ -1,5 +1,6 @@
 import Foundation
 import Supabase
+import DesignKit
 
 /// Typed outcome for `GuildService.leaveGuild` / `GuildState.leaveGuild`.
 ///
@@ -90,8 +91,10 @@ public final class GuildService {
         public let streak_days: Int
         public let total_score: Int
         public let is_current_user: Bool
-        /// Member's OVR snapshot (1-99). Nil when no `user_stats` row yet.
-        public let ovr: Int?
+        /// Member's overall letter tier (F- … S+), derived from per-stat XP via
+        /// `OvrTier`. Nil when no `user_stats` row yet. Replaces the legacy
+        /// numeric OVR — the app shows overall *letters* everywhere now.
+        public let ovr_tier: String?
         /// Member's RankId from `user_stats`. Nil when no row yet.
         public let rank_id: String?
     }
@@ -323,11 +326,10 @@ public final class GuildService {
         let display_name: String?
         let avatar_url: String?
     }
-    private struct UserStatRow: Decodable {
-        let user_id: String
-        let ovr: Int?
-        let rank_id: String?
-    }
+    // Member OVR/rank is decoded into `HomeService.UserStatsRow` and rendered
+    // via its `ovrTier` so the guild leaderboard's overall letter is computed
+    // by the EXACT same code (incl. legacy-XP fallbacks) the Home/Profile
+    // screens use — guaranteeing the letter matches what the member sees there.
     private struct ScoreRow: Decodable {
         let user_id: String
         let focus_minutes: Int?
@@ -360,14 +362,17 @@ public final class GuildService {
                 .value) ?? []
             let profileByUser: [String: ProfileRow] = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
 
-            // Fetch user_stats (broad-readable per RLS)
-            let userStats: [UserStatRow] = (try? await client
+            // Fetch user_stats (broad-readable per RLS). Decoded into the same
+            // `UserStatsRow` Home uses so `ovrTier` matches across screens.
+            let userStats: [HomeService.UserStatsRow] = (try? await client
                 .from("user_stats")
-                .select("user_id, ovr, rank_id")
+                .select("*")
                 .in("user_id", values: memberIds)
                 .execute()
                 .value) ?? []
-            let statsByUser: [String: UserStatRow] = Dictionary(uniqueKeysWithValues: userStats.map { ($0.user_id, $0) })
+            let statsByUser: [String: HomeService.UserStatsRow] = Dictionary(
+                uniqueKeysWithValues: userStats.compactMap { row in row.userId.map { ($0, row) } }
+            )
 
             // Fetch scores for the selected week
             let scores: [ScoreRow] = try await client
@@ -387,7 +392,7 @@ public final class GuildService {
                 let missions_done: Int
                 let streak_days: Int
                 let total_score: Int
-                let ovr: Int?
+                let ovr_tier: String?
                 let rank_id: String?
             }
 
@@ -403,8 +408,12 @@ public final class GuildService {
                     missions_done: sc?.missions_done ?? 0,
                     streak_days: sc?.streak_days ?? 0,
                     total_score: sc?.total_score ?? 0,
-                    ovr: us?.ovr,
-                    rank_id: us?.rank_id
+                    ovr_tier: us?.ovrTier.rawValue,
+                    // Derive the rank from total rank XP with the same helper
+                    // Home uses — the stored `rank_id` column is written by the
+                    // legacy streak-based SQL recompute and disagrees with the
+                    // XP-based rank shown everywhere else in the app.
+                    rank_id: us.map { RankHelpers.rankFromXp($0.totalRankXp).id.rawValue }
                 )
             }
             .sorted { $0.total_score > $1.total_score }
@@ -423,7 +432,7 @@ public final class GuildService {
                     streak_days: row.streak_days,
                     total_score: row.total_score,
                     is_current_user: currentUid != nil && row.user_id == currentUid,
-                    ovr: row.ovr,
+                    ovr_tier: row.ovr_tier,
                     rank_id: row.rank_id
                 )
             }

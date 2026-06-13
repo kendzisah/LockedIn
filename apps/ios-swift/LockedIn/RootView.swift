@@ -13,9 +13,12 @@ struct RootView: View {
     @State private var guild         = GuildState()
     @State private var subscription  = SubscriptionState()
     @State private var settings      = SettingsState()
+    @State private var scheduledSessions = ScheduledSessionsStore()
+    @State private var activeSession = ActiveSessionStore()
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var didBoot = false
+    @State private var scheduledCreditSummary: String?
 
     var body: some View {
         RootNavigator()
@@ -27,8 +30,21 @@ struct RootView: View {
             .environment(guild)
             .environment(subscription)
             .environment(settings)
+            .environment(scheduledSessions)
+            .environment(activeSession)
             .task {
                 await bootIfNeeded()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .lockedInScheduledSessionsCredited)) { note in
+                let count = (note.userInfo?["count"] as? Int) ?? 0
+                guard count > 0 else { return }
+                scheduledCreditSummary = count == 1
+                    ? "1 scheduled session credited"
+                    : "\(count) scheduled sessions credited"
+                Task {
+                    try? await Task.sleep(nanoseconds: 3_500_000_000)
+                    scheduledCreditSummary = nil
+                }
             }
             .onChange(of: scenePhase) { _, newPhase in
                 // Sweep orphaned Live Activities every time we come back to
@@ -59,6 +75,25 @@ struct RootView: View {
                 AchievementUnlockToastHost()
                     .allowsHitTesting(true)
             }
+            .overlay(alignment: .top) {
+                if let summary = scheduledCreditSummary {
+                    Text(summary)
+                        .font(.custom(FontFamily.headingSemiBold.rawValue, size: 13))
+                        .foregroundColor(SystemTokens.textPrimary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(SystemTokens.panelBg)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(SystemTokens.glowAccent.opacity(0.4), lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .allowsHitTesting(false)
+                }
+            }
+            .animation(.easeInOut(duration: 0.25), value: scheduledCreditSummary)
     }
 
     private func bootIfNeeded() async {
@@ -89,11 +124,19 @@ struct RootView: View {
             onboarding?.dailyMinutes ?? 60
         }
 
+        // Scheduled lock-in sessions clean up on logout too (stops auto-block
+        // schedules + cancels their notifications).
+        LogoutCleanupBus.shared.subscribe { [scheduledSessions] _ in
+            scheduledSessions.fullReset()
+        }
+
         // Hydrate persisted state up-front.
         await onboarding.hydrate()
         home.hydrate()
         missions.hydrate()
         session.hydrateFromDefaults()
+        // Loads schedules + re-registers DeviceActivity auto-block + notifications.
+        scheduledSessions.hydrate()
 
         // Live Activity cold-start cleanup. If a session id from a prior
         // launch is still in the App Group but no active execution block

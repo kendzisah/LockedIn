@@ -170,6 +170,9 @@ public final class SessionState {
     /// AsyncStorage key the active execution block is persisted under so the
     /// HomeTab can resume after a kill.
     public static let activeExecutionBlockKey = "@lockedin/active_execution_block"
+    /// Whether the active block is a Hardcore session (no early exit / breaks).
+    /// Persisted so a minimize / cold-resume re-presents with hardcore intact.
+    public static let activeBlockHardcoreKey = "@lockedin/active_block_hardcore"
 
     // MARK: - Phase
 

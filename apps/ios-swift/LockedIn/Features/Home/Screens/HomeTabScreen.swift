@@ -42,6 +42,8 @@ struct HomeTabScreen: View {
     let onActivateSession: () -> Void
     let onTapStatus: () -> Void
     let onTapMissions: () -> Void
+    let onManageScheduled: () -> Void
+    let onOpenTimer: () -> Void
 
     // ── Local UI state ──
     @State private var tick: Int = 0
@@ -55,7 +57,9 @@ struct HomeTabScreen: View {
         missionsCompletedCount: Int = 0,
         onActivateSession: @escaping () -> Void = {},
         onTapStatus: @escaping () -> Void = {},
-        onTapMissions: @escaping () -> Void = {}
+        onTapMissions: @escaping () -> Void = {},
+        onManageScheduled: @escaping () -> Void = {},
+        onOpenTimer: @escaping () -> Void = {}
     ) {
         self.home = home
         self.dailyCommitmentMinutes = dailyCommitmentMinutes
@@ -66,6 +70,8 @@ struct HomeTabScreen: View {
         self.onActivateSession = onActivateSession
         self.onTapStatus = onTapStatus
         self.onTapMissions = onTapMissions
+        self.onManageScheduled = onManageScheduled
+        self.onOpenTimer = onOpenTimer
     }
 
     var body: some View {
@@ -175,8 +181,11 @@ struct HomeTabScreen: View {
                     focused: dailyFocused,
                     goal: dailyCommitmentMinutes,
                     streakAtRisk: streakAtRisk,
-                    onActivate: onActivateSession
+                    onActivate: onActivateSession,
+                    onOpenTimer: onOpenTimer
                 )
+
+                ScheduledSessionsPanel(onManage: onManageScheduled)
 
                 CompactMissions(
                     missions: missions,

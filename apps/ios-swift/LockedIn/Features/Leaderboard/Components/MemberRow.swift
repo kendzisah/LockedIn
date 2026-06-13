@@ -16,8 +16,8 @@ struct MemberRow: View {
     let totalScore: Int
     let isCurrentUser: Bool
     let isLast: Bool
-    /// `user_stats.ovr` (1-99). Nil → no row yet for the member.
-    let ovr: Int?
+    /// Member's overall letter tier (F- … S+). Nil → no `user_stats` row yet.
+    let ovrTier: StatTier?
     /// `user_stats.rank_id`. Nil → no row yet.
     let rankId: RankId?
     /// Owner-side kick handler. `nil` hides the trailing red close button.
@@ -102,22 +102,17 @@ struct MemberRow: View {
                 }
 
                 HStack(spacing: 10) {
-                    if let ovr {
-                        Text("OVR \(ovr)")
+                    if let ovrTier {
+                        Text("OVR \(ovrTier.rawValue)")
                             .font(.custom(FontFamily.headingBold.rawValue, size: 10))
                             .tracking(0.4)
-                            .foregroundColor(tier?.color ?? AppColors.textPrimary)
+                            .foregroundColor(ovrTier.color)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
-                            .background(
-                                (tier?.color.opacity(0.10)) ?? Color.white.opacity(0.04)
-                            )
+                            .background(ovrTier.color.opacity(0.10))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(
-                                        (tier?.color.opacity(0.33)) ?? Color.white.opacity(0.08),
-                                        lineWidth: 1
-                                    )
+                                    .stroke(ovrTier.color.opacity(0.33), lineWidth: 1)
                             )
                             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }

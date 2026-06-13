@@ -29,16 +29,18 @@ public struct DurationPickerSheet: View {
     public static let presetMinutes: [Int] = [15, 30, 45, 60, 90, 120]
 
     @Binding var isPresented: Bool
-    let onConfirm: (Int) -> Void
+    /// `(durationMinutes, hardcore)`.
+    let onConfirm: (Int, Bool) -> Void
 
     @State private var showCustom: Bool = false
     @State private var customHours: Int = 0
     @State private var customMinutes: Int = 30
     @State private var pressedOption: Int? = nil
+    @State private var hardcore: Bool = false
 
     public init(
         isPresented: Binding<Bool>,
-        onConfirm: @escaping (Int) -> Void
+        onConfirm: @escaping (Int, Bool) -> Void
     ) {
         self._isPresented = isPresented
         self.onConfirm = onConfirm
@@ -81,6 +83,9 @@ public struct DurationPickerSheet: View {
                     presetView
                         .padding(.top, 16)
                 }
+
+                hardcoreToggle
+                    .padding(.top, 12)
             }
             .padding(.horizontal, 18)
             .padding(.top, 14)
@@ -92,6 +97,38 @@ public struct DurationPickerSheet: View {
         }
         .frame(maxWidth: .infinity)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: - Hardcore toggle
+
+    private var hardcoreToggle: some View {
+        Toggle(isOn: $hardcore) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(hardcore ? SystemTokens.red : SystemTokens.textMuted)
+                    Text("HARDCORE MODE")
+                        .font(.custom(FontFamily.headingBold.rawValue, size: 11))
+                        .tracking(1.4)
+                        .foregroundColor(hardcore ? SystemTokens.red : SystemTokens.textSecondary)
+                }
+                Text("No early exit. No breaks. Commit now.")
+                    .font(.custom(FontFamily.body.rawValue, size: 11))
+                    .foregroundColor(SystemTokens.textMuted)
+            }
+        }
+        .tint(SystemTokens.red)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(hardcore ? SystemTokens.red : Color.white.opacity(0.06))
+                    .frame(width: 2)
+                (hardcore ? SystemTokens.red.opacity(0.08) : Color.white.opacity(0.02))
+            }
+        )
     }
 
     // MARK: - Header strip
@@ -153,7 +190,7 @@ public struct DurationPickerSheet: View {
         return Button {
             HapticsService.shared.selectionChanged()
             isPresented = false
-            onConfirm(mins)
+            onConfirm(mins, hardcore)
         } label: {
             VStack(spacing: 2) {
                 Text(pair.value)
@@ -286,7 +323,7 @@ public struct DurationPickerSheet: View {
                 guard !disabled else { return }
                 HapticsService.shared.medium()
                 isPresented = false
-                onConfirm(totalMinutes)
+                onConfirm(totalMinutes, hardcore)
             } label: {
                 Text(startButtonTitle)
                     .font(.custom(FontFamily.headingBold.rawValue, size: 13))

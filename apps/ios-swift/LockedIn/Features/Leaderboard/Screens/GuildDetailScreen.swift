@@ -320,7 +320,7 @@ public struct GuildDetailScreen: View {
                             totalScore: entry.total_score,
                             isCurrentUser: entry.is_current_user,
                             isLast: index == leaderboard.count - 1,
-                            ovr: entry.ovr,
+                            ovrTier: entry.ovr_tier.flatMap { StatTier(rawValue: $0) },
                             rankId: entry.rank_id.flatMap { RankId(rawValue: $0) },
                             onRemove: (isOwner && !entry.is_current_user)
                                 ? { pendingKick = (entry.user_id, entry.username) }

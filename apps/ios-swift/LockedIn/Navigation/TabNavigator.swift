@@ -89,7 +89,9 @@ public struct TabNavigator: View {
             missionsCompletedCount: missions.completedCount,
             onActivateSession: { triggerLockInFlow() },
             onTapStatus: { selectedTab = .profile },
-            onTapMissions: { selectedTab = .missions }
+            onTapMissions: { selectedTab = .missions },
+            onManageScheduled: { mainStack.path.append(.scheduledSessions) },
+            onOpenTimer: { lockIn.activeModal = .executionBlock }
         )
     }
 

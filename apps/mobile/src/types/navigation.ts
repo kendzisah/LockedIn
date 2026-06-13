@@ -50,7 +50,8 @@ export type TabParamList = {
 export type MainStackParamList = {
   Tabs: NavigatorScreenParams<TabParamList> | undefined;
   PaywallOffer: undefined;
-  ExecutionBlock: { durationMinutes: number; resumeEndTimestamp?: number };
+  // Timer state lives in ActiveSessionProvider; params are optional/unused by the screen.
+  ExecutionBlock: { durationMinutes?: number; resumeEndTimestamp?: number } | undefined;
   SessionComplete: {
     phase: 'execution_block';
     durationMinutes: number;

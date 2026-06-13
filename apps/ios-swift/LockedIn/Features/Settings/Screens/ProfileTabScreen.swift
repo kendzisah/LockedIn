@@ -678,7 +678,12 @@ public struct ProfileTabScreen: View {
         // handles `stats == nil` gracefully.
         do {
             if let row = try await HomeService.shared.refreshStats(userId: uid) {
-                stats = UserStatsLite(from: row)
+                let lite = UserStatsLite(from: row)
+                stats = lite
+                // Rank pill: derive from total rank XP with the same helper Home
+                // uses (the default RankLite placeholder was never wired up).
+                let tier = RankHelpers.rankFromXp(lite.totalRankXp)
+                rank = RankLite(name: tier.name, color: tier.color)
             }
         } catch {
             #if DEBUG

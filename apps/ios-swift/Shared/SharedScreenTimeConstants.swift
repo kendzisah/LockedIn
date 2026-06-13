@@ -21,12 +21,26 @@ public enum SharedScreenTime {
     /// in the main app and matched against in the extension's interval callbacks.
     public static let activityName = "LockedInSession"
 
+    /// Prefix for user-scheduled lock-in DeviceActivity names. The extension
+    /// matches `activity.rawValue.hasPrefix(scheduledActivityPrefix)` to apply
+    /// the shield on auto-start and clear + record a completion on auto-end.
+    /// Distinct from `activityName` so the manual-session path is untouched.
+    public static let scheduledActivityPrefix = "LockedInScheduled"
+
     /// UserDefaults keys (shared suite).
     public enum Keys {
         public static let selection = "com.lockedin.screentime.selection"
         /// Epoch-ms timestamp; used by the extension as a sanity check and
         /// by the main app's foreground sweep as a fail-safe.
         public static let sessionEndTimestamp = "com.lockedin.screentime.sessionEndTimestamp"
+        /// JSON array of `ScheduledCompletionRecord`. The DAM extension appends
+        /// one on a scheduled session's `intervalDidEnd`; the main app drains
+        /// and credits them (EXP/missions) on next open.
+        public static let pendingScheduledCompletions = "@lockedin/pending_scheduled_completions"
+        /// JSON map `[activityName: ScheduledActivityMeta]`. Written by the app
+        /// on every re-sync; read by the extension at `intervalDidEnd` to recover
+        /// the session id + duration for the fired activity.
+        public static let scheduledActivityMap = "@lockedin/scheduled_activity_map"
     }
 
     public static func sharedDefaults() -> UserDefaults? {

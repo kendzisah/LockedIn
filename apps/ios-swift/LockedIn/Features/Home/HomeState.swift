@@ -540,7 +540,9 @@ public final class HomeState {
             recoveriesRemaining: status.remaining
         )
         persist()
-        StatsService.setStreak(0)
+        // Streak broke → push 0 + recompute so the guild rank name drops back
+        // to NPC in step with Home.
+        Task { await StatsService.setStreakAndRecompute(0) }
     }
 
     /// Consume a recovery token to restore a just-broken streak.
@@ -566,7 +568,8 @@ public final class HomeState {
         lastSessionDayKey = SessionDayEngine.yesterdayKey()
         streakBreak = nil
         persist()
-        StatsService.setStreak(consecutiveStreak)
+        let restored = consecutiveStreak
+        Task { await StatsService.setStreakAndRecompute(restored) }
         AnalyticsService.shared.track("Streak Recovered", properties: [
             "streak_days": result.newStreak,
         ])

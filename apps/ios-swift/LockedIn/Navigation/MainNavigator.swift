@@ -27,6 +27,7 @@ public enum MainStackRoute: Hashable {
     case createGuild
     case joinGuild
     case weeklyReport
+    case scheduledSessions
 }
 
 /// Holds the navigation stack path. Provided as `@EnvironmentObject` so child
@@ -45,6 +46,8 @@ public struct MainNavigator: View {
     @Environment(OnboardingState.self) private var onboarding
     @Environment(GuildState.self) private var guild
     @Environment(SubscriptionState.self) private var subscription
+    @Environment(ScheduledSessionsStore.self) private var scheduledSessions
+    @Environment(ActiveSessionStore.self) private var activeSession
 
     @StateObject private var stack = MainNavigatorPath()
     @StateObject private var lockIn = LockInCoordinator()
@@ -68,6 +71,7 @@ public struct MainNavigator: View {
             // Hydrate home + missions when entering the main tree.
             if !home.isHydrated { home.hydrate() }
             if !missions.isHydrated { missions.hydrate() }
+            if !scheduledSessions.isHydrated { scheduledSessions.hydrate() }
             // Push current onboarding values into missions state.
             if let goal = onboarding.primaryGoal {
                 missions.userGoal = goal
@@ -98,8 +102,17 @@ public struct MainNavigator: View {
                 }
             }
 
+            // Route a finished manual session into the shared credit fan-out.
+            activeSession.onFinish = { actualMinutes, wasNatural in
+                handleSessionFinish(actualMinutes: actualMinutes, wasNatural: wasNatural)
+            }
+
             // Schedule rolling notifications based on current streak.
             NotificationService.shared.refreshScheduleWithStoredStreak()
+
+            // Credit any scheduled lock-in sessions that auto-ran while the app
+            // was closed.
+            drainScheduledCompletions()
 
             // Listen for cross-feature `regenerateMissions` posts. Fired by
             // ProfileTab when the user changes their goal or weaknesses.
@@ -116,7 +129,11 @@ public struct MainNavigator: View {
                 }
             }
         }
-        .onAppear { resumeActiveExecutionBlockIfNeeded() }
+        .onAppear {
+            resumeActiveExecutionBlockIfNeeded()
+            resumeScheduledLiveIfNeeded()
+            drainScheduledCompletions()
+        }
         .onChange(of: scenePhase) { _, newPhase in
             // Re-mount the active execution-block screen if the user
             // foregrounds mid-session (e.g. tapped the Live Activity in the
@@ -126,7 +143,10 @@ public struct MainNavigator: View {
             // no other way back into the timer short of starting a new
             // session, which would cancel the active one.
             guard newPhase == .active else { return }
+            activeSession.syncOnForeground()
             resumeActiveExecutionBlockIfNeeded()
+            resumeScheduledLiveIfNeeded()
+            drainScheduledCompletions()
         }
         .fullScreenCover(item: $lockIn.activeModal) { modal in
             switch modal {
@@ -139,26 +159,25 @@ public struct MainNavigator: View {
                         get: { lockIn.activeModal == .durationPicker },
                         set: { newValue in if !newValue { lockIn.activeModal = nil } }
                     ),
-                    onConfirm: { minutes in
-                        lockIn.startSession(durationMinutes: minutes)
-                    }
-                )
-            case .executionBlock(let durationMinutes, let resumeEnd):
-                ExecutionBlockScreen(
-                    params: ExecutionBlockScreenParams(
-                        durationMinutes: durationMinutes,
-                        resumeEndTimestamp: resumeEnd
-                    ),
-                    goal: onboarding.primaryGoal,
-                    onFinish: { actualMinutes, wasNatural in
-                        // Run shared session-side-effects (state writes,
-                        // analytics, complete-mission edge function call).
-                        handleSessionFinish(
-                            actualMinutes: actualMinutes,
-                            wasNatural: wasNatural
+                    onConfirm: { minutes, hardcore in
+                        // Persist hardcore so a minimize / cold-resume keeps no-exit.
+                        Defaults.setBool(hardcore, SessionState.activeBlockHardcoreKey)
+                        AnalyticsService.shared.track("Session Started", properties: [
+                            "duration_minutes": minutes,
+                            "hardcore": hardcore,
+                        ])
+                        activeSession.start(
+                            durationMinutes: minutes,
+                            hardcore: hardcore,
+                            resumeEndTimestamp: nil,
+                            goal: onboarding.primaryGoal,
+                            streak: home.consecutiveStreak
                         )
+                        lockIn.activeModal = .executionBlock
                     }
                 )
+            case .executionBlock:
+                ExecutionBlockScreen(onMinimize: { lockIn.dismissAll() })
             case .sessionComplete(let durationMinutes, let streak):
                 SessionCompleteScreen(
                     params: SessionCompleteScreenParams(
@@ -167,6 +186,23 @@ public struct MainNavigator: View {
                         streak: streak
                     ),
                     onDismiss: { lockIn.dismissAll() }
+                )
+            case .scheduledLive(let occurrenceId, let durationMinutes, let endTimestamp):
+                ScheduledLockLiveScreen(
+                    durationMinutes: durationMinutes,
+                    endTimestamp: endTimestamp,
+                    goal: onboarding.primaryGoal,
+                    onComplete: {
+                        // Credit once (dedupes the DAM extension's queued
+                        // completion), then show the celebration.
+                        scheduledSessions.markCredited(occurrenceId)
+                        handleSessionFinish(
+                            actualMinutes: durationMinutes,
+                            wasNatural: true,
+                            showCompletionUI: true
+                        )
+                    },
+                    onMinimize: { lockIn.dismissAll() }
                 )
             }
         }
@@ -248,6 +284,11 @@ public struct MainNavigator: View {
             )
         case .weeklyReport:
             weeklyReportDestination
+        case .scheduledSessions:
+            ScheduledSessionsScreen(
+                store: scheduledSessions,
+                onBack: { stack.path.removeLast() }
+            )
         }
     }
 
@@ -290,10 +331,10 @@ public struct MainNavigator: View {
 
     // MARK: - Session completion fan-out
 
-    private func handleSessionFinish(actualMinutes: Int, wasNatural: Bool) {
+    private func handleSessionFinish(actualMinutes: Int, wasNatural: Bool, showCompletionUI: Bool = true) {
         // 0 minutes means the user bailed before the 60s threshold.
         guard actualMinutes > 0 else {
-            lockIn.dismissAll()
+            if showCompletionUI { lockIn.dismissAll() }
             return
         }
 
@@ -338,7 +379,12 @@ public struct MainNavigator: View {
         if wasNatural {
             StatsService.bumpCounter(.totalCompletedSessions, delta: 1)
         }
-        StatsService.setStreak(home.consecutiveStreak)
+
+        // Persist the streak, then recompute the derived `user_stats` columns
+        // (rank_id / numeric ovr) so the guild leaderboard's streak-rank name
+        // (NPC → RECRUIT → …) tracks the streak the user already sees on Home.
+        let streakForSync = home.consecutiveStreak
+        Task { await StatsService.setStreakAndRecompute(streakForSync) }
 
         // ── Unified per-stat XP bumps ──
         //
@@ -379,12 +425,16 @@ public struct MainNavigator: View {
         // XP for the session.
         XPService.award(.session)
 
-        // Forward into the LockInCoordinator → SessionCompleteScreen.
-        lockIn.finishSession(
-            durationMinutes: actualMinutes,
-            wasNatural: wasNatural,
-            streak: home.consecutiveStreak
-        )
+        // Forward into the LockInCoordinator → SessionCompleteScreen. Skipped
+        // for reconciled scheduled sessions (credited silently in a batch — a
+        // per-session full-screen cover would stack/race).
+        if showCompletionUI {
+            lockIn.finishSession(
+                durationMinutes: actualMinutes,
+                wasNatural: wasNatural,
+                streak: home.consecutiveStreak
+            )
+        }
 
         // Push the focus minutes from this session to every guild. Missions
         // own their own `missions_done` increments via the
@@ -425,13 +475,79 @@ public struct MainNavigator: View {
     /// stale timer — let the cold-start sweep clean it up).
     private func resumeActiveExecutionBlockIfNeeded() {
         guard lockIn.activeModal == nil else { return }
+
+        // Live in memory (e.g. cold-start already rehydrated, or the user
+        // minimized within the app) → just re-present the screen.
+        if activeSession.isActive {
+            lockIn.activeModal = .executionBlock
+            return
+        }
+
         guard let active = LockModeService.shared.loadActiveExecutionBlock() else { return }
         let nowMs = Date().timeIntervalSince1970 * 1000
-        guard active.endTimestamp > nowMs else { return }
-        let endDate = Date(timeIntervalSince1970: active.endTimestamp / 1000)
-        lockIn.activeModal = .executionBlock(
-            durationMinutes: active.durationMinutes,
-            resumeEndTimestamp: endDate
+        if active.endTimestamp > nowMs {
+            // Cold start mid-session → rehydrate the store from the persisted
+            // block, then present.
+            let endDate = Date(timeIntervalSince1970: active.endTimestamp / 1000)
+            activeSession.start(
+                durationMinutes: active.durationMinutes,
+                hardcore: Defaults.bool(SessionState.activeBlockHardcoreKey),
+                resumeEndTimestamp: endDate,
+                goal: onboarding.primaryGoal,
+                streak: home.consecutiveStreak
+            )
+            lockIn.activeModal = .executionBlock
+        } else {
+            // Window ended while the app was killed → credit once and clear.
+            LockModeService.shared.endSession()
+            handleSessionFinish(
+                actualMinutes: active.durationMinutes,
+                wasNatural: true,
+                showCompletionUI: true
+            )
+        }
+    }
+
+    /// If a scheduled session's auto-block window is in progress right now,
+    /// surface the live countdown timer (e.g. the user tapped the "locking in"
+    /// notification mid-window). Apps are already shielded by the DAM extension;
+    /// this is the in-app view. Crediting happens once the timer completes (or
+    /// headlessly via the queue if the user never opens the app), deduped by
+    /// occurrence id. Skips when any modal is already up.
+    private func resumeScheduledLiveIfNeeded() {
+        guard scheduledSessions.isHydrated else { return }
+        guard lockIn.activeModal == nil else { return }
+        guard let active = scheduledSessions.currentActiveOccurrence() else { return }
+        lockIn.activeModal = .scheduledLive(
+            occurrenceId: active.occurrenceId,
+            durationMinutes: active.session.durationMinutes,
+            endTimestamp: active.end
         )
     }
+
+    /// Credit any scheduled lock-in sessions that auto-ran (shield applied by
+    /// the DAM extension) while the app was backgrounded or killed. Each
+    /// occurrence is credited once via the shared `handleSessionFinish` path,
+    /// silently (no per-session completion cover). Safe to call repeatedly —
+    /// the store dedupes by occurrence id and single-flights the drain.
+    private func drainScheduledCompletions() {
+        guard scheduledSessions.isHydrated else { return }
+        let credited = scheduledSessions.drainPendingCompletions { minutes in
+            handleSessionFinish(actualMinutes: minutes, wasNatural: true, showCompletionUI: false)
+        }
+        if credited > 0 {
+            NotificationCenter.default.post(
+                name: .lockedInScheduledSessionsCredited,
+                object: nil,
+                userInfo: ["count": credited]
+            )
+        }
+    }
+}
+
+public extension Notification.Name {
+    /// Posted after scheduled lock-in sessions are reconciled + credited on
+    /// app open. `userInfo["count"]` is the number credited. RootView shows a
+    /// lightweight summary toast.
+    static let lockedInScheduledSessionsCredited = Notification.Name("lockedInScheduledSessionsCredited")
 }

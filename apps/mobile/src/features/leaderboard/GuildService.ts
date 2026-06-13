@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SupabaseService } from '../../services/SupabaseService';
+import { RankService } from '../../services/RankService';
 
 const WEEK_STATS_KEY = '@lockedin/guild_week_stats';
 
@@ -254,17 +255,27 @@ export const GuildService = {
         });
       }
 
-      // Fetch user_stats for OVR + rank in one query (broad-readable per RLS).
+      // Fetch user_stats for OVR + streak in one query (broad-readable per RLS).
+      // We derive the rank from current_streak_days with the same RankService
+      // formula the Home HUD uses, rather than the stored rank_id snapshot — that
+      // column is a second derivation that goes stale whenever a post-session
+      // recompute didn't land (e.g. auth expired mid-session), which is exactly
+      // why a member could read RECRUIT on Home but NPC here.
       const { data: userStats } = await client
         .from('user_stats')
-        .select('user_id, ovr, rank_id')
+        .select('user_id, ovr, rank_id, current_streak_days')
         .in('user_id', memberIds);
 
       const statsByUser = new Map<string, { ovr: number; rank_id: string }>();
       for (const s of userStats ?? []) {
+        const streakDays = Number(s.current_streak_days ?? 0);
+        // Prefer the live streak-derived rank; fall back to the stored snapshot.
+        const rankId = Number.isFinite(streakDays)
+          ? RankService.rankFromStreak(streakDays).id
+          : ((s.rank_id as string) ?? 'npc');
         statsByUser.set(s.user_id as string, {
           ovr: Number(s.ovr ?? 1),
-          rank_id: (s.rank_id as string) ?? 'npc',
+          rank_id: rankId,
         });
       }
 

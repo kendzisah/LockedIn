@@ -72,4 +72,26 @@ public enum StatsService {
             }
         }
     }
+
+    /// Recompute derived `user_stats` columns (rank_id / ovr) for the currently
+    /// authenticated user, resolving the id from the Supabase session. No-op
+    /// when signed out. The recompute RPC itself keys off `auth.uid()`; the id
+    /// is only used to re-pull the local cache afterward.
+    public static func recomputeCurrentUser() async {
+        guard let session = try? await LockedInSupabase.shared.client.auth.session else { return }
+        _ = await recompute(userId: session.user.id.uuidString)
+    }
+
+    /// Persist the streak THEN recompute derived columns — sequenced so the
+    /// `recompute_user_stats` RPC reads the just-written `current_streak_days`
+    /// (and thus writes a fresh streak-derived `rank_id`). Fire-and-forget
+    /// `setStreak` + `recompute` would race and leave rank_id stale.
+    public static func setStreakAndRecompute(_ days: Int) async {
+        do {
+            try await HomeService.shared.setStreak(days)
+        } catch {
+            print("[StatsService] setStreak failed: \(error)")
+        }
+        await recomputeCurrentUser()
+    }
 }
