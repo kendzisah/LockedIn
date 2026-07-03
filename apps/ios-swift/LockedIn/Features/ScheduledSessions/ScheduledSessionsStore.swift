@@ -84,6 +84,23 @@ public final class ScheduledSessionsStore {
         NotificationService.shared.resyncScheduledSessionNotifications(sessions)
     }
 
+    /// Re-register the DeviceActivity auto-block schedules + notifications from
+    /// the current session list. Safe to call on every app foreground —
+    /// `resyncAll` is stop-all-then-re-add and recovers a registration that was
+    /// dropped after a Family Controls authorization race or an OS eviction (a
+    /// suspected cause of background blocking failing to engage). No-op until
+    /// hydrated so we never wipe schedules with an empty in-memory list.
+    public func resyncMonitoring() {
+        guard isHydrated else { return }
+        // Don't re-register while a window is currently active: `resyncAll` calls
+        // `stopAllScheduled()`, and stopping an in-progress DeviceActivity
+        // interval makes the extension fire `intervalDidEnd` → `clearShield()`,
+        // un-blocking apps mid-session. Recovery happens on the next foreground
+        // once no window is live (CRUD + launch still resync directly).
+        guard currentActiveOccurrence() == nil else { return }
+        resync()
+    }
+
     // MARK: - Panel helpers
 
     /// Soonest `limit` upcoming occurrences across all enabled sessions,
@@ -144,10 +161,12 @@ public final class ScheduledSessionsStore {
     // MARK: - Deferred credit (drain)
 
     /// Drain the App-Group completion queue the extension appended to. Calls
-    /// `credit(durationMinutes)` exactly once per new occurrence id, then clears
-    /// the queue. Returns the number of occurrences credited (for a summary).
+    /// `credit(durationMinutes, endedAtMs)` exactly once per new occurrence id,
+    /// then clears the queue. `endedAtMs` lets the caller attribute the credit to
+    /// the real session time (time-of-day missions, day attribution) rather than
+    /// the time the app happened to open. Returns the number credited.
     @discardableResult
-    public func drainPendingCompletions(credit: (Int) -> Void) -> Int {
+    public func drainPendingCompletions(credit: (_ minutes: Int, _ endedAtMs: Double) -> Void) -> Int {
         guard !isDraining else { return 0 }
         isDraining = true
         defer { isDraining = false }
@@ -166,7 +185,7 @@ public final class ScheduledSessionsStore {
             if credited.contains(r.occurrenceId) { continue }
             credited.insert(r.occurrenceId)
             guard r.durationMinutes > 0 else { continue }
-            credit(r.durationMinutes)
+            credit(r.durationMinutes, r.endedAtMs)
             creditedCount += 1
             firedOneOffSessionIds.insert(r.sessionId)
         }

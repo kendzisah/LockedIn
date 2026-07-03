@@ -41,6 +41,30 @@ public enum SharedScreenTime {
         /// on every re-sync; read by the extension at `intervalDidEnd` to recover
         /// the session id + duration for the fired activity.
         public static let scheduledActivityMap = "@lockedin/scheduled_activity_map"
+
+        /// Diagnostics breadcrumb: `"<epochMs>|<activityName>"` written by the
+        /// DAM extension whenever `intervalDidStart` / `intervalDidEnd` actually
+        /// fires. The main app logs these on launch to confirm (on a physical
+        /// device) whether the OS is waking the extension for scheduled windows
+        /// — the crux of the "background blocking never engages" investigation.
+        public static let damLastStart = "@lockedin/dam_last_start"
+        public static let damLastEnd = "@lockedin/dam_last_end"
+        /// Capped JSON array of `"<epochMs>|<start|end>|<outcome>|<activity>"`
+        /// strings the extension appends on every interval callback. Lets the
+        /// in-app diagnostics show whether a *background* `intervalDidStart`
+        /// fired at the scheduled time (vs only on a foreground re-register) and
+        /// whether the shield was applied or weekday-skipped.
+        public static let damEventLog = "@lockedin/dam_event_log"
+        /// Append-only ledger of every scheduled DeviceActivity name ever
+        /// registered. `stopAllScheduled` stops the union of this + the live map,
+        /// so a corrupted/cleared map can't orphan previously-registered
+        /// activities (e.g. old per-weekday names from a prior app version).
+        public static let scheduledActivityLedger = "@lockedin/scheduled_activity_ledger"
+        /// Last scheduled-registration outcome summary the app writes after a
+        /// resync — e.g. "0 failed" or "1 failed: <reason>". Surfaced in the
+        /// in-app diagnostics so a dropped window (rejected `startMonitoring`)
+        /// is visible instead of silently absent.
+        public static let scheduledRegistrationStatus = "@lockedin/scheduled_registration_status"
     }
 
     public static func sharedDefaults() -> UserDefaults? {

@@ -59,8 +59,14 @@ public struct ScheduledSession: Codable, Identifiable, Equatable, Sendable {
 
     public var isOneOff: Bool { weekdays.isEmpty }
 
-    /// A schedule is registerable only if it has a positive same-day duration.
-    public var isValid: Bool { durationMinutes > 0 }
+    /// iOS `DeviceActivity` won't reliably monitor an interval shorter than 15
+    /// minutes — `startMonitoring` rejects it, so the window silently never
+    /// arms. Enforced in the editor and as a registration guard.
+    public static let minWindowMinutes = 15
+
+    /// A schedule is registerable only if its same-day duration meets the iOS
+    /// DeviceActivity minimum.
+    public var isValid: Bool { durationMinutes >= Self.minWindowMinutes }
 
     // MARK: - Occurrences (local calendar)
 
@@ -103,6 +109,44 @@ public struct ScheduledSession: Codable, Identifiable, Equatable, Sendable {
             cal.nextDate(after: after, matching: startComponents(weekday: wd), matchingPolicy: .nextTime)
         }
         return candidates.min()
+    }
+
+    // MARK: - Overlap
+
+    /// Days-of-week (1 = Sun … 7 = Sat) this session is active on. For a
+    /// recurring session that's its `weekdays`; for a one-off it's the single
+    /// weekday of its next occurrence (empty if it has none).
+    func activeWeekdays(now: Date = Date()) -> Set<Int> {
+        if !isOneOff { return Set(weekdays) }
+        guard let next = nextOccurrence(after: now) else { return [] }
+        return [Calendar.current.component(.weekday, from: next)]
+    }
+
+    /// True if this session's lock-in window collides with `other`'s on a day
+    /// both are active. Overlapping windows can fight over the shield — one
+    /// window's end un-blocks apps while the other is still mid-session — so the
+    /// editor rejects them. Time comparison is half-open `[start, end)`, so a
+    /// session ending exactly when another starts is NOT a conflict.
+    func overlaps(with other: ScheduledSession, now: Date = Date()) -> Bool {
+        guard isValid, other.isValid else { return false }
+
+        // Do they ever share a day?
+        if isOneOff && other.isOneOff {
+            // Two one-offs only collide if they actually fire on the same date.
+            // Comparing real fire dates (not just time-of-day) is intentional:
+            // a 9–11 one-off whose 9:00 start already passed today fires
+            // *tomorrow*, so it can't clash with a 10–12 one-off firing *today*.
+            guard let a = nextOccurrence(after: now),
+                  let b = other.nextOccurrence(after: now),
+                  Calendar.current.isDate(a, inSameDayAs: b)
+            else { return false }
+        } else if activeWeekdays(now: now).isDisjoint(with: other.activeWeekdays(now: now)) {
+            return false
+        }
+
+        // Time-of-day overlap on that shared day.
+        return startMinutesOfDay < other.endMinutesOfDay
+            && other.startMinutesOfDay < endMinutesOfDay
     }
 
     /// Up to `limit` upcoming start `Date`s (for the HUD panel preview).

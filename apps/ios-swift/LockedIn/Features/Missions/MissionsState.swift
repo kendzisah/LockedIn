@@ -19,6 +19,12 @@ public enum MissionsStorageKeys {
     public static let weeklyActiveDays       = "@lockedin/weekly_active_days"
     public static let weeklyEarlyOpens       = "@lockedin/weekly_early_opens"
     public static let missionXPSeason        = MissionXPSeason.storageKey
+    /// Durable per-day record of which daily missions were already completed.
+    /// Mission ids are deterministic (`mission_<dayOfYear>_<index>`), so a
+    /// regeneration recreates the same ids with `completed: false` — wiping the
+    /// in-memory flag and letting a user re-complete (re-earn XP). This log
+    /// survives regeneration so completion is enforced once-per-day.
+    public static let dailyCompletedMissionIds = "@lockedin/daily_completed_mission_ids"
 
     /// Dynamic-suffix key. Use `dailyActivityDone(forDateKey:)`.
     private static let dailyActivityDonePrefix = "@lockedin/daily_activity_done_"
@@ -195,13 +201,18 @@ public final class MissionsState {
                     streak: streak
                 )
             )
-            self.missions = newMissions
+            // Re-apply today's banked completions (empty on a genuinely new day,
+            // since the log is date-scoped) so a same-day profile-mismatch
+            // regeneration doesn't unlock already-completed missions.
+            let overlaid = applyCompletedTodayOverlay(newMissions)
+            let completedCount = MissionsEngine.completedCount(overlaid)
+            self.missions = overlaid
             self.date = today
-            self.completedCount = 0
-            self.dailyXP = 0
+            self.completedCount = completedCount
+            self.dailyXP = MissionsEngine.calculateTotalXP(overlaid.filter { $0.completed })
             self.totalXP = cumulativeXP
-            self.lockedInToday = false
-            persistDaily(missions: newMissions, date: today, profile: expectedProfile)
+            self.lockedInToday = completedCount == overlaid.count && !overlaid.isEmpty
+            persistDaily(missions: overlaid, date: today, profile: expectedProfile)
         }
 
         // ── Weekly missions ──
@@ -251,7 +262,18 @@ public final class MissionsState {
     public func completeMission(missionId: String) {
         guard let idx = missions.firstIndex(where: { $0.id == missionId }) else { return }
         let mission = missions[idx]
-        if mission.completed { return } // Guard against double-completion
+        if mission.completed { return } // Guard against double-completion (in-memory)
+
+        // Durable once-per-day guard: if this mission was already completed
+        // earlier today, a regeneration must have reset its in-memory flag.
+        // Re-sync the flag (so the UI locks the slot) but award nothing again.
+        if completedMissionIdsToday().contains(missionId) {
+            missions[idx].completed = true
+            refreshDailyDerived()
+            let profile = Self.buildProfileKey(goal: userGoal, weaknesses: userWeaknesses)
+            persistDaily(missions: missions, date: date, profile: profile)
+            return
+        }
 
         var updated = missions
         updated[idx].completed = true
@@ -291,9 +313,11 @@ public final class MissionsState {
             isPerfectDay: isPerfectDay
         )
 
-        // Persist
+        // Persist (+ durable once-per-day record so a later regeneration can't
+        // unlock this mission and let it be re-completed for more XP).
         let profile = Self.buildProfileKey(goal: userGoal, weaknesses: userWeaknesses)
         persistDaily(missions: updated, date: date, profile: profile)
+        recordCompletedMissionIdToday(mission.id)
         persistCumulativeXP(totalXP)
 
         // Legacy counter fan-out (kept populated for admin queries; the
@@ -372,7 +396,8 @@ public final class MissionsState {
     /// completing it. Used by `checkAutoComplete` to show "25/45 min" etc.
     public func updateDailyProgress(missionId: String, progress: Int, progressTarget: Int) {
         guard let idx = missions.firstIndex(where: { $0.id == missionId }),
-              missions[idx].completed == false
+              missions[idx].completed == false,
+              !completedMissionIdsToday().contains(missionId) // don't touch a banked mission
         else { return }
         missions[idx].progress = min(progress, progressTarget)
         missions[idx].progressTarget = progressTarget
@@ -395,7 +420,9 @@ public final class MissionsState {
         let profile = Self.buildProfileKey(goal: goal, weaknesses: userWeaknesses)
         userGoal = goal
         applyGenerated(missions: newMissions, date: today)
-        persistDaily(missions: newMissions, date: today, profile: profile)
+        // Persist the overlaid result (applyGenerated re-applies today's banked
+        // completions), not the raw `completed:false` set.
+        persistDaily(missions: missions, date: today, profile: profile)
         publishNextMissionToWidget()
     }
 
@@ -436,7 +463,8 @@ public final class MissionsState {
             weekKey = currentWeekKey
             persistWeekly(missions: newWeekly, weekKey: currentWeekKey, profile: profile)
         }
-        persistDaily(missions: newMissions, date: today, profile: profile)
+        // Persist the overlaid result (banked completions preserved), not raw.
+        persistDaily(missions: missions, date: today, profile: profile)
         publishNextMissionToWidget()
     }
 
@@ -525,8 +553,11 @@ public final class MissionsState {
     /// Walks the daily missions and completes any whose auto-complete rule
     /// matches the supplied session data. Mirrors `checkAutoComplete` in
     /// `apps/mobile/src/features/missions/MissionsProvider.tsx:840-923`.
-    public func checkAutoComplete(_ data: SessionCompleteData) {
-        let hour = Calendar.current.component(.hour, from: Date())
+    public func checkAutoComplete(_ data: SessionCompleteData, now: Date = Date()) {
+        // `now` is the real session end time — for a background-credited scheduled
+        // session it's when the session ran, not when the app opened — so
+        // time-of-day gated missions (Morning/Afternoon/Evening) evaluate correctly.
+        let hour = Calendar.current.component(.hour, from: now)
 
         for mission in missions {
             if mission.completed || mission.completionType != .auto { continue }
@@ -687,13 +718,60 @@ public final class MissionsState {
     }
 
     private func applyGenerated(missions: [Mission], date: String) {
-        let completedCount = MissionsEngine.completedCount(missions)
-        let dailyXP = MissionsEngine.calculateTotalXP(missions.filter { $0.completed })
-        self.missions = missions
+        // Re-apply completions banked earlier today so a regeneration can't
+        // "unlock" an already-done mission. Callers persist `self.missions`
+        // afterwards, so the overlay is what gets written to disk.
+        let overlaid = applyCompletedTodayOverlay(missions)
+        let completedCount = MissionsEngine.completedCount(overlaid)
+        let dailyXP = MissionsEngine.calculateTotalXP(overlaid.filter { $0.completed })
+        self.missions = overlaid
         self.date = date
         self.completedCount = completedCount
         self.dailyXP = dailyXP
-        self.lockedInToday = completedCount == missions.count && !missions.isEmpty
+        self.lockedInToday = completedCount == overlaid.count && !overlaid.isEmpty
+    }
+
+    // MARK: - Once-per-day completion (durable)
+
+    /// `{date, ids}` of daily missions completed today. Date-scoped so it
+    /// auto-expires at the day boundary (a stale-date log reads as empty).
+    private struct DailyCompletedLog: Codable { var date: String; var ids: [String] }
+
+    /// Ids of daily missions already completed *today* (empty on a new day).
+    private func completedMissionIdsToday() -> Set<String> {
+        guard let log = Defaults.codable(DailyCompletedLog.self, MissionsStorageKeys.dailyCompletedMissionIds),
+              log.date == Self.localDateKey()
+        else { return [] }
+        return Set(log.ids)
+    }
+
+    /// Persist `id` into today's completed set (idempotent).
+    private func recordCompletedMissionIdToday(_ id: String) {
+        let today = Self.localDateKey()
+        var ids = completedMissionIdsToday()
+        guard !ids.contains(id) else { return }
+        ids.insert(id)
+        Defaults.setCodable(DailyCompletedLog(date: today, ids: Array(ids)),
+                            MissionsStorageKeys.dailyCompletedMissionIds)
+    }
+
+    /// Mark any mission already completed earlier today as `completed` again,
+    /// so regenerated/rehydrated sets reflect banked progress.
+    private func applyCompletedTodayOverlay(_ missions: [Mission]) -> [Mission] {
+        let done = completedMissionIdsToday()
+        guard !done.isEmpty else { return missions }
+        var out = missions
+        for i in out.indices where done.contains(out[i].id) {
+            out[i].completed = true
+        }
+        return out
+    }
+
+    /// Recompute the derived daily counters from `missions`.
+    private func refreshDailyDerived() {
+        completedCount = MissionsEngine.completedCount(missions)
+        dailyXP = MissionsEngine.calculateTotalXP(missions.filter { $0.completed })
+        lockedInToday = completedCount == missions.count && !missions.isEmpty
     }
 
     /// Parse a minimum duration (in minutes) from the variant portion of a

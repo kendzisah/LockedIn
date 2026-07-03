@@ -12,10 +12,26 @@ import Foundation
 public struct ScheduledActivityMeta: Codable, Equatable, Sendable {
     public let sessionId: String
     public let durationMinutes: Int
+    /// Calendar weekdays (1 = Sun … 7 = Sat) this activity should actually fire
+    /// on. Recurring sessions register a single *daily* DeviceActivity schedule
+    /// (far more reliable at firing `intervalDidStart` than per-weekday
+    /// schedules), so the extension filters by this on each fire. Empty == fire
+    /// every day it triggers (one-off, whose schedule already targets one date).
+    public let weekdays: [Int]
 
-    public init(sessionId: String, durationMinutes: Int) {
+    public init(sessionId: String, durationMinutes: Int, weekdays: [Int] = []) {
         self.sessionId = sessionId
         self.durationMinutes = durationMinutes
+        self.weekdays = weekdays
+    }
+
+    // Tolerant decode: a map persisted before `weekdays` existed decodes with
+    // an empty list rather than throwing (and failing the whole map).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sessionId = try c.decode(String.self, forKey: .sessionId)
+        durationMinutes = try c.decode(Int.self, forKey: .durationMinutes)
+        weekdays = try c.decodeIfPresent([Int].self, forKey: .weekdays) ?? []
     }
 }
 

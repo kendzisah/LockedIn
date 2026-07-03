@@ -424,20 +424,31 @@ public final class HomeState {
     // MARK: - Mutators (mirror the RN reducer actions)
 
     /// `COMPLETE_EXECUTION_BLOCK` — called by W11 after a session completes.
-    public func completeExecutionBlock(durationMinutes: Int) {
+    ///
+    /// `creditToday` defaults to true (live/manual + same-day scheduled sessions).
+    /// Pass `false` for a scheduled session drained on a LATER day than it ran:
+    /// only the day-agnostic lifetime totals are credited, leaving today's focus
+    /// bucket + program-day progression untouched so a stale session can't inflate
+    /// today. HomeState keeps a single-day focus bucket, so the past day can't be
+    /// attributed retroactively — by design (see plan).
+    public func completeExecutionBlock(durationMinutes: Int, creditToday: Bool = true) {
         let mins = max(0, durationMinutes)
-        let today = SessionDayEngine.todayKey()
-        let alreadyAdvancedToday = lastLockInCompletedDate == today
-        let newMaxDay = alreadyAdvancedToday ? maxCompletedDay : maxCompletedDay + 1
-        let focusBase = (dailyFocusDate == today) ? dailyFocusedMinutes : 0
 
-        maxCompletedDay = newMaxDay
-        lastLockInCompletedDate = today
         lifetimeExecutionBlocks += 1
         lifetimeExecutionMinutes += mins
         lifetimeTotalMinutes += mins
-        dailyFocusedMinutes = focusBase + mins
-        dailyFocusDate = today
+
+        if creditToday {
+            let today = SessionDayEngine.todayKey()
+            let alreadyAdvancedToday = lastLockInCompletedDate == today
+            let newMaxDay = alreadyAdvancedToday ? maxCompletedDay : maxCompletedDay + 1
+            let focusBase = (dailyFocusDate == today) ? dailyFocusedMinutes : 0
+
+            maxCompletedDay = newMaxDay
+            lastLockInCompletedDate = today
+            dailyFocusedMinutes = focusBase + mins
+            dailyFocusDate = today
+        }
         persist()
     }
 

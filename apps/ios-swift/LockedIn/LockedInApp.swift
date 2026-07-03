@@ -47,6 +47,13 @@ struct LockedInApp: App {
             AppsFlyerLib.shared().appsFlyerDevKey = devKey
             AppsFlyerLib.shared().appleAppID = appId
             AppsFlyerLib.shared().isDebug = false
+
+            // Defer the first attribution send until the ATT opt-in prompt
+            // resolves (or 10s elapses), so we never track before the user
+            // consents. `RootView` shows the prompt via `TrackingAuthorization`.
+            // Mirrors RN's `timeToWaitForATTUserAuthorization: 10` (App.tsx).
+            // Must be set before `AppsFlyerLib.start()` runs in AppDelegate.
+            AppsFlyerLib.shared().waitForATTUserAuthorization(timeoutInterval: 10)
         }
 
         if let postHogKey = LockedInConfig.string(.postHogApiKey) {

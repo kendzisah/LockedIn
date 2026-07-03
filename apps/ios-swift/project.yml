@@ -100,7 +100,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flocktechnologies.lockedin
         PRODUCT_NAME: LockedIn
-        MARKETING_VERSION: "4.0.1"
+        MARKETING_VERSION: "4.0.2"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_OBJC_BRIDGING_HEADER: LockedIn/LockedIn-Bridging-Header.h
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -162,7 +162,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flocktechnologies.lockedin.DeviceActivityMonitor
         PRODUCT_NAME: LockedInDeviceActivityMonitor
-        MARKETING_VERSION: "4.0.1"
+        MARKETING_VERSION: "4.0.2"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: DeviceActivityMonitorExtension/Info.plist
         CODE_SIGN_ENTITLEMENTS: DeviceActivityMonitorExtension/Extension.entitlements
@@ -193,7 +193,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flocktechnologies.lockedin.widgets
         PRODUCT_NAME: LockedInWidgets
-        MARKETING_VERSION: "4.0.1"
+        MARKETING_VERSION: "4.0.2"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: LockedInWidgets/Info.plist
         CODE_SIGN_ENTITLEMENTS: LockedInWidgets/Widgets.entitlements
@@ -226,7 +226,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flocktechnologies.lockedin.shield
         PRODUCT_NAME: LockedInShieldConfiguration
-        MARKETING_VERSION: "4.0.1"
+        MARKETING_VERSION: "4.0.2"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: LockedInShieldConfiguration/Info.plist
         CODE_SIGN_ENTITLEMENTS: LockedInShieldConfiguration/ShieldConfiguration.entitlements

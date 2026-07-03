@@ -21,6 +21,8 @@ struct ScheduledSessionEditorSheet: View {
     @State private var endDate: Date
     @State private var weekdays: Set<Int>
     @State private var enabled: Bool
+    @State private var errorMessage: String?
+    @State private var isSaving = false
 
     init(store: ScheduledSessionsStore, existing: ScheduledSession?) {
         self.store = store
@@ -47,7 +49,16 @@ struct ScheduledSessionEditorSheet: View {
     private var durationMinutes: Int {
         (endHM.0 * 60 + endHM.1) - (startHM.0 * 60 + startHM.1)
     }
-    private var isValid: Bool { durationMinutes > 0 }
+    private var isValid: Bool { durationMinutes >= ScheduledSession.minWindowMinutes }
+    /// Message for the duration row / save gating — distinguishes "end before
+    /// start" from "shorter than the iOS DeviceActivity minimum".
+    private var durationProblem: String? {
+        if durationMinutes <= 0 { return "End time must be after start time" }
+        if durationMinutes < ScheduledSession.minWindowMinutes {
+            return "Must be at least \(ScheduledSession.minWindowMinutes) min — iOS won't monitor shorter windows"
+        }
+        return nil
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -97,6 +108,17 @@ struct ScheduledSessionEditorSheet: View {
                     }
                     .tint(SystemTokens.glowAccent)
 
+                    if let errorMessage {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 12))
+                            Text(errorMessage)
+                                .font(.custom(FontFamily.bodyMedium.rawValue, size: 13))
+                        }
+                        .foregroundColor(SystemTokens.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     saveButton
 
                     if existing != nil {
@@ -114,6 +136,10 @@ struct ScheduledSessionEditorSheet: View {
                 .padding(.bottom, 40)
             }
             .scrollIndicators(.hidden)
+            .onChange(of: startDate) { _, _ in errorMessage = nil }
+            .onChange(of: endDate) { _, _ in errorMessage = nil }
+            .onChange(of: weekdays) { _, _ in errorMessage = nil }
+            .onChange(of: enabled) { _, _ in errorMessage = nil }
         }
     }
 
@@ -150,7 +176,7 @@ struct ScheduledSessionEditorSheet: View {
             Image(systemName: "timer")
                 .font(.system(size: 12))
                 .foregroundColor(isValid ? SystemTokens.cyan : SystemTokens.red)
-            Text(isValid ? "\(durationMinutes) min lock-in" : "End time must be after start time")
+            Text(durationProblem ?? "\(durationMinutes) min lock-in")
                 .font(.custom(FontFamily.headingSemiBold.rawValue, size: 13))
                 .foregroundColor(isValid ? SystemTokens.textSecondary : SystemTokens.red)
         }
@@ -195,7 +221,7 @@ struct ScheduledSessionEditorSheet: View {
                         .stroke(SystemTokens.glowAccent.opacity(isValid ? 0.45 : 0.2), lineWidth: 1)
                 )
         }
-        .disabled(!isValid)
+        .disabled(!isValid || isSaving)
         .opacity(isValid ? 1 : 0.5)
     }
 
@@ -206,7 +232,7 @@ struct ScheduledSessionEditorSheet: View {
     }
 
     private func save() {
-        guard isValid else { return }
+        guard isValid, !isSaving else { return }   // !isSaving guards against a double-tap double-add
         let session = ScheduledSession(
             id: existing?.id ?? UUID().uuidString,
             label: label.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -218,14 +244,40 @@ struct ScheduledSessionEditorSheet: View {
             enabled: enabled,
             createdAt: existing?.createdAt ?? Date().timeIntervalSince1970 * 1000
         )
-        if existing == nil {
-            store.add(session)
-        } else {
-            store.update(session)
+
+        // Reject overlapping windows — two active windows can fight over the
+        // shield (one's end un-blocks apps mid-other-session). Only enabled
+        // sessions register/fire, so only they can conflict.
+        if session.enabled,
+           let conflict = store.sessions.first(where: {
+               $0.id != session.id && $0.enabled && session.overlaps(with: $0)
+           }) {
+            errorMessage = "Overlaps with “\(conflict.displayLabel)” · \(conflict.timeRangeString). Adjust the time or days."
+            return
         }
-        // Auto-block needs Family Controls authorization; prompt on first save.
-        Task { await ScreenTimeModule.shared.requestAuthorization() }
-        dismiss()
+
+        // Request Family Controls authorization BEFORE persisting. `add/update`
+        // synchronously triggers `resyncAll`, which only registers DeviceActivity
+        // monitoring when auth is already approved — so on a first-ever session
+        // we must resolve auth first, else the schedule registers nothing until a
+        // later resync.
+        isSaving = true
+        Task { @MainActor in
+            let state = await ScreenTimeModule.shared.requestAuthorization()
+            if existing == nil {
+                store.add(session)
+            } else {
+                store.update(session)
+            }
+            // If access wasn't granted the session is saved but won't auto-block —
+            // keep the sheet open and say so rather than silently "succeeding".
+            if state != .approved {
+                errorMessage = "Saved, but Screen Time access is off — this won't block apps until you enable it in Settings."
+                isSaving = false
+                return
+            }
+            dismiss()
+        }
     }
 
     private func deleteAndDismiss() {

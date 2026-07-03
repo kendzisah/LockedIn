@@ -35,6 +35,12 @@ struct RootView: View {
             .task {
                 await bootIfNeeded()
             }
+            // Present the ATT opt-in prompt once the scene is active. Kept in a
+            // separate `.task` so it isn't queued behind `bootIfNeeded()`'s
+            // network work — AppsFlyer is waiting on this decision (up to 10s).
+            .task {
+                await TrackingAuthorization.requestIfNeeded()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .lockedInScheduledSessionsCredited)) { note in
                 let count = (note.userInfo?["count"] as? Int) ?? 0
                 guard count > 0 else { return }

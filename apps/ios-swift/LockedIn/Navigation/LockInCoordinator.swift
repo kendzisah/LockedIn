@@ -30,8 +30,6 @@ public enum LockInModal: Identifiable, Equatable {
     /// `ActiveSessionStore`, so this carries no payload).
     case executionBlock
     case sessionComplete(durationMinutes: Int, streak: Int)
-    /// Live view of an in-progress auto-block scheduled session.
-    case scheduledLive(occurrenceId: String, durationMinutes: Int, endTimestamp: Date)
 
     public var id: String {
         switch self {
@@ -39,7 +37,6 @@ public enum LockInModal: Identifiable, Equatable {
         case .durationPicker: return "DurationPicker"
         case .executionBlock: return "ExecutionBlock"
         case .sessionComplete: return "SessionComplete"
-        case .scheduledLive: return "ScheduledLive"
         }
     }
 }

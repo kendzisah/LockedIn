@@ -26,26 +26,53 @@ final class LockedInDeviceActivityMonitor: DeviceActivityMonitor {
 
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
-        // Manual session OR any user-scheduled session → block apps. Both use
-        // the same named ManagedSettingsStore, so applying twice is idempotent.
-        if activity.rawValue == SharedScreenTime.activityName
-            || activity.rawValue.hasPrefix(SharedScreenTime.scheduledActivityPrefix) {
+        let name = activity.rawValue
+
+        // Manual session → always shield.
+        if name == SharedScreenTime.activityName {
+            logEvent(phase: "start", activity: name, outcome: "manual")
             applyShieldFromSavedSelection()
+            return
         }
+
+        guard name.hasPrefix(SharedScreenTime.scheduledActivityPrefix) else { return }
+
+        // Recurring sessions use a single DAILY schedule, so this fires every
+        // day — only shield on a selected weekday (one-offs have empty weekdays
+        // and always shield).
+        if let meta = scheduledMeta(for: name), !meta.weekdays.isEmpty,
+           !meta.weekdays.contains(Calendar.current.component(.weekday, from: Date())) {
+            logEvent(phase: "start", activity: name, outcome: "skip_weekday")
+            return
+        }
+
+        logEvent(phase: "start", activity: name, outcome: "shield")
+        applyShieldFromSavedSelection()
     }
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
+        let name = activity.rawValue
 
-        if activity.rawValue == SharedScreenTime.activityName {
+        if name == SharedScreenTime.activityName {
+            logEvent(phase: "end", activity: name, outcome: "manual")
             clearShield(removeManualTimestamp: true)
             return
         }
 
-        guard activity.rawValue.hasPrefix(SharedScreenTime.scheduledActivityPrefix) else { return }
+        guard name.hasPrefix(SharedScreenTime.scheduledActivityPrefix) else { return }
 
+        // Daily schedule fires every day — only credit/clear on a day this
+        // session actually ran (else we'd queue a bogus completion / EXP).
+        if let meta = scheduledMeta(for: name), !meta.weekdays.isEmpty,
+           !meta.weekdays.contains(Calendar.current.component(.weekday, from: Date())) {
+            logEvent(phase: "end", activity: name, outcome: "skip_weekday")
+            return
+        }
+
+        logEvent(phase: "end", activity: name, outcome: "record")
         // A scheduled block ended. Record it for the app to credit on next open.
-        recordScheduledCompletion(activityName: activity.rawValue)
+        recordScheduledCompletion(activityName: name)
 
         // Clear the shield UNLESS a manual session is still running (its
         // fail-safe timestamp is in the future) — don't un-block apps out from
@@ -53,6 +80,15 @@ final class LockedInDeviceActivityMonitor: DeviceActivityMonitor {
         if !manualSessionActive() {
             clearShield(removeManualTimestamp: false)
         }
+    }
+
+    /// Look up the activity's metadata (session id, duration, selected weekdays)
+    /// from the App-Group map the app writes on every re-sync.
+    private func scheduledMeta(for activityName: String) -> ScheduledActivityMeta? {
+        guard let data = SharedScreenTime.sharedDefaults()?.data(forKey: SharedScreenTime.Keys.scheduledActivityMap),
+              let map = try? JSONDecoder().decode([String: ScheduledActivityMeta].self, from: data)
+        else { return nil }
+        return map[activityName]
     }
 
     override func eventDidReachThreshold(
@@ -78,6 +114,33 @@ final class LockedInDeviceActivityMonitor: DeviceActivityMonitor {
     }
 
     // MARK: - Private
+
+    /// Record an interval callback for on-device diagnostics: updates the
+    /// last-start/last-end stamps AND appends to a capped event history so the
+    /// app can show whether a *background* `intervalDidStart` fired at the
+    /// scheduled time (vs only on a foreground re-register) and whether the
+    /// shield was applied or weekday-skipped. Cheap — within the callback budget.
+    private func logEvent(phase: String, activity: String, outcome: String) {
+        let shared = SharedScreenTime.sharedDefaults()
+        let ms = Int(Date().timeIntervalSince1970 * 1000)
+        let stamp = "\(ms)|\(activity)"
+        shared?.set(stamp, forKey: phase == "start"
+            ? SharedScreenTime.Keys.damLastStart
+            : SharedScreenTime.Keys.damLastEnd)
+
+        let short = activity.replacingOccurrences(
+            of: "\(SharedScreenTime.scheduledActivityPrefix).", with: "")
+        var log: [String] = []
+        if let data = shared?.data(forKey: SharedScreenTime.Keys.damEventLog),
+           let existing = try? JSONDecoder().decode([String].self, from: data) {
+            log = existing
+        }
+        log.append("\(ms)|\(phase)|\(outcome)|\(short)")
+        if log.count > 12 { log = Array(log.suffix(12)) }
+        if let data = try? JSONEncoder().encode(log) {
+            shared?.set(data, forKey: SharedScreenTime.Keys.damEventLog)
+        }
+    }
 
     private func applyShieldFromSavedSelection() {
         guard let data = SharedScreenTime.sharedDefaults()?

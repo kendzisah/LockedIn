@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Agent rules (read first)
+
+- **Read `docs/KNOWLEDGE_GRAPH.md` before starting any task.**
+- Use its **Quick Reference** to find the right file; follow **Concept Clusters** for depth.
+- **Tier 1 (architecture / data model / migration specs) wins conflicts** — change it deliberately.
+- **The code is the source of truth.** Cite `file:line`. Don't invent files, behavior, or APIs.
+- If something is **UNCLEAR** or **NOT FOUND**, say so and ask — don't guess.
+- Two parallel frontends exist: `apps/mobile` (React Native, original) and `apps/ios-swift`
+  (native Swift, **active frontier**). On iOS, the Swift app reflects current intent.
+
+---
+
 ## Build & Dev Commands
 
 ```bash

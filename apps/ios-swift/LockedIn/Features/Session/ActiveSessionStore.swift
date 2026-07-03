@@ -25,9 +25,15 @@ public final class ActiveSessionStore {
     public private(set) var goal: String?
     public private(set) var streak: Int = 0
 
+    /// Non-nil when this session was promoted from a scheduled auto-block
+    /// window. Threaded back through `onFinish` so `MainNavigator` can mark the
+    /// occurrence credited — deduping the DAM extension's background completion
+    /// queue (single-credit guarantee across both paths).
+    public private(set) var scheduledOccurrenceId: String?
+
     /// Set by `MainNavigator` — routes a finished session into the shared
     /// `handleSessionFinish` credit fan-out (+ SessionComplete celebration).
-    public var onFinish: ((_ actualMinutes: Int, _ wasNatural: Bool) -> Void)?
+    public var onFinish: ((_ actualMinutes: Int, _ wasNatural: Bool, _ scheduledOccurrenceId: String?) -> Void)?
 
     public init() {}
 
@@ -85,12 +91,14 @@ public final class ActiveSessionStore {
         hardcore: Bool,
         resumeEndTimestamp: Date?,
         goal: String?,
-        streak: Int
+        streak: Int,
+        scheduledOccurrenceId: String? = nil
     ) {
         guard !isActive else { return }
         self.hardcore = hardcore
         self.goal = goal
         self.streak = streak
+        self.scheduledOccurrenceId = scheduledOccurrenceId
 
         let e = SessionEngine(
             durationMinutes: durationMinutes,
@@ -172,6 +180,7 @@ public final class ActiveSessionStore {
         let dur = durationMinutes
         let rem = remainingSeconds
         let cb = onFinish
+        let occ = scheduledOccurrenceId
 
         HapticsService.shared.success()
         LockModeService.shared.endSession() // un-shield + clear block + hardcore flag
@@ -190,14 +199,15 @@ public final class ActiveSessionStore {
         engine = nil
         hardcore = false
         goal = nil
+        scheduledOccurrenceId = nil
 
         switch status {
         case .completedNaturally:
-            cb?(dur, true)
+            cb?(dur, true, occ)
         case .endedEarly(let actualMinutes):
             // RN parity: < 60s elapsed earns nothing.
             let elapsed = (dur * 60) - rem
-            if elapsed < 60 { cb?(0, false) } else { cb?(actualMinutes, false) }
+            if elapsed < 60 { cb?(0, false, occ) } else { cb?(actualMinutes, false, occ) }
         case .idle, .running, .paused:
             break
         }

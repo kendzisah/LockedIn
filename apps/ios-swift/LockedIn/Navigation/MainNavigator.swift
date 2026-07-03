@@ -72,6 +72,7 @@ public struct MainNavigator: View {
             if !home.isHydrated { home.hydrate() }
             if !missions.isHydrated { missions.hydrate() }
             if !scheduledSessions.isHydrated { scheduledSessions.hydrate() }
+            logDeviceActivityBreadcrumbs()
             // Push current onboarding values into missions state.
             if let goal = onboarding.primaryGoal {
                 missions.userGoal = goal
@@ -103,7 +104,15 @@ public struct MainNavigator: View {
             }
 
             // Route a finished manual session into the shared credit fan-out.
-            activeSession.onFinish = { actualMinutes, wasNatural in
+            // If the session was promoted from a scheduled window, mark the
+            // occurrence credited first so the DAM extension's background
+            // completion queue can't double-credit it. Skip marking on the
+            // sub-60s bail (actualMinutes == 0) — let the background queue
+            // credit it later if the window still runs to completion.
+            activeSession.onFinish = { actualMinutes, wasNatural, scheduledOccurrenceId in
+                if actualMinutes > 0, let occ = scheduledOccurrenceId {
+                    scheduledSessions.markCredited(occ)
+                }
                 handleSessionFinish(actualMinutes: actualMinutes, wasNatural: wasNatural)
             }
 
@@ -144,9 +153,27 @@ public struct MainNavigator: View {
             // session, which would cancel the active one.
             guard newPhase == .active else { return }
             activeSession.syncOnForeground()
+            // Recover any scheduled DeviceActivity monitoring that was dropped
+            // while backgrounded (auth race / OS eviction) so background
+            // blocking re-engages for upcoming windows.
+            scheduledSessions.resyncMonitoring()
             resumeActiveExecutionBlockIfNeeded()
             resumeScheduledLiveIfNeeded()
             drainScheduledCompletions()
+        }
+        // Auto-present a scheduled window that starts while the app is already
+        // foregrounded. `onAppear` / `scenePhase` only fire on launch + resume,
+        // so without this a window beginning during active use wouldn't surface
+        // the timer until the next foreground. ~30s granularity only affects
+        // when the *screen* appears — the shield is unaffected. The task is
+        // keyed on `scenePhase`, so it auto-cancels when the app backgrounds.
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+                if Task.isCancelled { return }
+                resumeScheduledLiveIfNeeded()
+            }
         }
         .fullScreenCover(item: $lockIn.activeModal) { modal in
             switch modal {
@@ -186,23 +213,6 @@ public struct MainNavigator: View {
                         streak: streak
                     ),
                     onDismiss: { lockIn.dismissAll() }
-                )
-            case .scheduledLive(let occurrenceId, let durationMinutes, let endTimestamp):
-                ScheduledLockLiveScreen(
-                    durationMinutes: durationMinutes,
-                    endTimestamp: endTimestamp,
-                    goal: onboarding.primaryGoal,
-                    onComplete: {
-                        // Credit once (dedupes the DAM extension's queued
-                        // completion), then show the celebration.
-                        scheduledSessions.markCredited(occurrenceId)
-                        handleSessionFinish(
-                            actualMinutes: durationMinutes,
-                            wasNatural: true,
-                            showCompletionUI: true
-                        )
-                    },
-                    onMinimize: { lockIn.dismissAll() }
                 )
             }
         }
@@ -329,22 +339,47 @@ public struct MainNavigator: View {
         }
     }
 
+    /// On launch, surface the DAM extension's last-fired breadcrumbs (written by
+    /// `LockedInDeviceActivityMonitor`). On a physical device this confirms
+    /// whether the OS is actually waking the extension for scheduled windows —
+    /// the deciding signal for the background-blocking investigation.
+    private func logDeviceActivityBreadcrumbs() {
+        let shared = SharedScreenTime.sharedDefaults()
+        let lastStart = shared?.string(forKey: SharedScreenTime.Keys.damLastStart) ?? "none"
+        let lastEnd = shared?.string(forKey: SharedScreenTime.Keys.damLastEnd) ?? "none"
+        AnalyticsService.shared.track("dam_breadcrumb_launch", properties: [
+            "last_start": lastStart,
+            "last_end": lastEnd,
+        ])
+        #if DEBUG
+        print("[DAM] last intervalDidStart: \(lastStart) | last intervalDidEnd: \(lastEnd)")
+        #endif
+    }
+
     // MARK: - Session completion fan-out
 
-    private func handleSessionFinish(actualMinutes: Int, wasNatural: Bool, showCompletionUI: Bool = true) {
+    private func handleSessionFinish(actualMinutes: Int, wasNatural: Bool, showCompletionUI: Bool = true, occurredAt: Date = Date()) {
         // 0 minutes means the user bailed before the 60s threshold.
         guard actualMinutes > 0 else {
             if showCompletionUI { lockIn.dismissAll() }
             return
         }
 
-        // Update local Home state.
-        home.completeExecutionBlock(durationMinutes: actualMinutes)
-
-        // Daily-goal-met check.
+        // `occurredAt` is the real session end time — `Date()` for live/manual
+        // sessions, the actual past time for a background-drained scheduled one.
+        // `isToday` gates today-specific crediting so a session drained on a LATER
+        // day can't inflate today's focus bucket / daily goal / streak. Lifetime,
+        // EXP, guild, and duration-based missions still credit regardless.
         let todayKey = SessionDayEngine.todayKey()
+        let occurredDayKey = SessionDayEngine.dayKey(from: occurredAt)
+        let isToday = occurredDayKey == todayKey
+
+        // Update local Home state — cross-day credits lifetime only (no today bucket).
+        home.completeExecutionBlock(durationMinutes: actualMinutes, creditToday: isToday)
+
+        // Daily-goal-met check (today only).
         let goal = onboarding.dailyMinutes ?? 60
-        let metAfter = home.dailyFocused(todayKey: todayKey) >= goal
+        let metAfter = isToday && home.dailyFocused(todayKey: todayKey) >= goal
         if metAfter && home.dailyGoalMetDate != todayKey {
             home.dailyGoalMet()
             XPService.award(.perfectDay)
@@ -370,7 +405,7 @@ public struct MainNavigator: View {
             streak: home.consecutiveStreak,
             dailyGoalMet: metAfter
         )
-        missions.checkAutoComplete(data)
+        missions.checkAutoComplete(data, now: occurredAt)
         MissionsState.recordActiveDay()
 
         // Server-side legacy counter bumps (kept populated for admin queries).
@@ -392,10 +427,14 @@ public struct MainNavigator: View {
         // anti-abuse mechanism — a 24-hour lock-in yields no more FOC XP than
         // a 3-hour one. Cap is enforced client-side via HomeState; server
         // accepts whatever delta we send (it has no cross-day context).
-        let focusXp = home.eligibleFocusXp(for: actualMinutes, todayKey: todayKey)
-        if focusXp > 0 {
-            StatsService.bumpStatXp(.focus, delta: focusXp)
-            home.recordFocusXpAwarded(focusXp, todayKey: todayKey)
+        // FOC is day-capped (per-day bucket), so credit it for same-day sessions
+        // only — a cross-day drain can't be attributed to a past day's cap.
+        if isToday {
+            let focusXp = home.eligibleFocusXp(for: actualMinutes, todayKey: todayKey)
+            if focusXp > 0 {
+                StatsService.bumpStatXp(.focus, delta: focusXp)
+                home.recordFocusXpAwarded(focusXp, todayKey: todayKey)
+            }
         }
 
         // DIS: small per-session reward — completing a session counts as
@@ -499,30 +538,53 @@ public struct MainNavigator: View {
             lockIn.activeModal = .executionBlock
         } else {
             // Window ended while the app was killed → credit once and clear.
+            // Attribute to the real end time so a block that ended on a prior day
+            // (app reopened later) doesn't inflate today's bucket/goal/streak.
             LockModeService.shared.endSession()
             handleSessionFinish(
                 actualMinutes: active.durationMinutes,
                 wasNatural: true,
-                showCompletionUI: true
+                showCompletionUI: true,
+                occurredAt: Date(timeIntervalSince1970: active.endTimestamp / 1000)
             )
         }
     }
 
     /// If a scheduled session's auto-block window is in progress right now,
-    /// surface the live countdown timer (e.g. the user tapped the "locking in"
-    /// notification mid-window). Apps are already shielded by the DAM extension;
-    /// this is the in-app view. Crediting happens once the timer completes (or
-    /// headlessly via the queue if the user never opens the app), deduped by
-    /// occurrence id. Skips when any modal is already up.
+    /// **promote it into the normal manual lock-in flow** (e.g. the user tapped
+    /// the "locking in" notification mid-window, or the window started while the
+    /// app was foregrounded). This gives the scheduled session the full
+    /// `ExecutionBlockScreen` — hold-to-exit, the real pause protocol, the
+    /// minimized Home FocusRing, and the shared EXP fan-out — instead of a
+    /// stripped-down bespoke screen. Crediting is deduped against the DAM
+    /// extension's background queue via the occurrence id (see the `onFinish`
+    /// wrapper). Skips when any modal is already up or a session is already live.
     private func resumeScheduledLiveIfNeeded() {
         guard scheduledSessions.isHydrated else { return }
         guard lockIn.activeModal == nil else { return }
+        guard !activeSession.isActive else { return }
         guard let active = scheduledSessions.currentActiveOccurrence() else { return }
-        lockIn.activeModal = .scheduledLive(
-            occurrenceId: active.occurrenceId,
-            durationMinutes: active.session.durationMinutes,
-            endTimestamp: active.end
+
+        // Re-assert the shield immediately as an in-app fail-safe: if the
+        // background DAM `intervalDidStart` never landed, opening the app now
+        // blocks apps right away. We use `shieldApps()` (not
+        // `LockModeService.beginSession`) on purpose — `beginSession` would
+        // write a competing manual `activeExecutionBlock` that, alongside the
+        // still-registered scheduled DAM completion queue, could double-credit
+        // on a cold-start kill. The scheduled DAM stays the single owner of
+        // background un-shield + crediting; `markCredited` dedupes the in-app
+        // credit.
+        ScreenTimeModule.shared.shieldApps()
+
+        activeSession.start(
+            durationMinutes: active.session.durationMinutes, // full window → full-window EXP on natural finish
+            hardcore: false,                                 // scheduled sessions allow exit/pause
+            resumeEndTimestamp: active.end,                  // engine end = OS window end; skips start()'s own shield
+            goal: onboarding.primaryGoal,
+            streak: home.consecutiveStreak,
+            scheduledOccurrenceId: active.occurrenceId
         )
+        lockIn.activeModal = .executionBlock
     }
 
     /// Credit any scheduled lock-in sessions that auto-ran (shield applied by
@@ -532,8 +594,15 @@ public struct MainNavigator: View {
     /// the store dedupes by occurrence id and single-flights the drain.
     private func drainScheduledCompletions() {
         guard scheduledSessions.isHydrated else { return }
-        let credited = scheduledSessions.drainPendingCompletions { minutes in
-            handleSessionFinish(actualMinutes: minutes, wasNatural: true, showCompletionUI: false)
+        let credited = scheduledSessions.drainPendingCompletions { minutes, endedAtMs in
+            // Attribute the credit to when the session actually ran, not now.
+            let occurredAt = Date(timeIntervalSince1970: endedAtMs / 1000)
+            handleSessionFinish(
+                actualMinutes: minutes,
+                wasNatural: true,
+                showCompletionUI: false,
+                occurredAt: occurredAt
+            )
         }
         if credited > 0 {
             NotificationCenter.default.post(

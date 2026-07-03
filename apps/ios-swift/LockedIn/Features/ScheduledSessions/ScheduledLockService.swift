@@ -28,17 +28,20 @@ public final class ScheduledLockService {
     /// at least one activity was registered.
     @discardableResult
     public func resyncAll(_ sessions: [ScheduledSession]) -> Bool {
-        stopAllScheduled()
-
         guard #available(iOS 16.0, *) else { return false }
 
-        // Auto-block requires Family Controls authorization (same gate as a
-        // manual session). If not approved, register nothing and let the
-        // notification-only fallback cover the user.
+        // Check authorization BEFORE tearing anything down. Auto-block requires
+        // Family Controls authorization; if it isn't approved (e.g. a transient
+        // `.notDetermined` read at cold launch), bail WITHOUT stopping monitors
+        // or wiping the activity map — preserving the last good registration.
+        // Wiping here previously killed background blocking on every cold launch
+        // that raced the authorization status.
         guard ScreenTimeModule.shared.getAuthorizationStatus() == .approved else {
-            SharedScreenTime.sharedDefaults()?.removeObject(forKey: SharedScreenTime.Keys.scheduledActivityMap)
             return false
         }
+
+        // Auth confirmed → safe to rebuild from scratch.
+        stopAllScheduled()
 
         struct Candidate {
             let name: String
@@ -54,34 +57,46 @@ public final class ScheduledLockService {
         for s in sessions where s.enabled && s.isValid {
             if s.isOneOff {
                 guard let next = s.nextOccurrence(after: now) else { continue }
+                // Pin the one-off to the concrete weekday of its next occurrence
+                // rather than a bare hour/minute. A fully-specified
+                // weekday+hour+minute interval resolves unambiguously for the OS;
+                // bare hour/minute is the least-specified form and the most prone
+                // to `intervalDidStart` not firing reliably. The window cannot
+                // cross midnight (validated), so start/end share a weekday.
+                let oneOffWeekday = cal.component(.weekday, from: next)
                 candidates.append(Candidate(
                     name: "\(SharedScreenTime.scheduledActivityPrefix).\(s.id).oneoff",
                     schedule: DeviceActivitySchedule(
-                        intervalStart: DateComponents(hour: s.startHour, minute: s.startMinute),
-                        intervalEnd: DateComponents(hour: s.endHour, minute: s.endMinute),
+                        intervalStart: Self.components(weekday: oneOffWeekday, hour: s.startHour, minute: s.startMinute),
+                        intervalEnd: Self.components(weekday: oneOffWeekday, hour: s.endHour, minute: s.endMinute),
                         repeats: false
                     ),
                     meta: ScheduledActivityMeta(sessionId: s.id, durationMinutes: s.durationMinutes),
                     when: next
                 ))
             } else {
-                for wd in s.weekdays {
-                    var startWhen = DateComponents()
-                    startWhen.weekday = wd
-                    startWhen.hour = s.startHour
-                    startWhen.minute = s.startMinute
-                    let when = cal.nextDate(after: now, matching: startWhen, matchingPolicy: .nextTime) ?? now
-                    candidates.append(Candidate(
-                        name: "\(SharedScreenTime.scheduledActivityPrefix).\(s.id).\(wd)",
-                        schedule: DeviceActivitySchedule(
-                            intervalStart: Self.components(weekday: wd, hour: s.startHour, minute: s.startMinute),
-                            intervalEnd: Self.components(weekday: wd, hour: s.endHour, minute: s.endMinute),
-                            repeats: true
-                        ),
-                        meta: ScheduledActivityMeta(sessionId: s.id, durationMinutes: s.durationMinutes),
-                        when: when
-                    ))
-                }
+                // Register ONE *daily* schedule (hour/minute only, repeats:true)
+                // rather than one per weekday. A plain daily schedule fires
+                // `intervalDidStart` far more reliably in the background than
+                // weekday-qualified schedules (which often only fire when the app
+                // re-registers in the foreground). The extension filters to the
+                // selected weekdays via `meta.weekdays`, so non-selected days are
+                // skipped there. Also keeps us well under the activity cap.
+                let when = s.nextOccurrence(after: now) ?? now
+                candidates.append(Candidate(
+                    name: "\(SharedScreenTime.scheduledActivityPrefix).\(s.id).daily",
+                    schedule: DeviceActivitySchedule(
+                        intervalStart: DateComponents(hour: s.startHour, minute: s.startMinute),
+                        intervalEnd: DateComponents(hour: s.endHour, minute: s.endMinute),
+                        repeats: true
+                    ),
+                    meta: ScheduledActivityMeta(
+                        sessionId: s.id,
+                        durationMinutes: s.durationMinutes,
+                        weekdays: s.weekdays
+                    ),
+                    when: when
+                ))
             }
         }
 
@@ -91,6 +106,8 @@ public final class ScheduledLockService {
 
         let center = DeviceActivityCenter()
         var map: [String: ScheduledActivityMeta] = [:]
+        var failedCount = 0
+        var lastFailureReason: String?
 
         for c in selected {
             var ok = false
@@ -112,6 +129,8 @@ public final class ScheduledLockService {
             if ok {
                 map[c.name] = c.meta
             } else if let err = startError {
+                failedCount += 1
+                lastFailureReason = err.localizedDescription
                 AnalyticsService.shared.captureException(err, properties: [
                     "context": "scheduled_activity_start",
                     "activity": c.name,
@@ -119,12 +138,31 @@ public final class ScheduledLockService {
             }
         }
 
+        // Surface registration outcome for the in-app diagnostics.
+        let status: String = {
+            if failedCount == 0 { return "\(map.count) ok" }
+            return "\(map.count) ok · \(failedCount) failed: \(lastFailureReason ?? "unknown")"
+        }()
+        SharedScreenTime.sharedDefaults()?.set(status, forKey: SharedScreenTime.Keys.scheduledRegistrationStatus)
+
         // Persist the map (App Group) so the extension can recover session id +
         // duration when an interval ends.
         if !map.isEmpty, let data = try? JSONEncoder().encode(map) {
             SharedScreenTime.sharedDefaults()?.set(data, forKey: SharedScreenTime.Keys.scheduledActivityMap)
         } else {
             SharedScreenTime.sharedDefaults()?.removeObject(forKey: SharedScreenTime.Keys.scheduledActivityMap)
+        }
+
+        // Append the registered names to the cleanup ledger (bounded) so a later
+        // corrupted/cleared map can still reach them in `stopAllScheduled`.
+        if !map.isEmpty {
+            var ledger = Set(Defaults.codable([String].self,
+                                              SharedScreenTime.Keys.scheduledActivityLedger,
+                                              scope: .appGroup) ?? [])
+            ledger.formUnion(map.keys)
+            Defaults.setCodable(Array(ledger.suffix(64)),
+                                SharedScreenTime.Keys.scheduledActivityLedger,
+                                scope: .appGroup)
         }
 
         if dropped > 0 {
@@ -151,12 +189,23 @@ public final class ScheduledLockService {
     /// persisted map). Never affects the manual `"LockedInSession"` activity.
     public func stopAllScheduled() {
         guard #available(iOS 16.0, *) else { return }
-        guard let data = SharedScreenTime.sharedDefaults()?.data(forKey: SharedScreenTime.Keys.scheduledActivityMap),
-              let map = try? JSONDecoder().decode([String: ScheduledActivityMeta].self, from: data),
-              !map.isEmpty
-        else { return }
 
-        let names = map.keys.map { DeviceActivityName($0) }
+        // Stop the union of the live map AND the append-only ledger, so a
+        // corrupted/cleared map can't orphan old activities (e.g. per-weekday
+        // names from a prior app version) with no way to reach them.
+        var nameSet = Set<String>()
+        if let data = SharedScreenTime.sharedDefaults()?.data(forKey: SharedScreenTime.Keys.scheduledActivityMap),
+           let map = try? JSONDecoder().decode([String: ScheduledActivityMeta].self, from: data) {
+            nameSet.formUnion(map.keys)
+        }
+        if let ledger = Defaults.codable([String].self,
+                                         SharedScreenTime.Keys.scheduledActivityLedger,
+                                         scope: .appGroup) {
+            nameSet.formUnion(ledger)
+        }
+        guard !nameSet.isEmpty else { return }
+
+        let names = nameSet.map { DeviceActivityName($0) }
         do {
             try ObjCExceptionCatcher.execute {
                 DeviceActivityCenter().stopMonitoring(names)
