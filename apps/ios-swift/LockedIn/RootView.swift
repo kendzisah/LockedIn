@@ -18,6 +18,11 @@ struct RootView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var didBoot = false
+    /// Tracks whether the app has been backgrounded since the last foreground.
+    /// Used to fire a `cold_start: false` `App Opened` only on genuine returns —
+    /// iOS steps `.background → .inactive → .active`, so the `.active`
+    /// transition alone can't distinguish a return from the launch sequence.
+    @State private var wasBackgrounded = false
     @State private var scheduledCreditSummary: String?
 
     var body: some View {
@@ -53,6 +58,10 @@ struct RootView: View {
                 }
             }
             .onChange(of: scenePhase) { _, newPhase in
+                // Remember we were backgrounded so the next `.active` can be
+                // recognized as a real foreground return.
+                if newPhase == .background { wasBackgrounded = true }
+
                 // Sweep orphaned Live Activities every time we come back to
                 // foreground — without this, a session that completed while
                 // the app was backgrounded leaves the Lock Screen banner
@@ -60,6 +69,13 @@ struct RootView: View {
                 // sweep also runs at cold start (bootIfNeeded), but
                 // backgrounded sessions never trigger that path.
                 guard newPhase == .active else { return }
+
+                // Foreground-return heartbeat. Gated on a prior background so it
+                // doesn't double-fire with the cold-start `App Opened` at launch.
+                if wasBackgrounded {
+                    wasBackgrounded = false
+                    AnalyticsService.shared.track("App Opened", properties: ["cold_start": false])
+                }
                 if #available(iOS 16.2, *) {
                     SessionEngine.performColdStartLiveActivitySweep()
                 }
@@ -171,6 +187,11 @@ struct RootView: View {
                 "first_seen": ISO8601DateFormatter().string(from: Date()),
             ])
         }
+
+        // Per-launch heartbeat. Fired once after identity is established so it
+        // attributes to the signed-in user. Foreground returns emit their own
+        // `App Opened` with `cold_start: false` from the scenePhase handler.
+        AnalyticsService.shared.track("App Opened", properties: ["cold_start": true])
 
         // Boot RevenueCat — `LockedInApp.configureSDKs` already called
         // `Purchases.configure(...)`; the SubscriptionState.bootstrap binds

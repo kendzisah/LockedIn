@@ -40,6 +40,11 @@ public final class MainNavigatorPath: ObservableObject {
 
 @MainActor
 public struct MainNavigator: View {
+    /// Guards one-time, process-lifetime NotificationCenter registrations so a
+    /// MainNavigator re-mount (e.g. a logout→login cycle swaps the navigator
+    /// back to Main) can't stack duplicate observers that double-count events.
+    private static var didRegisterAnalyticsObservers = false
+
     @Environment(AuthState.self) private var auth
     @Environment(HomeState.self) private var home
     @Environment(MissionsState.self) private var missions
@@ -100,6 +105,36 @@ public struct MainNavigator: View {
                         missionsDone: nextMissions,
                         streakDays: streak
                     )
+                }
+            }
+
+            // Forward the feature's analytics events (`Mission Completed`,
+            // `All Missions Completed`) into the shared service. Without this
+            // the hook is nil and those events never reach PostHog.
+            missions.onAnalyticsTrack = { name, properties in
+                AnalyticsService.shared.track(name, properties: properties)
+            }
+
+            // `Mission Viewed` is posted from `MissionCard` via NotificationCenter
+            // (so the card needn't hold the @Observable model). Observe it here
+            // and forward to analytics — otherwise the post goes nowhere. The
+            // observer captures no view state, so register it once per process
+            // (not per view-mount) to avoid stacking duplicates that would
+            // double-count `Mission Viewed`.
+            if !Self.didRegisterAnalyticsObservers {
+                Self.didRegisterAnalyticsObservers = true
+                NotificationCenter.default.addObserver(
+                    forName: .missionsAnalyticsViewed,
+                    object: nil,
+                    queue: .main
+                ) { note in
+                    let props = (note.userInfo as? [String: Any]) ?? [:]
+                    Task { @MainActor in
+                        AnalyticsService.shared.track(
+                            MissionsRoute.AnalyticsEvent.missionViewed,
+                            properties: props
+                        )
+                    }
                 }
             }
 

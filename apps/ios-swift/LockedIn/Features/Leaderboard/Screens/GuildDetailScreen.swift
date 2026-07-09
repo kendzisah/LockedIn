@@ -340,7 +340,7 @@ public struct GuildDetailScreen: View {
     private var inviteFooter: some View {
         if let details {
             VStack(spacing: 0) {
-                InviteCodeCard(inviteCode: details.invite_code, guildName: details.name)
+                InviteCodeCard(inviteCode: details.invite_code, guildId: guildId, guildName: details.name)
             }
             .padding(.horizontal, 20)
             .padding(.top, 10)

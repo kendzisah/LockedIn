@@ -51,6 +51,26 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .sound, .badge])
     }
 
+    /// Fired when the user taps a delivered notification. Emits `Notification
+    /// Tapped` so engagement from push can be attributed. `notification_type`
+    /// is the stable leading segment of the request identifier (e.g.
+    /// `streak_milestone.7` → `streak_milestone`).
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let identifier = response.notification.request.identifier
+        let type = identifier.split(separator: ".").first.map(String.init) ?? identifier
+        Task { @MainActor in
+            AnalyticsService.shared.track("Notification Tapped", properties: [
+                "notification_type": type,
+                "notification_id": identifier,
+            ])
+        }
+        completionHandler()
+    }
+
     // MARK: - URL Handling (custom scheme + Universal Links)
 
     func application(

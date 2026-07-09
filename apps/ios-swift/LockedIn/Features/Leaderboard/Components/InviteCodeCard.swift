@@ -7,6 +7,7 @@ import DesignKit
 /// Port of `apps/mobile/src/features/leaderboard/components/InviteCodeCard.tsx`.
 struct InviteCodeCard: View {
     let inviteCode: String
+    let guildId: String
     let guildName: String
 
     @State private var copied: Bool = false
@@ -91,7 +92,7 @@ struct InviteCodeCard: View {
 
     private func handleCopy() {
         AnalyticsService.shared.track("Guild Invite Shared", properties: [
-            "guild_id": guildName,
+            "guild_id": guildId,
             "share_method": "copy",
         ])
         UIPasteboard.general.string = inviteCode
@@ -107,7 +108,7 @@ struct InviteCodeCard: View {
 
     private func handleShare() {
         AnalyticsService.shared.track("Guild Invite Shared", properties: [
-            "guild_id": guildName,
+            "guild_id": guildId,
             "share_method": "share_sheet",
         ])
         // Preserve the legacy RN AppsFlyer event name `crew_invite`.

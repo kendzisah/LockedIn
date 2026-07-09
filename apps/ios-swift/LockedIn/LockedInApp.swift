@@ -77,6 +77,11 @@ struct LockedInApp: App {
 
             #if DEBUG
             config.debug = true
+            // Flush every event immediately in debug so they show up in the
+            // PostHog console within seconds instead of waiting for the default
+            // 20-event / 30-second batch window. Production keeps the batched
+            // defaults to conserve battery/network.
+            config.flushAt = 1
             #else
             config.debug = false
             #endif
