@@ -99,6 +99,15 @@ struct LockedInApp: App {
                     "platform": "ios",
                 ])
             }
+        } else {
+            // Loud failure instead of silently shipping a build with no
+            // analytics: POSTHOG_API_KEY is missing/empty in Secrets.xcconfig
+            // on this build machine, so PostHog was NOT initialized and no
+            // events will be sent.
+            print("⚠️ [LockedIn] POSTHOG_API_KEY missing — PostHog analytics DISABLED for this build. Check Config/Secrets.xcconfig.")
+            #if DEBUG
+            assertionFailure("POSTHOG_API_KEY missing from Config/Secrets.xcconfig — PostHog is disabled.")
+            #endif
         }
 
         // Wire the AppIntents service locator. Siri / Shortcuts / interactive

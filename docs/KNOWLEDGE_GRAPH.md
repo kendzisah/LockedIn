@@ -2,6 +2,13 @@
 
 **Last mapped: 2026-06-23**
 
+> **⚠️ 2026-07-10 — React Native app removed.** `apps/mobile` and the root Expo configs
+> (`app.json`, `eas.json`) were deleted from the repo; `apps/ios-swift` is the only mobile
+> frontend. All `apps/mobile` paths below are historical — recover from git history if needed.
+> Also new: AppsFlyer subscription events (`af_subscribe`/`af_start_trial`) are no longer fired
+> client-side; RevenueCat S2S (`rc_*` events) is the single source of truth for ad-network
+> (Meta) postbacks.
+
 A reality-based map of this repo. Every path below was verified to exist. The code is the source of
 truth — if a path here is missing when you read it, the map is stale (see Maintenance).
 

@@ -6,11 +6,8 @@
     ]
   },
   "scripts": {
-    "mobile": "pnpm --filter mobile start",
-    "mobile:ios": "pnpm --filter mobile ios",
-    "mobile:android": "pnpm --filter mobile android",
     "admin": "pnpm --filter admin dev",
-    "dev": "concurrently \"pnpm mobile\" \"pnpm admin\"",
+    "dev": "pnpm admin",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
@@ -18,7 +15,6 @@
     "supabase:gen-types": "supabase gen types typescript --local > packages/supabase-client/src/types.ts"
   },
   "devDependencies": {
-    "concurrently": "^9",
     "supabase": "^2.87.2"
   },
   "dependencies": {

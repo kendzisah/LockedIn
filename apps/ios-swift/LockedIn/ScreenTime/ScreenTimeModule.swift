@@ -224,8 +224,7 @@ public final class ScreenTimeModule: @unchecked Sendable {
     /// schedules the DAM extension to clean up at session end.
     @discardableResult
     public func beginSession(durationSeconds: Int) -> Bool {
-        guard let s = self.store else { return false }
-        self.applyShield(on: s)
+        self.applyShield()
 
         let endDate = Date().addingTimeInterval(TimeInterval(durationSeconds))
         SharedScreenTime.sharedDefaults()?.set(
@@ -243,7 +242,17 @@ public final class ScreenTimeModule: @unchecked Sendable {
         do {
             try ObjCExceptionCatcher.execute {
                 let startComponents = Calendar.current.dateComponents([.hour, .minute, .second], from: Date())
-                let endComponents = Calendar.current.dateComponents([.hour, .minute, .second], from: endDate)
+                // DeviceActivity rejects monitoring intervals shorter than 15
+                // minutes (MonitoringError Code 2: "The activity's schedule is
+                // too short"). Clamp the OS backstop window to ≥16 minutes —
+                // the app still un-shields at the REAL end time via
+                // `removeShield()` (which also stops this monitor), and the
+                // extension's fail-safe reads `sessionEndTimestamp`. The clamp
+                // only changes the killed-app fail-safe for short sessions:
+                // shield clears at ~16 min instead of never.
+                let minimumMonitorInterval: TimeInterval = 16 * 60
+                let monitorEnd = max(endDate, Date().addingTimeInterval(minimumMonitorInterval))
+                let endComponents = Calendar.current.dateComponents([.hour, .minute, .second], from: monitorEnd)
                 let schedule = DeviceActivitySchedule(
                     intervalStart: startComponents,
                     intervalEnd: endComponents,
@@ -292,20 +301,23 @@ public final class ScreenTimeModule: @unchecked Sendable {
 
     /// Legacy entry point. Prefer `beginSession(durationSeconds:)`.
     public func shieldApps() {
-        guard let s = self.store else { return }
-        self.applyShield(on: s)
+        self.applyShield()
         self.shielding = true
     }
 
     /// Remove the shield (normal completion / hold-to-unlock path).
     public func removeShield() {
-        guard let s = self.store else { return }
         do {
             try ObjCExceptionCatcher.execute {
-                s.shield.applications = nil
-                s.shield.applicationCategories = nil
-                s.shield.webDomains = nil
-                s.shield.webDomainCategories = nil
+                if #available(iOS 16.0, *) {
+                    // Sweep ALL shard stores (see SharedShieldApplier).
+                    SharedShieldApplier.clearAll()
+                } else if let s = self.store {
+                    s.shield.applications = nil
+                    s.shield.applicationCategories = nil
+                    s.shield.webDomains = nil
+                    s.shield.webDomainCategories = nil
+                }
                 self.shielding = false
             }
         } catch {
@@ -370,17 +382,26 @@ public final class ScreenTimeModule: @unchecked Sendable {
 
     // MARK: - Shield Helper
 
-    private func applyShield(on s: ManagedSettingsStore) {
+    private func applyShield() {
         do {
             try ObjCExceptionCatcher.execute {
-                s.shield.applications = self.selection.applicationTokens.isEmpty ? nil : self.selection.applicationTokens
-                s.shield.applicationCategories = self.selection.categoryTokens.isEmpty
-                    ? nil
-                    : ShieldSettings.ActivityCategoryPolicy.specific(self.selection.categoryTokens)
-                s.shield.webDomains = self.selection.webDomainTokens.isEmpty ? nil : self.selection.webDomainTokens
-                s.shield.webDomainCategories = self.selection.categoryTokens.isEmpty
-                    ? nil
-                    : ShieldSettings.ActivityCategoryPolicy.specific(self.selection.categoryTokens)
+                if #available(iOS 16.0, *) {
+                    // Sharded: application/web-domain tokens are chunked into
+                    // ≤50-token groups across multiple named stores. A single
+                    // store silently drops tokens beyond 50 (arbitrary Set
+                    // order), which left random apps unblocked for selections
+                    // like 78 apps. See SharedShieldApplier.
+                    SharedShieldApplier.apply(self.selection)
+                } else if let s = self.store {
+                    s.shield.applications = self.selection.applicationTokens.isEmpty ? nil : self.selection.applicationTokens
+                    s.shield.applicationCategories = self.selection.categoryTokens.isEmpty
+                        ? nil
+                        : ShieldSettings.ActivityCategoryPolicy.specific(self.selection.categoryTokens)
+                    s.shield.webDomains = self.selection.webDomainTokens.isEmpty ? nil : self.selection.webDomainTokens
+                    s.shield.webDomainCategories = self.selection.categoryTokens.isEmpty
+                        ? nil
+                        : ShieldSettings.ActivityCategoryPolicy.specific(self.selection.categoryTokens)
+                }
             }
         } catch {
             let iosVersion = UIDevice.current.systemVersion

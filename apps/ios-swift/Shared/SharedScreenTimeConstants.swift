@@ -1,4 +1,8 @@
 import Foundation
+#if canImport(ManagedSettings) && canImport(FamilyControls)
+import ManagedSettings
+import FamilyControls
+#endif
 
 /// Constants shared between the main app's `ScreenTimeModule` and the
 /// `DeviceActivityMonitor` extension. Keeping them in a single file avoids
@@ -16,6 +20,24 @@ public enum SharedScreenTime {
     /// FamilyControls entitlement can reference the same store by name, so
     /// the extension's un-shield action takes effect system-wide.
     public static let managedSettingsStoreName = "lockedIn"
+
+    /// iOS silently caps `shield.applications` / `shield.webDomains` at 50
+    /// tokens per ManagedSettingsStore — tokens beyond 50 on one store are
+    /// arbitrarily dropped (Set order!), so which apps stay unblocked is
+    /// random. Selections are therefore SHARDED across multiple named stores.
+    public static let maxTokensPerStore = 50
+
+    /// Number of shard stores the app + extension apply AND clear. 8 shards
+    /// × 50 tokens = 400 individually-blockable apps, far beyond realistic
+    /// selections. Clearing a never-used named store is a harmless no-op, so
+    /// the clear path always sweeps all shards.
+    public static let shieldShardCount = 8
+
+    /// Shard store names. Shard 0 keeps the legacy un-suffixed name so
+    /// shields applied by older builds are still cleared by new builds.
+    public static func shieldStoreName(shard: Int) -> String {
+        shard == 0 ? managedSettingsStoreName : "\(managedSettingsStoreName).\(shard)"
+    }
 
     /// DeviceActivity activity name. Passed to DeviceActivityCenter.startMonitoring
     /// in the main app and matched against in the extension's interval callbacks.
@@ -91,3 +113,72 @@ public enum SharedScreenTime {
         public static let liveActivitySessionId = "live_activity.session_id"
     }
 }
+
+#if canImport(ManagedSettings) && canImport(FamilyControls)
+/// Sharded shield application, shared verbatim by the main app's
+/// `ScreenTimeModule` and the DAM extension so the two processes can never
+/// disagree about how tokens map onto stores.
+///
+/// Why sharding exists: iOS caps each ManagedSettingsStore's
+/// `shield.applications` (and `shield.webDomains`) at 50 tokens. Writing more
+/// does NOT error — iOS keeps an arbitrary 50 (token sets are unordered) and
+/// silently ignores the rest, so a 78-app selection left random apps
+/// unblocked. Splitting tokens into ≤50-token chunks across multiple named
+/// stores lifts the effective cap to `shieldShardCount × 50`.
+@available(iOS 16.0, *)
+public enum SharedShieldApplier {
+
+    /// All shard stores, shard 0 (legacy name) first.
+    public static func shardStores() -> [ManagedSettingsStore] {
+        (0..<SharedScreenTime.shieldShardCount).map {
+            ManagedSettingsStore(named: .init(SharedScreenTime.shieldStoreName(shard: $0)))
+        }
+    }
+
+    /// Apply `selection` across the shard stores. Application and web-domain
+    /// tokens are chunked into groups of ≤`maxTokensPerStore`; category
+    /// policies are single values and live on shard 0. Unused shards are
+    /// explicitly nil-ed so a shrinking selection can't leave stale shields.
+    public static func apply(_ selection: FamilyActivitySelection) {
+        let appChunks = chunk(Array(selection.applicationTokens))
+        let webChunks = chunk(Array(selection.webDomainTokens))
+        for (i, store) in shardStores().enumerated() {
+            let apps: Set<ApplicationToken> = i < appChunks.count ? Set(appChunks[i]) : []
+            let webs: Set<WebDomainToken> = i < webChunks.count ? Set(webChunks[i]) : []
+            store.shield.applications = apps.isEmpty ? nil : apps
+            store.shield.webDomains = webs.isEmpty ? nil : webs
+            if i == 0 {
+                store.shield.applicationCategories = selection.categoryTokens.isEmpty
+                    ? nil
+                    : ShieldSettings.ActivityCategoryPolicy.specific(selection.categoryTokens)
+                store.shield.webDomainCategories = selection.categoryTokens.isEmpty
+                    ? nil
+                    : ShieldSettings.ActivityCategoryPolicy.specific(selection.categoryTokens)
+            } else {
+                store.shield.applicationCategories = nil
+                store.shield.webDomainCategories = nil
+            }
+        }
+    }
+
+    /// Clear every shard store. Always sweeps all `shieldShardCount` shards —
+    /// clearing a store that was never written is a no-op, and sweeping all of
+    /// them guarantees no shard orphaned by an older build stays shielding.
+    public static func clearAll() {
+        for store in shardStores() {
+            store.shield.applications = nil
+            store.shield.applicationCategories = nil
+            store.shield.webDomains = nil
+            store.shield.webDomainCategories = nil
+        }
+    }
+
+    private static func chunk<T>(_ items: [T]) -> [[T]] {
+        guard !items.isEmpty else { return [] }
+        let size = SharedScreenTime.maxTokensPerStore
+        return stride(from: 0, to: items.count, by: size).map {
+            Array(items[$0..<min($0 + size, items.count)])
+        }
+    }
+}
+#endif

@@ -9,8 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Tier 1 (architecture / data model / migration specs) wins conflicts** — change it deliberately.
 - **The code is the source of truth.** Cite `file:line`. Don't invent files, behavior, or APIs.
 - If something is **UNCLEAR** or **NOT FOUND**, say so and ask — don't guess.
-- Two parallel frontends exist: `apps/mobile` (React Native, original) and `apps/ios-swift`
-  (native Swift, **active frontier**). On iOS, the Swift app reflects current intent.
+- The mobile frontend is `apps/ios-swift` (native Swift). The original React Native app
+  (`apps/mobile`) was **removed in July 2026** — recover it from git history if ever needed.
+  References to `apps/mobile` in older docs/comments are historical.
 
 ---
 
@@ -18,9 +19,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 pnpm install              # Install all dependencies
-pnpm mobile               # Start Expo dev server (Metro)
 pnpm admin                # Start Next.js admin dashboard (port 3000)
-pnpm dev                  # Run both concurrently
+pnpm dev                  # Alias for pnpm admin
 pnpm build                # Build all packages
 pnpm lint                 # Lint all packages
 pnpm typecheck            # TypeScript check across all packages
@@ -28,35 +28,32 @@ pnpm supabase:push        # Apply database migrations
 pnpm supabase:gen-types   # Regenerate DB TypeScript types
 ```
 
-Mobile native builds: `android/` and `ios/` dirs are ephemeral (not committed). Use `cd apps/mobile && npx expo prebuild --platform android` for local native builds, or EAS Build for production.
+iOS builds: open `apps/ios-swift` in Xcode (LockedIn scheme) and build/archive from there.
 
 No test suite is configured in this repo.
 
 ## Architecture
 
 **Monorepo** using pnpm workspaces:
-- `apps/mobile` — React Native (Expo 54) mobile app
+- `apps/ios-swift` — Native Swift iOS app (**the** mobile frontend; not a pnpm workspace, built via Xcode)
 - `apps/admin` — Next.js 15 admin dashboard (React 19, Tailwind, Clerk auth)
+- `apps/marketing` — Marketing site
 - `packages/shared-types` — Pure TypeScript types shared across apps (no RN imports)
 - `packages/supabase-client` — Supabase client factory, auth helpers, storage utilities
 - `supabase/` — PostgreSQL migrations and edge functions
 
-### Mobile App (`apps/mobile/src`)
+> The original React Native app (`apps/mobile`) and its root-level Expo configs
+> (`app.json`, `eas.json`) were removed in July 2026. Recover from git history if needed.
 
-**Feature-folder organization** — each feature is self-contained with `screens/`, `components/`, `state/` (context providers), and service files:
-- `features/auth` — Supabase auth (anonymous-first, email, Apple Sign-In, account linking)
-- `features/home` — Main screen, session engine
-- `features/onboarding` — Onboarding flow and user preference capture
-- `features/missions` — 3-slot mission recommendation engine
-- `features/leaderboard`, `features/settings`, `features/subscription`, `features/streak`, etc.
+### iOS App (`apps/ios-swift/LockedIn`)
 
-**State management** uses nested React Context providers (`AuthProvider` > `OnboardingProvider` > `SessionProvider` > `SubscriptionProvider` > `MissionsProvider`). No Redux or Zustand.
+**Feature-folder organization** — each feature is self-contained under `Features/` (`Auth`, `Home`, `Onboarding`, `Missions`, `Leaderboard`, `Session`, `Settings`, `Subscription`, `Report`, …) with screens, components, and `@Observable` state containers colocated.
 
-**Navigation**: React Navigation 7.x — `RootNavigator` decides between `OnboardingNavigator` and `MainNavigator` (bottom tabs + modal stacks).
+**State management** uses `@Observable` state classes (e.g. `SubscriptionState`, `OnboardingState`) owned at the app root.
 
-**Services** (`services/`) are singleton objects (not DI): `SupabaseService`, `NotificationService`, `AuthService`, `SubscriptionService` (RevenueCat), `AppsFlyerService`, `MixpanelService`, `CrewService`.
+**Services** (`Services/`) are singletons: `SupabaseClient`, `NotificationService`, `AnalyticsService` (PostHog + AppsFlyer), `SubscriptionService` (RevenueCat), `StatsService`, `XPService`, etc.
 
-**Design system**: `design/` contains color tokens, typography, streak tier definitions. Reusable components in `design/components/`.
+**Analytics rule**: AppsFlyer subscription events (`af_subscribe`, `af_start_trial`) must NOT be fired client-side — RevenueCat's server-side integration sends `rc_*` events with validated revenue, and those are what AppsFlyer forwards to ad networks (Meta). Client-side fires would double-count conversions. PostHog lifecycle events (`Trial Started`, `Subscription Converted`, `Subscription Expired`) stay client-side.
 
 ### Admin Dashboard (`apps/admin`)
 
@@ -68,74 +65,44 @@ Supabase as BaaS — PostgreSQL with RLS policies enforcing authorization at DB 
 
 ## Folder Structure & Naming Conventions
 
-### Feature Folder Template (Mobile)
+### Feature Folder Template (iOS, `apps/ios-swift/LockedIn/Features/`)
 
 ```
-features/{featureName}/
-├── {FeatureService}.ts           # Service class if needed
-├── {FeatureProvider}.tsx          # State provider + context hook
-├── {FeatureName}Data.ts           # Static data/constants
-├── {FeatureName}Engine.ts         # Business logic
-├── {featureName}Constants.ts      # Feature-level constants
-├── index.ts                       # Barrel export (public API)
-├── screens/
-│   └── {ScreenName}Screen.tsx     # Navigable screens
-├── components/
-│   └── {ComponentName}.tsx        # Feature-specific UI
-├── hooks/
-│   └── use{HookName}.ts          # Feature hooks
-├── state/
-│   ├── {FeatureProvider}.tsx      # Provider
-│   └── types.ts                   # State types
-└── sheets/
-    └── {SheetName}Sheet.tsx       # Bottom sheets/modals
+Features/{FeatureName}/
+├── {FeatureName}State.swift        # @Observable state container
+├── {FeatureName}Service.swift      # Service if needed
+├── {FeatureName}Analytics.swift    # Event-name constants + helpers
+├── Screens/
+│   └── {ScreenName}Screen.swift    # Navigable screens
+└── Components/
+    └── {ComponentName}.swift       # Feature-specific UI
 ```
 
 ### File Naming Rules
 
-- **PascalCase**: Components (`.tsx`), Services, Providers, Screens, Modals/Sheets, Engines
-- **camelCase**: Config files (`env.ts`), constants, utilities, storage helpers
-- **Hooks**: Always `use{Name}.ts`
-- **Screens**: Always `{Name}Screen.tsx`
-- **Sheets**: Always `{Name}Sheet.tsx`
+- **Swift**: PascalCase everywhere; screens end in `Screen.swift`, state containers in `State.swift`
+- **Admin (TS)**: PascalCase components, camelCase utilities/config; hooks always `use{Name}.ts`
 
 ### Import Conventions
 
-- **Monorepo packages**: `@lockedin/shared-types`, `@lockedin/supabase-client`
+- **Monorepo packages** (admin): `@lockedin/shared-types`, `@lockedin/supabase-client`
 - **Admin local imports**: `@/*` alias
-- **Within features**: Relative paths
-- **Barrel exports** (`index.ts`) in features expose the public API — import from the feature root, not internal files
-
-### Navigation Hierarchy
-
-```
-RootNavigator (conditional: onboarding vs main)
-├── OnboardingNavigator (stack)
-└── MainNavigator
-    └── TabNavigator (bottom tabs)
-        ├── HomeTab, MissionsTab, LockInTab, BoardTab, ProfileTab
-    ├── PaywallOffer, ExecutionBlock, SessionComplete (modals)
-    ├── SignUp, SignIn, EditProfile, WeeklyReport, CrewDetail
-```
-
-Navigation types defined in `types/navigation.ts`. Imperative navigation via `rootNavigationRef`.
 
 ## Structural Rules
 
-1. **One feature per folder** under `features/` — screens, components, state, and services colocated
-2. **Services are singletons** — instantiated at module bottom, exported as objects (not classes)
-3. **State uses Context + useReducer** — types in separate `types.ts`, provider exports a `use{Feature}` hook
-4. **Shared packages must stay platform-agnostic** — no React Native imports in `packages/`
-5. **Env vars validated at startup** in `config/env.ts` via `requireEnv()` — fail fast on missing vars
-6. **RLS-first security** — authorization enforced at Supabase DB level, not in app code
-7. **Anonymous-first auth** — mobile users start anonymous, can link email/Apple accounts later
-8. **Persistence** via AsyncStorage with keys like `@lockedin/{feature}_{state}`
+1. **One feature per folder** under `Features/` — screens, components, and state colocated
+2. **Services are singletons** — `AnalyticsService.shared`, `SubscriptionService.shared`, etc.
+3. **Shared packages must stay platform-agnostic** — no framework-specific imports in `packages/`
+4. **Env / config** centralized in `Services/LockedInConfig.swift` (iOS) and validated at startup
+5. **RLS-first security** — authorization enforced at Supabase DB level, not in app code
+6. **Anonymous-first auth** — mobile users start anonymous, can link email/Apple accounts later
+7. **Subscription events** — RevenueCat S2S owns AppsFlyer subscription events; never fire `af_subscribe`/`af_start_trial` client-side (see Analytics rule above)
 
 ## Visual Design System
 
 The app uses a **dark, glassmorphic, high-end aesthetic** — deep graphite backgrounds, subtle translucent surfaces, soft glows, and precise typography. Every new screen and component must follow these principles.
 
-### Color Palette (`design/colors.ts`)
+### Color Palette (iOS: `DesignSystem/Colors.swift` — legacy RN token names kept for reference)
 
 | Token | Value | Usage |
 |-------|-------|-------|
@@ -152,7 +119,7 @@ The app uses a **dark, glassmorphic, high-end aesthetic** — deep graphite back
 | **Danger** | `#FF4757` | Errors, destructive actions |
 | **Warning** | `#FFC857` | Warnings |
 
-### Typography (`design/typography.ts`)
+### Typography
 
 **Two font families:**
 - **Inter Tight** — Headlines and buttons. Compressed, intentional feel.
@@ -269,7 +236,7 @@ borderColor: 'rgba(255,255,255,0.08)'
 - **Active/pressed opacity**: 0.8 (never 0.5)
 - **Staggered entry**: Sequential fade-ins with 200-600ms delays for onboarding-style reveals
 
-### Streak Tier Colors (`design/streakTiers.ts`)
+### Streak Tier Colors
 
 Progressive color system based on consecutive days:
 - 3 days: `#FF6B35` (orange)

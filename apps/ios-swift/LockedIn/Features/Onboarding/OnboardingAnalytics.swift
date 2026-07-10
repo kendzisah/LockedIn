@@ -54,10 +54,6 @@ enum OnboardingAnalytics {
     static let notifPermissionGranted = "Notification Permission Granted"
     static let notifPermissionDenied = "Notification Permission Denied"
 
-    // MARK: - AppsFlyer event constants
-
-    static let afSubscribe = "af_subscribe"
-
     // MARK: - Helpers
 
     /// Fire the user-property bundle set in `COMPLETE_ONBOARDING`. Mirrors the

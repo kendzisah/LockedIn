@@ -66,11 +66,10 @@ public struct PaywallScreen: View {
             source: "onboarding"
         ) { subscribed in
             if subscribed {
+                // PostHog only — AppsFlyer subscription events come from
+                // RevenueCat S2S (rc_trial_started_event etc.); firing
+                // af_subscribe here would double-count on Meta postbacks.
                 AnalyticsService.shared.track("Subscription Started", properties: ["source": "onboarding"])
-                AnalyticsService.shared.trackAppsFlyer("af_subscribe", values: [
-                    "af_currency": "USD",
-                    "af_content_id": "onboarding_paywall",
-                ])
                 completeAndExit(subscribed: true)
             } else {
                 AnalyticsService.shared.track("Paywall Dismissed", properties: ["source": "onboarding"])

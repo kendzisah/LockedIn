@@ -20,10 +20,6 @@ import ManagedSettings
 @available(iOS 16.0, *)
 final class LockedInDeviceActivityMonitor: DeviceActivityMonitor {
 
-    private lazy var store: ManagedSettingsStore = ManagedSettingsStore(
-        named: .init(SharedScreenTime.managedSettingsStoreName)
-    )
-
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
         let name = activity.rawValue
@@ -149,23 +145,15 @@ final class LockedInDeviceActivityMonitor: DeviceActivityMonitor {
                 .decode(FamilyActivitySelection.self, from: data)
         else { return }
 
-        store.shield.applications = selection.applicationTokens.isEmpty
-            ? nil : selection.applicationTokens
-        store.shield.applicationCategories = selection.categoryTokens.isEmpty
-            ? nil
-            : ShieldSettings.ActivityCategoryPolicy.specific(selection.categoryTokens)
-        store.shield.webDomains = selection.webDomainTokens.isEmpty
-            ? nil : selection.webDomainTokens
-        store.shield.webDomainCategories = selection.categoryTokens.isEmpty
-            ? nil
-            : ShieldSettings.ActivityCategoryPolicy.specific(selection.categoryTokens)
+        // Sharded across multiple named stores — a single store silently
+        // drops application tokens beyond 50. Must mirror the main app's
+        // apply exactly, hence the shared helper.
+        SharedShieldApplier.apply(selection)
     }
 
     private func clearShield(removeManualTimestamp: Bool) {
-        store.shield.applications = nil
-        store.shield.applicationCategories = nil
-        store.shield.webDomains = nil
-        store.shield.webDomainCategories = nil
+        // Sweeps ALL shard stores, including any orphaned by older builds.
+        SharedShieldApplier.clearAll()
         if removeManualTimestamp {
             SharedScreenTime.sharedDefaults()?.removeObject(
                 forKey: SharedScreenTime.Keys.sessionEndTimestamp

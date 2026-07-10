@@ -11,10 +11,17 @@
 //    • `offerings`   — cached fetched RevenueCat offerings (current package)
 //
 //  Side-effects when the entitlement transitions:
-//    • TRIAL → NORMAL → fires AppsFlyer `af_subscribe` + PostHog `Subscription Converted`
+//    • TRIAL → NORMAL → fires PostHog `Subscription Converted`
 //    • subscribed → not-subscribed → fires PostHog `Subscription Expired`
-//    • showPaywall (after presentation) → fires `af_start_trial` / `af_subscribe`
-//      and PostHog `Trial Started` / `Subscription Converted` on conversion.
+//    • showPaywall (after presentation) → fires PostHog `Trial Started` /
+//      `Subscription Converted` on conversion.
+//
+//  NOTE: AppsFlyer subscription events (trial start / conversion / renewal)
+//  are deliberately NOT fired client-side. RevenueCat's server-side
+//  integration sends `rc_trial_started_event`, `rc_trial_converted_event`,
+//  `rc_renewal_event`, etc. with validated revenue — those are the single
+//  source of truth for AppsFlyer and ad-network postbacks (Meta). Firing
+//  `af_subscribe` / `af_start_trial` here would double-count conversions.
 //
 //  Persistence: none — RevenueCat owns its own state.
 //
@@ -138,12 +145,11 @@ public final class SubscriptionState {
             let entitlement = currentEntitlement
             let productID = entitlement?.productIdentifier ?? "unknown"
 
-            // Mirrors PaywallOfferScreen.tsx:149/152 + PaywallScreen.tsx:107.
+            // PostHog only — AppsFlyer gets these via RevenueCat S2S
+            // (rc_trial_started_event / rc_trial_converted_event).
             if entitlement?.periodType == .trial {
-                AnalyticsService.shared.trackAppsFlyer("af_start_trial", values: ["af_content_id": productID])
                 AnalyticsService.shared.track("Trial Started", properties: ["product_id": productID])
             } else {
-                AnalyticsService.shared.trackAppsFlyer("af_subscribe", values: ["af_content_id": productID])
                 AnalyticsService.shared.track("Subscription Converted", properties: [
                     "product_id": productID,
                     "from_trial": false,
@@ -189,9 +195,9 @@ public final class SubscriptionState {
             let currentPeriod = entitlement?.periodType
             let productID = entitlement?.productIdentifier ?? "unknown"
 
-            // Detect TRIAL → NORMAL conversion.
+            // Detect TRIAL → NORMAL conversion. PostHog only — AppsFlyer
+            // gets rc_trial_converted_event via RevenueCat S2S.
             if lastPeriodType == .trial, currentPeriod == .normal {
-                AnalyticsService.shared.trackAppsFlyer("af_subscribe", values: ["af_content_id": productID])
                 AnalyticsService.shared.track("Subscription Converted", properties: [
                     "product_id": productID,
                     "from_trial": true,
