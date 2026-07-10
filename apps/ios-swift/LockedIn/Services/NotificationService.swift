@@ -60,13 +60,21 @@ public final class NotificationService {
 
     private init() {}
 
+    /// Local hour (0–23) for the midday "haven't locked in yet" streak nudge.
+    public static let streakRiskNoonHour = 12
+    /// Local hour for the evening streak nudge. Kept in sync with the in-app
+    /// at-risk banner (`HomeState.streakAtRiskHour`) so the banner and the
+    /// evening ping surface together.
+    public static let streakRiskEveningHour = 18
+
     // MARK: - Identifiers
 
     public enum ID {
         public static let dailyReminder         = "lockedin.daily_reminder"
         public static let executionBlockDone    = "lockedin.execution_block_done"
         public static let streakMilestone       = "lockedin.streak_milestone"
-        public static let streakProtection      = "lockedin.streak_protection"
+        public static let streakProtection      = "lockedin.streak_protection"       // evening
+        public static let streakProtectionNoon  = "lockedin.streak_protection_noon"  // midday
         public static let firstGuildNudge       = "lockedin.first_guild_nudge"
         public static let closeToGoal           = "lockedin.close_to_goal"
         public static let missionReminder       = "lockedin.mission_reminder"
@@ -327,11 +335,13 @@ public final class NotificationService {
         let reminder = HourMinute.parse(Defaults.string("@lockedin/reminder_time"))
             ?? HourMinute(hour: 9, minute: 0)
 
+        let goalMetToday = Defaults.string("@lockedin/goal_met_daykey") == SessionDayEngine.todayKey()
         scheduleAllDailyNotifications(
             streak: streak,
             hasGuild: hasGuild,
             goalMinutes: goalMinutes > 0 ? goalMinutes : 60,
-            reminderTime: reminder
+            reminderTime: reminder,
+            goalMetToday: goalMetToday
         )
     }
 
@@ -376,9 +386,14 @@ public final class NotificationService {
     /// there" / "execution block done" reminders so the user doesn't get a
     /// stale ping after sealing their day.
     public func onSessionCompletedToday() {
+        // NOTE: streak-risk pings are intentionally NOT cancelled here. A
+        // partial session that doesn't meet the daily goal must keep the streak
+        // reminders armed. They are re-evaluated — and cleared only when the
+        // goal is actually met — by `scheduleAllDailyNotifications(goalMetToday:)`
+        // on the next Home re-render / foreground.
         cancelExecutionBlockDone()
         UNUserNotificationCenter.current().removePendingNotificationRequests(
-            withIdentifiers: [ID.closeToGoal, ID.missionReminder, ID.streakProtection]
+            withIdentifiers: [ID.closeToGoal, ID.missionReminder]
         )
     }
 
@@ -391,38 +406,97 @@ public final class NotificationService {
         streak: Int,
         hasGuild: Bool,
         goalMinutes: Int,
-        reminderTime: HourMinute
+        reminderTime: HourMinute,
+        goalMetToday: Bool = false
     ) {
+        // Master off toggle — honored here so EVERY caller (the direct Home /
+        // session-finish paths, not just `refreshScheduleWithStoredStreak`)
+        // respects it. Clear ONLY the daily set this function owns; do NOT
+        // cancelAll here — this runs on hot Home/session paths and a global
+        // cancel would nuke unrelated pending/delivered notifications (guild
+        // month-end, streak milestone, first-guild nudge). The dedicated
+        // "disable = wipe everything" lives in `refreshScheduleWithStoredStreak`.
+        if Defaults.bool("@lockedin/notif_user_disabled") {
+            UNUserNotificationCenter.current().removePendingNotificationRequests(
+                withIdentifiers: [ID.dailyReminder, ID.streakProtection, ID.streakProtectionNoon]
+            )
+            return
+        }
+
         // Daily reminder.
         scheduleDailyReminder(at: reminderTime)
 
-        // Streak-protection ping in the evening if the user has any streak.
-        UNUserNotificationCenter.current().removePendingNotificationRequests(
-            withIdentifiers: [ID.streakProtection]
+        // Streak-risk pings: a midday nudge and an evening last-call. Armed only
+        // while a streak is live and the streak-alerts opt-in is on. Each ping is
+        // a ONE-SHOT for the NEXT occurrence: if today's goal is already met we
+        // arm tomorrow's, otherwise today's (rolling to tomorrow once the hour
+        // passes). One-shot (not repeating) is deliberate — a repeating trigger
+        // removed on goal-met would leave the *next* at-risk day silently
+        // uncovered if the app isn't reopened. A partial session that doesn't
+        // meet the goal keeps today's ping armed.
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(
+            withIdentifiers: [ID.streakProtection, ID.streakProtectionNoon]
         )
-        if streak > 0 {
-            var comps = DateComponents()
-            comps.hour = 20
-            comps.minute = 0
-
-            let content = UNMutableNotificationContent()
-            content.title = "Protect your \(streak)-day streak"
-            content.body = "Lock in before midnight to keep the chain alive."
-            content.sound = .default
-
-            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
-            let request = UNNotificationRequest(identifier: ID.streakProtection, content: content, trigger: trigger)
-            UNUserNotificationCenter.current().add(request) { _ in }
+        let streakAlertsOn = Defaults.standard.object(forKey: "@lockedin/notif_streak_alerts") as? Bool ?? true
+        if streak > 0 && streakAlertsOn {
+            scheduleStreakRiskPing(
+                id: ID.streakProtectionNoon,
+                hour: Self.streakRiskNoonHour,
+                skipToday: goalMetToday,
+                title: "Your streak is at risk",
+                body: "Today's goal isn't done yet. Lock in to keep your \(streak)-day streak alive."
+            )
+            scheduleStreakRiskPing(
+                id: ID.streakProtection,
+                hour: Self.streakRiskEveningHour,
+                skipToday: goalMetToday,
+                title: "Protect your \(streak)-day streak",
+                body: "Lock in before midnight to keep the chain alive."
+            )
         }
 
-        // Persist the streak snapshot so `refreshScheduleWithStoredStreak`
-        // has something to read.
+        // Persist snapshots so `refreshScheduleWithStoredStreak` can re-arm on
+        // foreground without the caller re-supplying live state.
         Defaults.setInt(streak, "@lockedin/streak_for_notifs")
         Defaults.setInt(goalMinutes, "@lockedin/daily_minutes")
         Defaults.setBool(hasGuild, "@lockedin/has_active_guild")
+        Defaults.setString(goalMetToday ? SessionDayEngine.todayKey() : "", "@lockedin/goal_met_daykey")
 
         if !hasGuild {
             scheduleFirstGuildNudgeIfNeeded(hasActiveGuild: false)
         }
+    }
+
+    /// Schedule a ONE-SHOT streak-risk notification at the next `hour`:00 local.
+    /// When `skipToday` is true (today's goal already met) or today's `hour` has
+    /// already passed, it rolls to tomorrow — so the reminder is always armed for
+    /// the next day the streak could break, even if the app is never reopened.
+    private func scheduleStreakRiskPing(id: String, hour: Int, skipToday: Bool, title: String, body: String) {
+        let cal = Calendar.current
+        let now = Date()
+        var comps = cal.dateComponents([.year, .month, .day], from: now)
+        comps.hour = hour
+        comps.minute = 0
+        guard let todayFire = cal.date(from: comps) else { return }
+
+        let fireDate: Date
+        if !skipToday && todayFire > now {
+            fireDate = todayFire
+        } else if let tomorrow = cal.date(byAdding: .day, value: 1, to: todayFire) {
+            fireDate = tomorrow
+        } else {
+            return
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+
+        let triggerComps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: triggerComps, repeats: false)
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request) { _ in }
     }
 }

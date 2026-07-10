@@ -129,6 +129,9 @@ struct HomeTabScreen: View {
             if dailyGoalMet && home.dailyGoalMetDate != todayKey {
                 home.dailyGoalMet()
             }
+            // Arm/refresh the streak-risk pings (noon + evening) now that
+            // streak + goal state are reconciled for today.
+            syncDailyNotifications()
             // TODO(post-launch): WeeklyReportService.shouldShowReport()
             // → push `.weeklyReport` onto the main stack. Needs a
             //   `@EnvironmentObject MainNavigatorPath` accessor from this
@@ -136,15 +139,12 @@ struct HomeTabScreen: View {
             // TODO(post-launch): SKStoreReviewController.requestReview(in:)
             //   once `HomeStorageKeys.afTutorialHomeGuideSent` is flipped.
         }
-        .onChange(of: home.consecutiveStreak) { _, newValue in
-            NotificationService.shared.scheduleAllDailyNotifications(
-                streak: newValue,
-                hasGuild: Defaults.bool("@lockedin/has_active_guild"),
-                goalMinutes: dailyCommitmentMinutes,
-                reminderTime: HourMinute.parse(
-                    Defaults.string("@lockedin/reminder_time")
-                ) ?? HourMinute(hour: 9, minute: 0)
-            )
+        .onChange(of: home.consecutiveStreak) { _, _ in
+            // Re-arm the daily set (incl. streak-risk pings) when the streak
+            // changes. This is one of several triggers — goal-met is also
+            // re-synced by handleSessionFinish and the appear/foreground paths,
+            // so it need not rely on the streak value changing.
+            syncDailyNotifications()
             // Close-to-goal nudge when 80% ≤ progress < 100%.
             let focused = home.dailyFocused(todayKey: SessionDayEngine.todayKey())
             NotificationService.shared.scheduleCloseToGoalNudge(
@@ -155,6 +155,23 @@ struct HomeTabScreen: View {
             //   `isAnonymous && newValue >= 3 && !signupNudgeStreak3Shown`.
             //   The sheet UI itself hasn't been ported.
         }
+    }
+
+    /// Re-arm the daily notification set, computing today's goal-met state
+    /// freshly from `home` so the streak-risk pings (noon + evening) are cleared
+    /// the moment the goal is met and kept armed after a partial session.
+    private func syncDailyNotifications() {
+        let todayKey = SessionDayEngine.todayKey()
+        let goalMet = home.dailyFocused(todayKey: todayKey) >= dailyCommitmentMinutes
+            || home.dailyGoalMetDate == todayKey
+        NotificationService.shared.scheduleAllDailyNotifications(
+            streak: home.consecutiveStreak,
+            hasGuild: Defaults.bool("@lockedin/has_active_guild"),
+            goalMinutes: dailyCommitmentMinutes,
+            reminderTime: HourMinute.parse(Defaults.string("@lockedin/reminder_time"))
+                ?? HourMinute(hour: 9, minute: 0),
+            goalMetToday: goalMet
+        )
     }
 
     @ViewBuilder

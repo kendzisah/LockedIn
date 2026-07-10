@@ -145,14 +145,15 @@ final class LockedInDeviceActivityMonitor: DeviceActivityMonitor {
                 .decode(FamilyActivitySelection.self, from: data)
         else { return }
 
-        // Sharded across multiple named stores — a single store silently
-        // drops application tokens beyond 50. Must mirror the main app's
-        // apply exactly, hence the shared helper.
+        // Single-store shield (app tokens clamped to 50, broad blocking via
+        // category tokens). Must mirror the main app's apply exactly, hence
+        // the shared helper.
         SharedShieldApplier.apply(selection)
     }
 
     private func clearShield(removeManualTimestamp: Bool) {
-        // Sweeps ALL shard stores, including any orphaned by older builds.
+        // Sweeps the primary store + all legacy shard stores, including any
+        // orphaned by older builds.
         SharedShieldApplier.clearAll()
         if removeManualTimestamp {
             SharedScreenTime.sharedDefaults()?.removeObject(

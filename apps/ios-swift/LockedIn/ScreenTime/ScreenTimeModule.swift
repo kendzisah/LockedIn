@@ -310,7 +310,7 @@ public final class ScreenTimeModule: @unchecked Sendable {
         do {
             try ObjCExceptionCatcher.execute {
                 if #available(iOS 16.0, *) {
-                    // Sweep ALL shard stores (see SharedShieldApplier).
+                    // Sweep primary + legacy shard stores (see SharedShieldApplier).
                     SharedShieldApplier.clearAll()
                 } else if let s = self.store {
                     s.shield.applications = nil
@@ -367,7 +367,15 @@ public final class ScreenTimeModule: @unchecked Sendable {
         var count = 0
         do {
             try ObjCExceptionCatcher.execute {
-                count = self.selection.applicationTokens.count + self.selection.categoryTokens.count
+                // Allowlist model: only application + web-domain tokens actually
+                // form the `.all(except:)` exception set. categoryTokens are NOT
+                // counted — `.all(except:)` can't exempt a whole category, so a
+                // category selection allowlists nothing. Counting it would make
+                // "Allowed apps: N" (and the scheduled diagnostic) read healthy
+                // while the shield applies nothing. This count == the tokens the
+                // guard in SharedShieldApplier.apply keys on, so count > 0 iff a
+                // shield is actually applied.
+                count = self.selection.applicationTokens.count + self.selection.webDomainTokens.count
             }
         } catch {
             let iosVersion = UIDevice.current.systemVersion
@@ -383,14 +391,33 @@ public final class ScreenTimeModule: @unchecked Sendable {
     // MARK: - Shield Helper
 
     private func applyShield() {
+        // Allowlist model: the selection is the set of apps that stay OPEN;
+        // everything else is blocked. iOS caps the allowlist (`.all(except:)`)
+        // at 50 tokens, so picks beyond 50 can't be exempted and end up
+        // blocked. Surface it so we know when a user's allowlist is truncated.
+        // Token-count access is wrapped in ObjCExceptionCatcher (as in
+        // getSelectedAppCount) since reading counts on a decoded
+        // FamilyActivitySelection can raise an ObjC exception.
+        var allowlistCount = 0
+        try? ObjCExceptionCatcher.execute {
+            allowlistCount = self.selection.applicationTokens.count
+        }
+        if allowlistCount > SharedScreenTime.maxAllowlistTokens {
+            let count = allowlistCount
+            Task { @MainActor in
+                AnalyticsService.shared.track("screen_time_allowlist_limit_exceeded", properties: [
+                    "allowlist_count": count,
+                    "max_allowlist": SharedScreenTime.maxAllowlistTokens,
+                ])
+            }
+        }
+
         do {
             try ObjCExceptionCatcher.execute {
                 if #available(iOS 16.0, *) {
-                    // Sharded: application/web-domain tokens are chunked into
-                    // ≤50-token groups across multiple named stores. A single
-                    // store silently drops tokens beyond 50 (arbitrary Set
-                    // order), which left random apps unblocked for selections
-                    // like 78 apps. See SharedShieldApplier.
+                    // Allowlist model: blocks every app except the selection
+                    // via `.all(except:)`, bypassing the cumulative 50-token
+                    // block cap. See SharedShieldApplier.
                     SharedShieldApplier.apply(self.selection)
                 } else if let s = self.store {
                     s.shield.applications = self.selection.applicationTokens.isEmpty ? nil : self.selection.applicationTokens
@@ -502,10 +529,58 @@ struct AppPickerSheet: View {
     @ObservedObject var model: AppPickerModel
     @Environment(\.dismiss) var dismiss
 
+    /// FamilyActivityPicker exposes no "content loaded" callback and can render
+    /// an empty list for a beat right after authorization (especially the very
+    /// first time, during onboarding) while iOS populates the installed-app
+    /// list. We cover that window with a spinner and gate "Done" so the user
+    /// can't dismiss a half-loaded picker and save an unintended empty allowlist.
+    @State private var isReady = false
+
+    /// Number of allowlisted apps, read defensively (token-count access can
+    /// raise an ObjC exception on a decoded selection).
+    private var allowlistCount: Int {
+        var count = 0
+        try? ObjCExceptionCatcher.execute {
+            count = model.selection.applicationTokens.count
+        }
+        return count
+    }
+
     var body: some View {
         NavigationView {
-            FamilyActivityPicker(selection: $model.selection)
-                .navigationTitle("Block Apps")
+            VStack(spacing: 0) {
+                // The selection is an ALLOWLIST: chosen apps stay open, every
+                // other app is blocked during a Lock-In. iOS limits the
+                // allowlist to 50 apps.
+                let over = allowlistCount > SharedScreenTime.maxAllowlistTokens
+                Text(over
+                     ? "You can allow at most \(SharedScreenTime.maxAllowlistTokens) apps. Only the first \(SharedScreenTime.maxAllowlistTokens) will stay open — the rest will be blocked."
+                     : "Pick the individual apps that stay open during a Lock-In — every other app and all websites get blocked. Tap into a category and choose apps one by one; picking a whole category won't keep it open. Up to \(SharedScreenTime.maxAllowlistTokens) apps.")
+                    .font(.footnote)
+                    .foregroundColor(over ? Color(red: 1, green: 0.28, blue: 0.34) : .secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+
+                ZStack {
+                    // Keep the picker mounted (opacity 0) so it loads underneath
+                    // while the spinner shows; fade it in once settled.
+                    FamilyActivityPicker(selection: $model.selection)
+                        .opacity(isReady ? 1 : 0)
+
+                    if !isReady {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text("Loading your apps…")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(.systemBackground))
+                    }
+                }
+            }
+                .navigationTitle("Apps You Can Still Use")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
@@ -513,9 +588,20 @@ struct AppPickerSheet: View {
                             model.complete()
                             dismiss()
                         }
+                        .disabled(!isReady)
                     }
                 }
+                .task {
+                    // No readiness signal exists; settle briefly to let the
+                    // system populate the picker before revealing it.
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                    isReady = true
+                }
         }
+        // Block swipe-to-dismiss during the load window too — otherwise the
+        // user could dismiss a half-loaded picker and save an empty allowlist,
+        // which the disabled Done button alone doesn't prevent.
+        .interactiveDismissDisabled(!isReady)
         .onDisappear {
             model.complete()
         }

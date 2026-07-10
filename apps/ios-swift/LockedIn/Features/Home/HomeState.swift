@@ -373,17 +373,37 @@ public final class HomeState {
         return 0
     }
 
-    /// Streak is "at risk" when it's genuinely one missed day from breaking:
-    /// a live streak whose last goal-met was *yesterday* and where today's
-    /// goal hasn't been met yet. Requiring `lastSessionDayKey == yesterday`
-    /// (rather than just "not met today") stops the banner from firing every
-    /// day — once the streak has already broken, `reconcileStreak()` has zeroed
-    /// it, so `consecutiveStreak > 0` is false and this returns false.
-    public func streakAtRisk(todayKey: String, dailyGoal: Int) -> Bool {
+    /// Local hour (0–23) at/after which the in-app "streak at risk" BANNER
+    /// appears — the evening. The banner must NOT show the instant the day rolls
+    /// at midnight (the user still has the whole day); it surfaces in the
+    /// evening as a last call. The midday reminder is notification-only — see
+    /// `NotificationService.streakRiskNoonHour` / `streakRiskEveningHour`, kept
+    /// in sync with this value.
+    public static let streakAtRiskHour = 18
+
+    /// The streak-risk CONDITION, independent of time of day: a live streak
+    /// whose last goal-met was *yesterday* and whose goal isn't met yet today.
+    /// Requiring `lastSessionDayKey == yesterday` (rather than just "not met
+    /// today") stops it firing every day — once the streak has already broken,
+    /// `reconcileStreak()` has zeroed it, so `consecutiveStreak > 0` is false.
+    ///
+    /// This is the predicate the streak-risk NOTIFICATIONS use (they're
+    /// scheduled ahead of time for noon/evening); the banner layers an evening
+    /// time gate on top via `streakAtRisk`.
+    public func streakRiskConditionMet(todayKey: String, dailyGoal: Int) -> Bool {
         guard consecutiveStreak > 0 else { return false }
         let met = dailyFocused(todayKey: todayKey) >= dailyGoal || dailyGoalMetDate == todayKey
         guard !met else { return false }
         return lastSessionDayKey == SessionDayEngine.yesterdayKey()
+    }
+
+    /// Streak is "at risk" for the in-app BANNER: the risk condition holds AND
+    /// it's the evening (`streakAtRiskHour`). Suppressed earlier in the day so
+    /// it doesn't nag the moment the day changes at midnight.
+    public func streakAtRisk(todayKey: String, dailyGoal: Int, now: Date = Date()) -> Bool {
+        guard streakRiskConditionMet(todayKey: todayKey, dailyGoal: dailyGoal) else { return false }
+        let hour = Calendar.current.component(.hour, from: now)
+        return hour >= Self.streakAtRiskHour
     }
 
     // MARK: - Daily FOC XP cap (unified per-stat XP model)

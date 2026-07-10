@@ -31,7 +31,7 @@ struct ScheduledSessionsScreen: View {
     /// the four signals that tell us which link is broken when a scheduled
     /// window fails to block:
     ///   • Permission   — Family Controls authorized?
-    ///   • Blocked apps — did the user actually pick apps? (0 ⇒ shield no-ops)
+    ///   • Allowed apps — did the user pick an allowlist? (0 ⇒ shield no-ops, device NOT locked down)
     ///   • Registered   — did `startMonitoring` register the OS schedule? (0 ⇒ registration failed)
     ///   • Extension last ran — did `intervalDidStart`/`End` ever fire? (never ⇒ OS isn't waking it)
     @State private var diag = ScheduledLockDiagnostics.empty
@@ -202,7 +202,7 @@ struct ScheduledSessionsScreen: View {
             if showDiagnostics {
                 VStack(alignment: .leading, spacing: 8) {
                     diagRow("Permission", diag.auth, ok: diag.auth == "approved")
-                    diagRow("Blocked apps", "\(diag.selectedApps)", ok: diag.selectedApps > 0)
+                    diagRow("Allowed apps", "\(diag.selectedApps)", ok: diag.selectedApps > 0)
                     diagRow("Extension sees apps", "\(diag.extensionSeesApps)", ok: diag.extensionSeesApps > 0)
                     diagRow("Registered windows", "\(diag.registeredActivities)", ok: diag.registeredActivities > 0)
                     diagRow("Last registration", diag.registrationStatus, ok: !diag.registrationStatus.contains("failed"))
@@ -304,12 +304,16 @@ private struct ScheduledLockDiagnostics {
             else { return 0 }
             return map.count
         }()
-        // Decode the App-Group selection exactly as the extension does.
+        // Decode the App-Group selection exactly as the extension does. Count
+        // only the tokens the extension actually shields under the allowlist
+        // model (`.all(except:)` exempts app + web-domain tokens; categoryTokens
+        // are ignored), so this matches `selectedApps` and a category-only
+        // selection correctly reads 0 (⇒ shield no-ops).
         let extSees: Int = {
             guard let data = d?.data(forKey: SharedScreenTime.Keys.selection),
                   let sel = try? PropertyListDecoder().decode(FamilyActivitySelection.self, from: data)
             else { return 0 }
-            return sel.applicationTokens.count + sel.categoryTokens.count + sel.webDomainTokens.count
+            return sel.applicationTokens.count + sel.webDomainTokens.count
         }()
         let events: [String] = {
             guard let data = d?.data(forKey: SharedScreenTime.Keys.damEventLog),

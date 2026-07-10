@@ -14,7 +14,7 @@ struct BenefitExecutionScreen: View {
             panelLabel: "FOCUS SESSIONS",
             headline: "FOCUS SESSIONS",
             headlineColor: AppColors.primary,
-            body: "Set your timer. The system seals your distractions. Apps you selected? Gone. Try to open them and the system blocks you. Hold to quit early — but the system tracks that too.",
+            body: "Set your timer. The system seals off every app except the few you allow. Everything else? Gone. Try to open a blocked app and the system stops you. Hold to quit early — but the system tracks that too.",
             callout: "+35 XP per 30-min session",
             calloutColor: AppColors.accent,
             graphic: { phoneMock },

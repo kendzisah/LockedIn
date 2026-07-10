@@ -553,6 +553,30 @@ public struct ExecutionBlockScreen: View {
                 .padding(.horizontal, 40)
                 .padding(.top, 12)
             }
+
+            // Minimize during a break — the Home FocusRing renders the frozen
+            // break countdown + END BREAK NOW, and tapping it re-expands here.
+            if let onMinimize {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button(action: onMinimize) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text("MINIMIZE")
+                                    .font(.custom(FontFamily.display.rawValue, size: 10))
+                                    .tracking(1.6)
+                            }
+                            .foregroundColor(AppColors.textMuted)
+                        }
+                        .buttonStyle(PressOpacityButtonStyle())
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16)
+                    Spacer()
+                }
+            }
         }
     }
 

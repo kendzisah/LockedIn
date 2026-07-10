@@ -50,7 +50,7 @@ public struct ProfileTabScreen: View {
     // Live data (W3/W11/W4 wire these once their services land).
     @State private var stats: UserStatsLite? = nil
     @State private var rank: RankLite = RankLite()
-    @State private var blockedAppCount: Int = 0
+    @State private var allowedAppCount: Int = 0
     @State private var loadingAppPicker: Bool = false
     @State private var showFamilyControlsDeniedAlert: Bool = false
     @State private var earnedAchievements: Set<String> = []
@@ -117,7 +117,7 @@ public struct ProfileTabScreen: View {
             await settings.refresh()
             await reloadProfile()
             await reloadAchievements()
-            blockedAppCount = LockModeService.shared.getSelectedAppCount()
+            allowedAppCount = LockModeService.shared.getSelectedAppCount()
         }
         .onReceive(NotificationCenter.default.publisher(for: .achievementsUnlocked)) { note in
             // Optimistically merge the newly-unlocked ids into our local set
@@ -130,7 +130,7 @@ public struct ProfileTabScreen: View {
         .onAppear {
             // Refresh permission status when the user returns from OS Settings.
             Task { await settings.refresh() }
-            blockedAppCount = LockModeService.shared.getSelectedAppCount()
+            allowedAppCount = LockModeService.shared.getSelectedAppCount()
         }
         // Sheets (Settings flows)
         .sheet(item: $sheet) { which in
@@ -306,15 +306,15 @@ public struct ProfileTabScreen: View {
                 onPress: { sheet = .weaknessPicker }
             )
             SettingsRow(
-                icon: "nosign",
-                label: "Blocked apps",
+                icon: "checkmark.shield",
+                label: "Allowed apps",
                 value: loadingAppPicker
                     ? "Loading…"
-                    : (blockedAppCount > 0
-                        ? "\(blockedAppCount) app\(blockedAppCount == 1 ? "" : "s")"
-                        : "None"),
+                    : (allowedAppCount > 0
+                        ? "\(allowedAppCount) app\(allowedAppCount == 1 ? "" : "s") allowed"
+                        : "Not set"),
                 disabled: loadingAppPicker,
-                onPress: { presentBlockedAppPicker() }
+                onPress: { presentAllowedAppPicker() }
             )
         }
     }
@@ -585,7 +585,7 @@ public struct ProfileTabScreen: View {
         showRestoreAlert = true
     }
 
-    private func presentBlockedAppPicker() {
+    private func presentAllowedAppPicker() {
         // If Family Controls was previously denied, iOS will not re-show the
         // system prompt on `requestAuthorization` — surface our own alert
         // that deep-links to Settings so the user can re-enable it.
@@ -601,7 +601,7 @@ public struct ProfileTabScreen: View {
             // the user denied authorization OR if the request silently
             // failed (e.g. missing entitlement, simulator).
             _ = await LockModeService.shared.showAppPicker()
-            blockedAppCount = LockModeService.shared.getSelectedAppCount()
+            allowedAppCount = LockModeService.shared.getSelectedAppCount()
             loadingAppPicker = false
             // Any non-approved state after the call means the picker didn't
             // open: surface the alert so the row never appears to be a no-op.

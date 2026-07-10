@@ -188,6 +188,12 @@ public struct MainNavigator: View {
             // session, which would cancel the active one.
             guard newPhase == .active else { return }
             activeSession.syncOnForeground()
+            // Re-arm the daily notification set on every foreground. Without
+            // this, the streak-risk pings — cleared when a goal is met — would
+            // only be re-armed on cold launch, a streak change, or a Home-tab
+            // re-appear, so a plain foreground the day after a goal-met day
+            // could leave the at-risk day with no reminder.
+            NotificationService.shared.refreshScheduleWithStoredStreak()
             // Recover any scheduled DeviceActivity monitoring that was dropped
             // while backgrounded (auth race / OS eviction) so background
             // blocking re-engages for upcoming windows.
@@ -530,6 +536,20 @@ public struct MainNavigator: View {
                 streakDays: nextStreak
             )
         }
+
+        // Re-sync the daily notification set with the fresh goal-met state so
+        // the streak-risk pings clear the moment a session meets today's goal —
+        // including a background-drained scheduled session credited while the
+        // user is on a non-Home tab (where HomeTabScreen wouldn't re-arm).
+        NotificationService.shared.scheduleAllDailyNotifications(
+            streak: home.consecutiveStreak,
+            hasGuild: Defaults.bool("@lockedin/has_active_guild"),
+            goalMinutes: goal,
+            reminderTime: HourMinute.parse(Defaults.string("@lockedin/reminder_time"))
+                ?? HourMinute(hour: 9, minute: 0),
+            goalMetToday: home.dailyFocused(todayKey: todayKey) >= goal
+                || home.dailyGoalMetDate == todayKey
+        )
     }
 
     /// Restore the active execution-block modal if a session is still in

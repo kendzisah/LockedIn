@@ -21,20 +21,27 @@ public enum SharedScreenTime {
     /// the extension's un-shield action takes effect system-wide.
     public static let managedSettingsStoreName = "lockedIn"
 
-    /// iOS silently caps `shield.applications` / `shield.webDomains` at 50
-    /// tokens per ManagedSettingsStore — tokens beyond 50 on one store are
-    /// arbitrarily dropped (Set order!), so which apps stay unblocked is
-    /// random. Selections are therefore SHARDED across multiple named stores.
-    public static let maxTokensPerStore = 50
+    /// iOS caps the number of individual app tokens in a shield at 50 —
+    /// CUMULATIVELY across all named ManagedSettingsStores, not per store
+    /// (undocumented; confirmed iOS 16/17/17.2 —
+    /// https://developer.apple.com/forums/thread/733361). Exceeding it voids
+    /// the shield silently. This app therefore blocks with an ALLOWLIST model:
+    /// `applicationCategories = .all(except: allowlist)` shields every app on
+    /// the device except the user's picks, so there is no ceiling on how many
+    /// apps get blocked. The 50-token cap now bounds only the ALLOWLIST (the
+    /// `except:` set) — a user can keep at most 50 apps unblocked.
+    public static let maxAllowlistTokens = 50
 
-    /// Number of shard stores the app + extension apply AND clear. 8 shards
-    /// × 50 tokens = 400 individually-blockable apps, far beyond realistic
-    /// selections. Clearing a never-used named store is a harmless no-op, so
-    /// the clear path always sweeps all shards.
-    public static let shieldShardCount = 8
+    /// Legacy shard store count. Older builds sharded shields across the
+    /// stores `lockedIn`, `lockedIn.1` … `lockedIn.7`. Those extra stores no
+    /// longer receive shields, but the apply/clear paths still SWEEP them so a
+    /// shield written by a previously-installed build can't stay orphaned (and
+    /// keep eating the cumulative 50-token budget) after an update. Apply
+    /// itself writes only the primary `managedSettingsStoreName` store.
+    public static let legacyShardStoreCount = 8
 
-    /// Shard store names. Shard 0 keeps the legacy un-suffixed name so
-    /// shields applied by older builds are still cleared by new builds.
+    /// Store names swept when clearing. Shard 0 is the primary (legacy
+    /// un-suffixed) name; 1…7 are the retired shard stores.
     public static func shieldStoreName(shard: Int) -> String {
         shard == 0 ? managedSettingsStoreName : "\(managedSettingsStoreName).\(shard)"
     }
@@ -115,69 +122,89 @@ public enum SharedScreenTime {
 }
 
 #if canImport(ManagedSettings) && canImport(FamilyControls)
-/// Sharded shield application, shared verbatim by the main app's
-/// `ScreenTimeModule` and the DAM extension so the two processes can never
-/// disagree about how tokens map onto stores.
+/// Shield application, shared verbatim by the main app's `ScreenTimeModule`
+/// and the DAM extension so the two processes can never disagree about how a
+/// selection maps onto ManagedSettings.
 ///
-/// Why sharding exists: iOS caps each ManagedSettingsStore's
-/// `shield.applications` (and `shield.webDomains`) at 50 tokens. Writing more
-/// does NOT error — iOS keeps an arbitrary 50 (token sets are unordered) and
-/// silently ignores the rest, so a 78-app selection left random apps
-/// unblocked. Splitting tokens into ≤50-token chunks across multiple named
-/// stores lifts the effective cap to `shieldShardCount × 50`.
+/// iOS caps individual shield app tokens at 50, CUMULATIVELY across every
+/// named ManagedSettingsStore (undocumented; confirmed iOS 16/17). Blocking
+/// apps one-token-at-a-time therefore can't exceed 50. To block far more, we
+/// invert the model: shield EVERY app via `.all(except: allowlist)` and treat
+/// the user's selection as the ALLOWLIST of apps that stay open. The `except:`
+/// allowlist is itself capped at 50, so we clamp it. A prior build sharded
+/// blocked-app tokens across 8 stores believing the cap was per-store — it
+/// isn't. See `SharedScreenTime.maxAllowlistTokens`.
 @available(iOS 16.0, *)
 public enum SharedShieldApplier {
 
-    /// All shard stores, shard 0 (legacy name) first.
-    public static func shardStores() -> [ManagedSettingsStore] {
-        (0..<SharedScreenTime.shieldShardCount).map {
+    /// The one store shields are written to.
+    public static func primaryStore() -> ManagedSettingsStore {
+        ManagedSettingsStore(named: .init(SharedScreenTime.managedSettingsStoreName))
+    }
+
+    /// Primary store + retired legacy shard stores, swept when clearing.
+    public static func allStores() -> [ManagedSettingsStore] {
+        (0..<SharedScreenTime.legacyShardStoreCount).map {
             ManagedSettingsStore(named: .init(SharedScreenTime.shieldStoreName(shard: $0)))
         }
     }
 
-    /// Apply `selection` across the shard stores. Application and web-domain
-    /// tokens are chunked into groups of ≤`maxTokensPerStore`; category
-    /// policies are single values and live on shard 0. Unused shards are
-    /// explicitly nil-ed so a shrinking selection can't leave stale shields.
+    /// Apply the ALLOWLIST `selection` to the single primary store.
+    ///
+    /// - `applicationCategories = .all(except: allowlist)` shields every app on
+    ///   the device except the allowlisted tokens — this is what blocks far
+    ///   more than 50 apps. Web is inverted the same way. The allowlist is
+    ///   clamped to `maxAllowlistTokens` (50); picks beyond 50 can't be
+    ///   exempted by iOS, so they end up blocked (the caller warns the user).
+    /// - `shield.applications` / `shield.webDomains` are nil'd — the `.all`
+    ///   category policy already covers every app, so per-app tokens are
+    ///   redundant.
+    /// - SAFETY: an EMPTY allowlist is treated as "not configured" and applies
+    ///   NO shield. `.all(except: [])` would otherwise lock down the entire
+    ///   device — a catastrophic surprise for a user who starts a session
+    ///   before choosing any allowed apps.
+    /// - Legacy shard stores (`lockedIn.1` … `.7`) are cleared first so a stale
+    ///   shield from an older build can't linger alongside the new shield.
     public static func apply(_ selection: FamilyActivitySelection) {
-        let appChunks = chunk(Array(selection.applicationTokens))
-        let webChunks = chunk(Array(selection.webDomainTokens))
-        for (i, store) in shardStores().enumerated() {
-            let apps: Set<ApplicationToken> = i < appChunks.count ? Set(appChunks[i]) : []
-            let webs: Set<WebDomainToken> = i < webChunks.count ? Set(webChunks[i]) : []
-            store.shield.applications = apps.isEmpty ? nil : apps
-            store.shield.webDomains = webs.isEmpty ? nil : webs
-            if i == 0 {
-                store.shield.applicationCategories = selection.categoryTokens.isEmpty
-                    ? nil
-                    : ShieldSettings.ActivityCategoryPolicy.specific(selection.categoryTokens)
-                store.shield.webDomainCategories = selection.categoryTokens.isEmpty
-                    ? nil
-                    : ShieldSettings.ActivityCategoryPolicy.specific(selection.categoryTokens)
-            } else {
-                store.shield.applicationCategories = nil
-                store.shield.webDomainCategories = nil
-            }
-        }
-    }
-
-    /// Clear every shard store. Always sweeps all `shieldShardCount` shards —
-    /// clearing a store that was never written is a no-op, and sweeping all of
-    /// them guarantees no shard orphaned by an older build stays shielding.
-    public static func clearAll() {
-        for store in shardStores() {
+        // Retire any shields written by an older sharding build.
+        for shard in 1..<SharedScreenTime.legacyShardStoreCount {
+            let store = ManagedSettingsStore(named: .init(SharedScreenTime.shieldStoreName(shard: shard)))
             store.shield.applications = nil
             store.shield.applicationCategories = nil
             store.shield.webDomains = nil
             store.shield.webDomainCategories = nil
         }
+
+        let store = primaryStore()
+        let cap = SharedScreenTime.maxAllowlistTokens
+        let allowedApps = Set(Array(selection.applicationTokens).prefix(cap))
+        let allowedWebs = Set(Array(selection.webDomainTokens).prefix(cap))
+
+        // No allowlist configured → do NOT lock down the whole device.
+        guard !allowedApps.isEmpty || !allowedWebs.isEmpty else {
+            store.shield.applications = nil
+            store.shield.webDomains = nil
+            store.shield.applicationCategories = nil
+            store.shield.webDomainCategories = nil
+            return
+        }
+
+        // Allowlist model: block EVERY app / website except the user's picks.
+        store.shield.applications = nil
+        store.shield.webDomains = nil
+        store.shield.applicationCategories = .all(except: allowedApps)
+        store.shield.webDomainCategories = .all(except: allowedWebs)
     }
 
-    private static func chunk<T>(_ items: [T]) -> [[T]] {
-        guard !items.isEmpty else { return [] }
-        let size = SharedScreenTime.maxTokensPerStore
-        return stride(from: 0, to: items.count, by: size).map {
-            Array(items[$0..<min($0 + size, items.count)])
+    /// Clear the primary store and every legacy shard store. Clearing a store
+    /// that was never written is a no-op, and sweeping all of them guarantees
+    /// no shield orphaned by an older build stays active.
+    public static func clearAll() {
+        for store in allStores() {
+            store.shield.applications = nil
+            store.shield.applicationCategories = nil
+            store.shield.webDomains = nil
+            store.shield.webDomainCategories = nil
         }
     }
 }
