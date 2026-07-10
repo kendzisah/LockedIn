@@ -171,6 +171,49 @@ public final class SubscriptionState {
         return subscribed
     }
 
+    // MARK: - Custom paywall support
+
+    /// Purchase a specific package (used by the custom `HUDPaywallScreen`).
+    /// Reports success / user-cancel / failure so the paywall only surfaces an
+    /// error banner for genuine failures. Entitlement-transition analytics
+    /// (Trial/Converted/Expired) are emitted by the `customerInfoStream`
+    /// listener; the paywall fires `"Subscription Started"` with its source.
+    @discardableResult
+    public func purchase(package: Package) async -> SubscriptionService.PurchaseOutcome {
+        let outcome = await SubscriptionService.shared.purchaseOutcome(package: package)
+        if outcome == .subscribed {
+            isSubscribed = true
+            if let info = await SubscriptionService.shared.customerInfo() {
+                currentEntitlement = info.entitlements.active[SubscriptionService.entitlementID]
+            }
+        }
+        return outcome
+    }
+
+    /// Trial / introductory-offer eligibility keyed by product identifier.
+    /// `true` only when the App Store reports the account as `.eligible` — so
+    /// the paywall shows "free trial" copy solely to users who can actually get
+    /// it (returning subscribers see the standard price).
+    public func introEligibility(productIdentifiers ids: [String]) async -> [String: Bool] {
+        guard !ids.isEmpty else { return [:] }
+        let result = await Purchases.shared.checkTrialOrIntroDiscountEligibility(productIdentifiers: ids)
+        return result.mapValues { $0.status == .eligible }
+    }
+
+    /// Present Apple's native offer-code redemption sheet. There is no public
+    /// API to pre-fill a typed code, so the App Store collects it; a redeemed
+    /// entitlement flows back through the `customerInfoStream` listener, which
+    /// flips `isSubscribed` and dismisses the paywall.
+    public func presentOfferCodeRedemption() {
+        Purchases.shared.presentCodeRedemptionSheet()
+    }
+
+    /// Marketing badge configured on the current Offering's dashboard metadata
+    /// (e.g. `"60% Off Sale"`). Optional — computed savings are used when absent.
+    public var offeringBadge: String? {
+        offerings?.current?.metadata["badge"] as? String
+    }
+
     // MARK: - Customer-info listener
 
     private func attachListener() {

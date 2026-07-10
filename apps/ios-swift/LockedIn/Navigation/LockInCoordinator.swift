@@ -4,7 +4,7 @@
 //
 //  Coordinates the LockIn tab interaction:
 //   1. Tap the raised center "Lock In" tab.
-//   2. If the user is NOT subscribed → present `PaywallOfferScreen` (modal).
+//   2. If the user is NOT subscribed → present `HUDPaywallScreen` (hard gate).
 //      On subscribe, fall through to step 3.
 //   3. Present `DurationPickerSheet` (modal).
 //   4. On confirm, call `LockModeService.beginSession(durationMinutes:)`,

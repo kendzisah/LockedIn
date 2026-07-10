@@ -219,8 +219,14 @@ public struct MainNavigator: View {
         .fullScreenCover(item: $lockIn.activeModal) { modal in
             switch modal {
             case .paywallOffer:
-                PaywallOfferScreen(dailyMinutes: onboarding.dailyMinutes)
-                    .environment(subscription)
+                // Hard gate before a paid Lock-In. On success, proceed into the
+                // duration picker (swaps this cover's content).
+                HUDPaywallScreen(
+                    context: .lockIn,
+                    isDismissable: false,
+                    onSubscribed: { lockIn.activeModal = .durationPicker }
+                )
+                .environment(subscription)
             case .durationPicker:
                 DurationPickerSheet(
                     isPresented: Binding(

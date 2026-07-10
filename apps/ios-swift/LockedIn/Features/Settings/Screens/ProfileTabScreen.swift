@@ -185,8 +185,15 @@ public struct ProfileTabScreen: View {
             .environment(auth)
         }
         .fullScreenCover(isPresented: $showPaywallOffer) {
-            PaywallOfferScreen()
-                .environment(subscription)
+            // Upgrade from Profile: dismissable (the user is browsing, not
+            // hard-gated). Onboarding/Lock-In present the same screen non-dismissable.
+            HUDPaywallScreen(
+                context: .lockIn,
+                isDismissable: true,
+                onSubscribed: { showPaywallOffer = false },
+                onDismiss: { showPaywallOffer = false }
+            )
+            .environment(subscription)
         }
         .fullScreenCover(item: Binding<AchievementDefinition?>(
             get: { detailAchievementId.flatMap { AchievementCatalog.byId[$0] } },

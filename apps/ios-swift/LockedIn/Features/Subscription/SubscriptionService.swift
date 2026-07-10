@@ -197,14 +197,26 @@ public final class SubscriptionService {
 
     // MARK: - Purchases
 
+    /// Distinguishes a user-cancelled purchase (no error UI) from a genuine
+    /// failure (surface an error) and from success.
+    public enum PurchaseOutcome: Equatable { case subscribed, cancelled, failed }
+
     /// Purchase the given package. Returns `true` if the resulting customer
     /// info has the `Inner_Circle` entitlement active.
     @discardableResult
     public func purchase(package: Package) async -> Bool {
+        await purchaseOutcome(package: package) == .subscribed
+    }
+
+    /// Purchase the given package, reporting whether the user cancelled vs a
+    /// real error occurred — used by the custom paywall to avoid flashing an
+    /// error banner when the user simply backs out of the App Store sheet.
+    @discardableResult
+    public func purchaseOutcome(package: Package) async -> PurchaseOutcome {
         do {
             let result = try await Purchases.shared.purchase(package: package)
-            if result.userCancelled { return false }
-            return Self.hasEntitlement(in: result.customerInfo)
+            if result.userCancelled { return .cancelled }
+            return Self.hasEntitlement(in: result.customerInfo) ? .subscribed : .failed
         } catch {
             let nsError = error as NSError
             AnalyticsService.shared.captureException(error, properties: [
@@ -221,7 +233,7 @@ public final class SubscriptionService {
                 "package_identifier": package.identifier,
                 "product_identifier": package.storeProduct.productIdentifier,
             ])
-            return false
+            return .failed
         }
     }
 

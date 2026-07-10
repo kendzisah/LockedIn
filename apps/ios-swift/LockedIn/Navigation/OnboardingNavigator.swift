@@ -9,7 +9,7 @@
 //  Notes on cross-feature routes:
 //   - `OnboardingAuth` mode `signup` → renders `Features/Auth/Screens/SignUpScreen`.
 //   - `OnboardingAuth` mode `signin` → renders `Features/Auth/Screens/SignInScreen`.
-//   - `Paywall` → renders `Features/Subscription/Screens/PaywallScreen`.
+//   - `Paywall` → renders `Features/Subscription/Screens/HUDPaywallScreen` (hard gate).
 //
 
 import SwiftUI
@@ -206,12 +206,15 @@ public struct OnboardingNavigator: View {
         case .socialProof:
             SocialProofScreen(onContinue: { advance(from: .socialProof) })
         case .paywall:
-            PaywallScreen(
-                scheduledSessionTime: onboarding.scheduledSessionTime,
-                onComplete: { subscribed in
+            // Hard gate: the custom paywall is non-dismissable and onboarding
+            // only completes once the user is entitled (purchase or restore).
+            HUDPaywallScreen(
+                context: .onboarding,
+                isDismissable: false,
+                onSubscribed: {
                     AnalyticsService.shared.track(
                         OnboardingAnalytics.completed,
-                        properties: ["subscribed": subscribed]
+                        properties: ["subscribed": true]
                     )
                     onboarding.completeOnboarding()
                 }
