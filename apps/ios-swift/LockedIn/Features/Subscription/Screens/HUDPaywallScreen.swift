@@ -210,7 +210,7 @@ public struct HUDPaywallScreen: View {
                     }
                 }
 
-                Text("LOCK∞IN")
+                Text("LOCKED IN")
                     .font(.custom(FontFamily.display.rawValue, size: 20))
                     .tracking(4)
                     .foregroundColor(SystemTokens.textPrimary)

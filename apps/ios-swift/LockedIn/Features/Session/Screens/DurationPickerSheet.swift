@@ -316,11 +316,20 @@ public struct DurationPickerSheet: View {
             .frame(maxWidth: .infinity)
             .fixedSize(horizontal: false, vertical: true)
 
-            // START BLOCK CTA
+            // START BLOCK CTA. Enforce the iOS DeviceActivity 15-min minimum
+            // (same `ScheduledSession.minWindowMinutes`): shorter intervals get
+            // clamped to ~16 min for the OS un-shield backstop, so a killed app
+            // wouldn't un-block a sub-15-min session at its real end.
             let totalMinutes = customHours * 60 + customMinutes
-            let disabled = totalMinutes <= 0
+            let belowMinimum = totalMinutes < ScheduledSession.minWindowMinutes
+            if totalMinutes > 0 && belowMinimum {
+                Text("Minimum \(ScheduledSession.minWindowMinutes) minutes")
+                    .font(.custom(FontFamily.body.rawValue, size: 11))
+                    .foregroundColor(SystemTokens.gold)
+                    .frame(maxWidth: .infinity)
+            }
             Button {
-                guard !disabled else { return }
+                guard !belowMinimum else { return }
                 HapticsService.shared.medium()
                 isPresented = false
                 onConfirm(totalMinutes, hardcore)
@@ -336,10 +345,10 @@ public struct DurationPickerSheet: View {
                         Rectangle()
                             .stroke(Color(.sRGB, red: 58/255, green: 102/255, blue: 255/255, opacity: 0.45), lineWidth: 1)
                     )
-                    .opacity(disabled ? 0.35 : 1.0)
+                    .opacity(belowMinimum ? 0.35 : 1.0)
             }
             .buttonStyle(PressOpacityButtonStyle())
-            .disabled(disabled)
+            .disabled(belowMinimum)
 
             // Back
             Button {
