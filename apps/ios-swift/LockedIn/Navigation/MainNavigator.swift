@@ -92,18 +92,15 @@ public struct MainNavigator: View {
             // once; only the network push is async.
             missions.onMissionCompleted = { [weak home] _ in
                 let streak = home?.consecutiveStreak ?? 0
-                let stats = GuildService.shared.getMonthlyStats()
-                let nextMissions = stats.missions_done + 1
-                GuildService.shared.updateMonthlyStats(
-                    missionsDone: nextMissions,
-                    streakDays: streak
-                )
-                let focus = stats.focus_minutes
+                // Atomic cross-process increment so a concurrent focus credit
+                // (from a session finishing, or the DAM extension) can't lose this
+                // mission bump.
+                let updated = GuildService.shared.creditMissionCompletion(streakDays: streak)
                 Task {
                     _ = await GuildService.shared.completeMissionServerSide(
-                        focusMinutes: focus,
-                        missionsDone: nextMissions,
-                        streakDays: streak
+                        focusMinutes: updated.focus_minutes,
+                        missionsDone: updated.missions_done,
+                        streakDays: updated.streak_days
                     )
                 }
             }
@@ -148,7 +145,13 @@ public struct MainNavigator: View {
                 if actualMinutes > 0, let occ = scheduledOccurrenceId {
                     scheduledSessions.markCredited(occ)
                 }
-                handleSessionFinish(actualMinutes: actualMinutes, wasNatural: wasNatural)
+                // Forward the occurrence id so the guild credit is deduped against
+                // the DAM extension's background push (atomic single-credit).
+                handleSessionFinish(
+                    actualMinutes: actualMinutes,
+                    wasNatural: wasNatural,
+                    scheduledOccurrenceId: scheduledOccurrenceId
+                )
             }
 
             // Schedule rolling notifications based on current streak.
@@ -405,7 +408,20 @@ public struct MainNavigator: View {
 
     // MARK: - Session completion fan-out
 
-    private func handleSessionFinish(actualMinutes: Int, wasNatural: Bool, showCompletionUI: Bool = true, occurredAt: Date = Date()) {
+    /// Fire-and-forget push of the current cumulative monthly guild totals to the
+    /// server. Idempotent (server upserts per-field `GREATEST`), so re-flushing the
+    /// same totals never regresses or double-counts.
+    private func pushGuildScores(_ stats: GuildService.MonthlyGuildStats) {
+        Task {
+            _ = await GuildService.shared.completeMissionServerSide(
+                focusMinutes: stats.focus_minutes,
+                missionsDone: stats.missions_done,
+                streakDays: stats.streak_days
+            )
+        }
+    }
+
+    private func handleSessionFinish(actualMinutes: Int, wasNatural: Bool, showCompletionUI: Bool = true, occurredAt: Date = Date(), scheduledOccurrenceId: String? = nil) {
         // 0 minutes means the user bailed before the 60s threshold.
         guard actualMinutes > 0 else {
             if showCompletionUI { lockIn.dismissAll() }
@@ -523,24 +539,29 @@ public struct MainNavigator: View {
         }
 
         // Push the focus minutes from this session to every guild. Missions
-        // own their own `missions_done` increments via the
-        // `onMissionCompleted` hook, so forward the cached monthly count
-        // unchanged here — re-adding today's `completedCount` would
-        // double-count (and any missions auto-completed by this session have
-        // already bumped the cache before this Task runs).
-        Task {
-            let stats = GuildService.shared.getMonthlyStats()
-            let nextFocus = stats.focus_minutes + actualMinutes
-            let nextStreak = home.consecutiveStreak
-            GuildService.shared.updateMonthlyStats(
-                focusMinutes: nextFocus,
-                streakDays: nextStreak
-            )
-            _ = await GuildService.shared.completeMissionServerSide(
-                focusMinutes: nextFocus,
-                missionsDone: stats.missions_done,
-                streakDays: nextStreak
-            )
+        // own their own `missions_done` increments via the `onMissionCompleted`
+        // hook, so `creditFocusMinutes` only bumps focus + streak.
+        //
+        // `scheduledOccurrenceId` (set only for a scheduled occurrence credited
+        // in-app or via the drain) makes the cache increment single-credit: if the
+        // DAM extension already credited this occurrence's guild points in the
+        // background, `creditFocusMinutes` returns nil and we skip the push — the
+        // increment is atomic + cross-process, so it can't double-add or lose the
+        // update against the extension. Manual sessions pass nil and always credit.
+        if let updated = GuildService.shared.creditFocusMinutes(
+            actualMinutes,
+            streakDays: home.consecutiveStreak,
+            occurrenceId: scheduledOccurrenceId
+        ) {
+            pushGuildScores(updated)
+        } else {
+            // This scheduled occurrence was already guild-credited to the cache by
+            // the DAM extension — but the extension's own push may have failed
+            // (transient network / invalidated token) while still marking it. Its
+            // minutes are in the cache, so re-flush the cumulative totals here to
+            // guarantee delivery (idempotent via server GREATEST) rather than
+            // relying on some future session to flush them.
+            pushGuildScores(GuildService.shared.getMonthlyStats())
         }
 
         // Re-sync the daily notification set with the fresh goal-met state so
@@ -655,14 +676,19 @@ public struct MainNavigator: View {
     /// the store dedupes by occurrence id and single-flights the drain.
     private func drainScheduledCompletions() {
         guard scheduledSessions.isHydrated else { return }
-        let credited = scheduledSessions.drainPendingCompletions { minutes, endedAtMs in
+        let credited = scheduledSessions.drainPendingCompletions { occurrenceId, minutes, endedAtMs in
             // Attribute the credit to when the session actually ran, not now.
             let occurredAt = Date(timeIntervalSince1970: endedAtMs / 1000)
+            // Pass the occurrence id so the guild credit is single-credited against
+            // the DAM extension's background push: `creditFocusMinutes` atomically
+            // skips the guild push if the extension already counted it, while
+            // EXP/streak still credit here.
             handleSessionFinish(
                 actualMinutes: minutes,
                 wasNatural: true,
                 showCompletionUI: false,
-                occurredAt: occurredAt
+                occurredAt: occurredAt,
+                scheduledOccurrenceId: occurrenceId
             )
         }
         if credited > 0 {

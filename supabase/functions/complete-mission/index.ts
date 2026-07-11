@@ -63,9 +63,16 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Bounds validation — reject negative, NaN, Infinity, or unreasonable values
+    // Bounds validation — reject negative, NaN, Infinity, or unreasonable values.
+    //
+    // `focusMinutes` is the user's CUMULATIVE focus for the calendar month (not a
+    // single session), so the ceiling must be a monthly max, not a daily one. A
+    // 1440 (24h) cap silently 400'd every guild push once an active user passed
+    // 24h of monthly focus, freezing their score for the rest of the month.
+    // 44640 = 31 days × 1440 min — the largest a month can hold.
+    const MAX_MONTHLY_FOCUS_MINUTES = 44640;
     if (
-      !Number.isFinite(focusMinutes) || focusMinutes < 0 || focusMinutes > 1440 ||
+      !Number.isFinite(focusMinutes) || focusMinutes < 0 || focusMinutes > MAX_MONTHLY_FOCUS_MINUTES ||
       !Number.isFinite(missionsDone) || missionsDone < 0 || missionsDone > 50 ||
       !Number.isFinite(streakDays) || streakDays < 0 || streakDays > 3650
     ) {

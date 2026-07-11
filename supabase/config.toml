@@ -6,3 +6,16 @@ port = 54322
 
 [studio]
 port = 54323
+
+[auth]
+# Refresh-token rotation is DISABLED so the DeviceActivityMonitor extension can
+# mint a fresh access token from the mirrored refresh token (to credit guild
+# points when a scheduled Lock-In completes in the background) WITHOUT
+# invalidating the app's session — with rotation on, the extension's refresh
+# would rotate the token and log the app out on its next refresh. The refresh
+# token stays stable, so both processes can refresh independently.
+#
+# NOTE: this file is the local-dev config; the REMOTE project must have the same
+# setting toggled OFF under Authentication → Sessions in the Supabase dashboard
+# (Authentication settings) for the production behaviour to match.
+enable_refresh_token_rotation = false

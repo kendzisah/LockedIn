@@ -111,11 +111,31 @@ public final class AuthState {
         authChangesTask?.cancel()
         authChangesTask = Task { [weak self] in
             for await (_, session) in LockedInSupabase.shared.client.auth.authStateChanges {
+                // Mirror the session to the App Group on EVERY change — including
+                // silent SDK auto-refreshes (`.tokenRefreshed`) and `.initialSession`
+                // — so the DAM extension always has a current token to credit guild
+                // points in the background. Hooking only the `AuthService` methods
+                // would miss those and let the mirror go stale.
+                Self.mirrorSession(session)
                 await MainActor.run {
                     self?.user = session?.user
                 }
             }
         }
+    }
+
+    /// Write (or clear) the App-Group session mirror the DAM extension reads.
+    /// `nonisolated static` so it runs off the main actor inside the listener loop.
+    private nonisolated static func mirrorSession(_ session: Session?) {
+        guard let session else {
+            SupabaseAuthMirror.clearSession()
+            return
+        }
+        SupabaseAuthMirror.writeSession(.init(
+            accessToken: session.accessToken,
+            refreshToken: session.refreshToken,
+            expiresAtMs: session.expiresAt * 1000
+        ))
     }
 
     // MARK: - Auth operations (UI bindings)

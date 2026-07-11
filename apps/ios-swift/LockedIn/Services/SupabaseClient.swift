@@ -23,5 +23,11 @@ public final class LockedInSupabase {
         }
 
         self.client = SupabaseClient(supabaseURL: url, supabaseKey: key)
+
+        // Mirror the public client config into the App Group so the
+        // DeviceActivityMonitor extension can make authenticated Supabase calls
+        // (crediting guild points for background-completed scheduled sessions)
+        // without linking the SDK. Both values are already baked into the binary.
+        SupabaseAuthMirror.writeConfig(url: urlString, anonKey: key)
     }
 }

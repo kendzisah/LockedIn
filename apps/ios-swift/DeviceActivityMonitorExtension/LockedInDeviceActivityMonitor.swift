@@ -68,13 +68,22 @@ final class LockedInDeviceActivityMonitor: DeviceActivityMonitor {
 
         logEvent(phase: "end", activity: name, outcome: "record")
         // A scheduled block ended. Record it for the app to credit on next open.
-        recordScheduledCompletion(activityName: name)
+        let record = recordScheduledCompletion(activityName: name)
 
         // Clear the shield UNLESS a manual session is still running (its
         // fail-safe timestamp is in the future) — don't un-block apps out from
         // under an in-progress manual lock-in. Never wipe the manual timestamp.
         if !manualSessionActive() {
             clearShield(removeManualTimestamp: false)
+        }
+
+        // Best-effort guild-points credit — STRICTLY AFTER the un-shield above so
+        // the network can never delay un-blocking. Bounded by a hard timeout; any
+        // failure leaves the record queued for the app to credit on next open.
+        // Guarantees scheduled sessions earn guild points even if the user never
+        // reopens the app.
+        if let record {
+            GuildBackgroundStore.creditScheduledSessionInBackground(record: record)
         }
     }
 
@@ -174,14 +183,21 @@ final class LockedInDeviceActivityMonitor: DeviceActivityMonitor {
 
     /// Append a `ScheduledCompletionRecord` to the App-Group queue. The app
     /// drains + credits it (EXP/missions) on next open, deduped by occurrenceId.
-    private func recordScheduledCompletion(activityName: String) {
+    ///
+    /// Returns the record for the just-ended occurrence (even when it was already
+    /// present in the queue, e.g. a duplicate `intervalDidEnd`), so the caller can
+    /// attempt the background guild push — that push has its own dedup via the
+    /// guild-credited set, so a duplicate call is harmless. Returns nil only when
+    /// the activity's metadata can't be recovered.
+    @discardableResult
+    private func recordScheduledCompletion(activityName: String) -> ScheduledCompletionRecord? {
         let shared = SharedScreenTime.sharedDefaults()
 
         // Recover session id + duration for this activity from the map the app wrote.
         guard let mapData = shared?.data(forKey: SharedScreenTime.Keys.scheduledActivityMap),
               let map = try? JSONDecoder().decode([String: ScheduledActivityMeta].self, from: mapData),
               let meta = map[activityName]
-        else { return }
+        else { return nil }
 
         let now = Date()
         let record = ScheduledCompletionRecord(
@@ -196,8 +212,10 @@ final class LockedInDeviceActivityMonitor: DeviceActivityMonitor {
            let existing = try? JSONDecoder().decode([ScheduledCompletionRecord].self, from: data) {
             queue = existing
         }
-        // Dedupe within the queue (defensive against duplicate intervalDidEnd).
-        guard !queue.contains(where: { $0.occurrenceId == record.occurrenceId }) else { return }
+        // Dedupe within the queue (defensive against duplicate intervalDidEnd) —
+        // but still return the record so the caller can (idempotently) push guild
+        // points for this occurrence.
+        guard !queue.contains(where: { $0.occurrenceId == record.occurrenceId }) else { return record }
         queue.append(record)
         // Bound the queue if the app is never opened.
         if queue.count > 50 { queue = Array(queue.suffix(50)) }
@@ -205,5 +223,6 @@ final class LockedInDeviceActivityMonitor: DeviceActivityMonitor {
         if let encoded = try? JSONEncoder().encode(queue) {
             shared?.set(encoded, forKey: SharedScreenTime.Keys.pendingScheduledCompletions)
         }
+        return record
     }
 }

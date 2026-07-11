@@ -161,12 +161,15 @@ public final class ScheduledSessionsStore {
     // MARK: - Deferred credit (drain)
 
     /// Drain the App-Group completion queue the extension appended to. Calls
-    /// `credit(durationMinutes, endedAtMs)` exactly once per new occurrence id,
-    /// then clears the queue. `endedAtMs` lets the caller attribute the credit to
-    /// the real session time (time-of-day missions, day attribution) rather than
-    /// the time the app happened to open. Returns the number credited.
+    /// `credit(occurrenceId, durationMinutes, endedAtMs)` exactly once per new
+    /// occurrence id, then clears the queue. `occurrenceId` lets the caller check
+    /// whether the DAM extension already pushed this occurrence's GUILD points in
+    /// the background (and skip re-pushing them). `endedAtMs` lets the caller
+    /// attribute the credit to the real session time (time-of-day missions, day
+    /// attribution) rather than the time the app happened to open. Returns the
+    /// number credited.
     @discardableResult
-    public func drainPendingCompletions(credit: (_ minutes: Int, _ endedAtMs: Double) -> Void) -> Int {
+    public func drainPendingCompletions(credit: (_ occurrenceId: String, _ minutes: Int, _ endedAtMs: Double) -> Void) -> Int {
         guard !isDraining else { return 0 }
         isDraining = true
         defer { isDraining = false }
@@ -185,7 +188,7 @@ public final class ScheduledSessionsStore {
             if credited.contains(r.occurrenceId) { continue }
             credited.insert(r.occurrenceId)
             guard r.durationMinutes > 0 else { continue }
-            credit(r.durationMinutes, r.endedAtMs)
+            credit(r.occurrenceId, r.durationMinutes, r.endedAtMs)
             creditedCount += 1
             firedOneOffSessionIds.insert(r.sessionId)
         }

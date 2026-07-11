@@ -111,19 +111,11 @@ public final class GuildService {
         public let joined: Bool
     }
 
-    public struct MonthlyGuildStats: Codable, Equatable, Sendable {
-        public var period_key: String
-        public var focus_minutes: Int
-        public var missions_done: Int
-        public var streak_days: Int
-
-        public init(period_key: String, focus_minutes: Int = 0, missions_done: Int = 0, streak_days: Int = 0) {
-            self.period_key = period_key
-            self.focus_minutes = focus_minutes
-            self.missions_done = missions_done
-            self.streak_days = streak_days
-        }
-    }
+    /// Canonical model lives in `GuildBackgroundStore` (App-Group shared, so the
+    /// DAM extension can read/write the same cache when crediting a scheduled
+    /// session in the background). Aliased here so existing call sites and the
+    /// `@lockedin/guild_month_stats` cache are unchanged.
+    public typealias MonthlyGuildStats = GuildBackgroundStore.MonthlyGuildStats
 
     public struct CompleteMissionOutcome: Sendable {
         public let success: Bool
@@ -148,12 +140,7 @@ public final class GuildService {
     /// (Stored in the `guild_scores.week_key` column — the column name is
     /// legacy; the value is now a month key, not an ISO week.)
     public static func currentMonthKey(now: Date = Date()) -> String {
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "UTC")!
-        let components = cal.dateComponents([.year, .month], from: now)
-        let year = components.year ?? 1970
-        let month = components.month ?? 1
-        return String(format: "%04d-%02d", year, month)
+        GuildBackgroundStore.currentMonthKey(now: now)
     }
 
     // MARK: - Active-guild flag sync
@@ -167,6 +154,10 @@ public final class GuildService {
             let guilds = try await getMyGuildsThrowing()
             let hasGuildNow = !guilds.isEmpty
             Defaults.setString(hasGuildNow ? "true" : "false", Self.hasActiveGuildKey)
+            // Mirror to the App Group so the DAM extension can skip the background
+            // guild-credit network call for guild-less users (the common anonymous
+            // case) instead of burning its tight callback budget on a no-op push.
+            GuildBackgroundStore.setHasActiveGuild(hasGuildNow)
             return (hadGuildBefore, hasGuildNow)
         } catch {
             print("[GuildService] syncHasActiveGuildFlag failed:", error)
@@ -556,35 +547,61 @@ public final class GuildService {
     // MARK: - Monthly stats (local-only, AsyncStorage parity)
 
     public func getMonthlyStats() -> MonthlyGuildStats {
-        let currentMonth = Self.currentMonthKey()
-        guard let raw = Defaults.codable(MonthlyGuildStats.self, Self.monthStatsKey) else {
-            let initial = MonthlyGuildStats(period_key: currentMonth)
-            Defaults.setCodable(initial, Self.monthStatsKey)
-            return initial
-        }
-        if raw.period_key != currentMonth {
-            let reset = MonthlyGuildStats(period_key: currentMonth)
-            Defaults.setCodable(reset, Self.monthStatsKey)
-            return reset
-        }
-        return raw
+        migrateMonthStatsCacheIfNeeded()
+        return GuildBackgroundStore.getMonthlyStats()
     }
 
     /// Partial update mirror — only the provided fields override the cached
-    /// snapshot. Use `nil` to keep the existing value.
+    /// snapshot. Use `nil` to keep the existing value. Delegates to the App-Group
+    /// shared store so a background push from the DAM extension sees the same cache.
     public func updateMonthlyStats(
         focusMinutes: Int? = nil,
         missionsDone: Int? = nil,
         streakDays: Int? = nil
     ) {
-        let existing = getMonthlyStats()
-        let next = MonthlyGuildStats(
-            period_key: Self.currentMonthKey(),
-            focus_minutes: focusMinutes ?? existing.focus_minutes,
-            missions_done: missionsDone ?? existing.missions_done,
-            streak_days: streakDays ?? existing.streak_days
+        migrateMonthStatsCacheIfNeeded()
+        GuildBackgroundStore.updateMonthlyStats(
+            focusMinutes: focusMinutes,
+            missionsDone: missionsDone,
+            streakDays: streakDays
         )
-        Defaults.setCodable(next, Self.monthStatsKey)
+    }
+
+    /// Atomically add focus minutes to this month's guild cache (cross-process
+    /// safe) and return the new cumulative stats to push to the server, or `nil`
+    /// when `occurrenceId` was already guild-credited (by the DAM extension's
+    /// background push or another drain) so the caller skips a duplicate push.
+    /// `occurrenceId` is `nil` for manual sessions (each always credits).
+    public func creditFocusMinutes(_ minutes: Int, streakDays: Int, occurrenceId: String? = nil) -> MonthlyGuildStats? {
+        migrateMonthStatsCacheIfNeeded()
+        return GuildBackgroundStore.mutateStats(occurrenceId: occurrenceId) { stats in
+            stats.focus_minutes += minutes
+            // Monotonic-max, mirroring the server's per-field `GREATEST`. An
+            // absolute overwrite could regress the cache (e.g. `home.consecutiveStreak`
+            // is still 0 before HomeState hydrates), which the next background push
+            // would then send as a lower streak.
+            stats.streak_days = max(stats.streak_days, streakDays)
+        }
+    }
+
+    /// Atomically increment this month's completed-mission count (cross-process
+    /// safe) and return the new cumulative stats to push.
+    public func creditMissionCompletion(streakDays: Int) -> MonthlyGuildStats {
+        migrateMonthStatsCacheIfNeeded()
+        return GuildBackgroundStore.mutateStats { stats in
+            stats.missions_done += 1
+            stats.streak_days = max(stats.streak_days, streakDays)
+        } ?? getMonthlyStats()
+    }
+
+    /// One-time migration of the monthly-stats cache from standard `UserDefaults`
+    /// (where the app used to keep it) into the App Group. Cheap after the first
+    /// run (guarded by a flag inside `GuildBackgroundStore`). Runs before any app
+    /// read/write so an existing user's accrued month isn't seen as 0 by the
+    /// App-Group readers (the app itself + the extension).
+    private func migrateMonthStatsCacheIfNeeded() {
+        let legacy = Defaults.codable(MonthlyGuildStats.self, Self.monthStatsKey, scope: .standard)
+        GuildBackgroundStore.migrateFromStandard(legacy)
     }
 
     // MARK: - completeMissionServerSide (edge function)
