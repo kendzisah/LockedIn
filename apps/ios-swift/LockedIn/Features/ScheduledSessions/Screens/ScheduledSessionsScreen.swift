@@ -34,8 +34,12 @@ struct ScheduledSessionsScreen: View {
     ///   • Allowed apps — did the user pick an allowlist? (0 ⇒ shield no-ops, device NOT locked down)
     ///   • Registered   — did `startMonitoring` register the OS schedule? (0 ⇒ registration failed)
     ///   • Extension last ran — did `intervalDidStart`/`End` ever fire? (never ⇒ OS isn't waking it)
+    // DEBUG-only on-device diagnostics for the auto-block plumbing — never shipped
+    // in Release (it's a developer aid, not consumer UI).
+    #if DEBUG
     @State private var diag = ScheduledLockDiagnostics.empty
     @State private var showDiagnostics = false
+    #endif
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -54,7 +58,9 @@ struct ScheduledSessionsScreen: View {
                             }
                         }
 
+                        #if DEBUG
                         diagnosticsCard
+                        #endif
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
@@ -63,13 +69,21 @@ struct ScheduledSessionsScreen: View {
                 .scrollIndicators(.hidden)
             }
         }
-        .sheet(item: $editorTarget, onDismiss: { diag = ScheduledLockDiagnostics.capture() }) { target in
+        .sheet(item: $editorTarget, onDismiss: {
+            #if DEBUG
+            diag = ScheduledLockDiagnostics.capture()
+            #endif
+        }) { target in
             ScheduledSessionEditorSheet(
                 store: store,
                 existing: target.session
             )
         }
-        .onAppear { diag = ScheduledLockDiagnostics.capture() }
+        .onAppear {
+            #if DEBUG
+            diag = ScheduledLockDiagnostics.capture()
+            #endif
+        }
     }
 
     // MARK: - Header
@@ -180,8 +194,9 @@ struct ScheduledSessionsScreen: View {
         }
     }
 
-    // MARK: - Diagnostics (auto-block health)
+    // MARK: - Diagnostics (auto-block health) — DEBUG only
 
+    #if DEBUG
     private var diagnosticsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: { withAnimation { showDiagnostics.toggle() } }) {
@@ -269,8 +284,10 @@ struct ScheduledSessionsScreen: View {
                 .truncationMode(.middle)
         }
     }
+    #endif
 }
 
+#if DEBUG
 /// Snapshot of the scheduled auto-block plumbing, read from the shared App Group
 /// suite + `ScreenTimeModule`. Pure reads — safe to call on the main actor.
 private struct ScheduledLockDiagnostics {
@@ -356,3 +373,4 @@ private struct ScheduledLockDiagnostics {
         return name.isEmpty ? fmt.string(from: date) : "\(fmt.string(from: date)) · \(name)"
     }
 }
+#endif
