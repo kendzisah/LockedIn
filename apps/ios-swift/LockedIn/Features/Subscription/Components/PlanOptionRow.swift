@@ -51,22 +51,41 @@ struct PlanOptionRow: View {
 
                 Spacer(minLength: 8)
 
-                if plan.hasPerWeek {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(plan.perWeekText)
-                            .font(.custom(FontFamily.headingBold.rawValue, size: 18))
-                            .foregroundColor(SystemTokens.textPrimary)
-                        Text("per week")
-                            .font(.custom(FontFamily.body.rawValue, size: 10))
-                            .foregroundColor(SystemTokens.textMuted)
-                    }
-                } else {
-                    // Non-recurring (e.g. lifetime): show the flat price.
-                    Text(plan.perWeekText)
-                        .font(.custom(FontFamily.headingBold.rawValue, size: 18))
-                        .foregroundColor(SystemTokens.textPrimary)
-                }
+                priceColumn
             }
+        }
+    }
+
+    /// Trailing price. A free-trial plan headlines "FREE" (the trial period costs
+    /// $0) and strikes through the plan's own recurring price — a factual, not
+    /// fabricated, comparison (the exact "then $X / period" is disclosed under the
+    /// CTA). Non-trial plans show the normal per-week (or flat) price.
+    @ViewBuilder
+    private var priceColumn: some View {
+        if plan.intro?.isFreeTrial == true {
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("FREE")
+                    .font(.custom(FontFamily.headingBold.rawValue, size: 18))
+                    .foregroundColor(SystemTokens.green)
+                Text(plan.hasPerWeek ? "\(plan.perWeekText)/wk" : plan.perWeekText)
+                    .font(.custom(FontFamily.body.rawValue, size: 11))
+                    .foregroundColor(SystemTokens.textMuted)
+                    .strikethrough(true, color: SystemTokens.textMuted)
+            }
+        } else if plan.hasPerWeek {
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(plan.perWeekText)
+                    .font(.custom(FontFamily.headingBold.rawValue, size: 18))
+                    .foregroundColor(SystemTokens.textPrimary)
+                Text("per week")
+                    .font(.custom(FontFamily.body.rawValue, size: 10))
+                    .foregroundColor(SystemTokens.textMuted)
+            }
+        } else {
+            // Non-recurring (e.g. lifetime): show the flat price.
+            Text(plan.perWeekText)
+                .font(.custom(FontFamily.headingBold.rawValue, size: 18))
+                .foregroundColor(SystemTokens.textPrimary)
         }
     }
 
