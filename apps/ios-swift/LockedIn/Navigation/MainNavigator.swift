@@ -154,6 +154,13 @@ public struct MainNavigator: View {
                 )
             }
 
+            // Lets a promoted scheduled session tell, on break-end, whether its
+            // fixed OS window is still open — so it re-blocks only within the
+            // window and never strands the shield past it.
+            activeSession.isScheduledWindowActive = { [weak scheduledSessions] in
+                scheduledSessions?.currentActiveOccurrence() != nil
+            }
+
             // Schedule rolling notifications based on current streak.
             NotificationService.shared.refreshScheduleWithStoredStreak()
 

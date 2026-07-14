@@ -35,6 +35,12 @@ public final class ActiveSessionStore {
     /// `handleSessionFinish` credit fan-out (+ SessionComplete celebration).
     public var onFinish: ((_ actualMinutes: Int, _ wasNatural: Bool, _ scheduledOccurrenceId: String?) -> Void)?
 
+    /// Set by `MainNavigator` — reports whether this scheduled session's fixed OS
+    /// window is still active (`ScheduledSessionsStore.currentActiveOccurrence()`).
+    /// Used on a scheduled break-end so we don't re-block apps after the window has
+    /// already closed (a break that ran past the boundary). Nil for manual sessions.
+    public var isScheduledWindowActive: (() -> Bool)?
+
     public init() {}
 
     // MARK: - Derived
@@ -100,9 +106,15 @@ public final class ActiveSessionStore {
         self.streak = streak
         self.scheduledOccurrenceId = scheduledOccurrenceId
 
+        // A scheduled session is hard-bounded by its fixed OS window end (the
+        // resume timestamp is the window end) so a break can't extend it past the
+        // window; manual sessions are unbounded (`hardEnd == nil`).
+        let hardEnd: Date? = (scheduledOccurrenceId != nil) ? resumeEndTimestamp : nil
+
         let e = SessionEngine(
             durationMinutes: durationMinutes,
-            resumeEndTimestamp: resumeEndTimestamp
+            resumeEndTimestamp: resumeEndTimestamp,
+            hardEnd: hardEnd
         ) { [weak self] status in
             Task { @MainActor in self?.complete(status: status) }
         }
@@ -118,9 +130,14 @@ public final class ActiveSessionStore {
             // Fresh start → apply the shield + persist the active block.
             Task { _ = await LockModeService.shared.beginSession(durationMinutes: durationMinutes) }
         }
-        let endsAt = resumeEndTimestamp
-            ?? Date().addingTimeInterval(TimeInterval(durationMinutes * 60))
-        NotificationService.shared.scheduleExecutionBlockDone(endsAt: endsAt)
+        // Manual sessions get their completion notification here. Scheduled ones
+        // are covered by the proactive per-occurrence "Session Complete" notif
+        // (`resyncScheduledSessionNotifications`), so skip it to avoid a duplicate.
+        if scheduledOccurrenceId == nil {
+            let endsAt = resumeEndTimestamp
+                ?? Date().addingTimeInterval(TimeInterval(durationMinutes * 60))
+            NotificationService.shared.scheduleExecutionBlockDone(endsAt: endsAt)
+        }
     }
 
     /// Re-sync the wall-clock timer after a foreground transition.
@@ -158,10 +175,37 @@ public final class ActiveSessionStore {
     /// for the remaining focus time.
     private func handleBreakEnded(focusRemaining: Int) {
         HapticsService.shared.rigid()
-        Task { _ = await LockModeService.shared.beginSession(durationSeconds: focusRemaining) }
-        NotificationService.shared.scheduleExecutionBlockDone(
-            endsAt: Date().addingTimeInterval(TimeInterval(focusRemaining))
-        )
+
+        if scheduledOccurrenceId != nil {
+            // Scheduled session: the scheduled DeviceActivity monitor is the SINGLE
+            // owner of the window-end un-shield. Re-arm the shield WITHOUT
+            // `beginSession` — that would register a competing manual monitor +
+            // `sessionEndTimestamp`, which makes the scheduled `intervalDidEnd`
+            // defer (`manualSessionActive()`) and strand the shield past the window.
+            //
+            // A scheduled session is bounded by its FIXED OS window. If the window
+            // already closed (a break that ran past the boundary), the extension has
+            // already un-shielded — don't re-block; complete the session instead.
+            //
+            // Default to `true` (re-block) when the closure is unset: it's the safe
+            // side — the scheduled monitor still owns the real window-end un-shield,
+            // so a redundant re-block clears itself, whereas a wrong `false` would
+            // prematurely END a live session.
+            guard isScheduledWindowActive?() ?? true else {
+                engine?.endEarly()
+                return
+            }
+            ScreenTimeModule.shared.shieldApps()
+        } else {
+            // Manual session: re-arm the manual monitor + fail-safe timestamp, and
+            // its completion notification (scheduled sessions use the proactive
+            // per-occurrence "Session Complete" notif instead).
+            Task { _ = await LockModeService.shared.beginSession(durationSeconds: focusRemaining) }
+            NotificationService.shared.scheduleExecutionBlockDone(
+                endsAt: Date().addingTimeInterval(TimeInterval(focusRemaining))
+            )
+        }
+
         AnalyticsService.shared.track("Session Break Ended", properties: [
             "duration_minutes": durationMinutes,
             "remaining_seconds": focusRemaining,

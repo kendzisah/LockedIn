@@ -40,8 +40,28 @@ public final class ScheduledLockService {
             return false
         }
 
-        // Auth confirmed → safe to rebuild from scratch.
-        stopAllScheduled()
+        let now = Date()
+        let cal = Calendar.current
+
+        // Preserve a currently-active window's monitor — but ONLY if it's already
+        // registered. Stopping an in-progress interval makes the extension fire
+        // `intervalDidEnd` → `clearShield()` (un-blocking apps mid-session) and
+        // queues a spurious completion the app then credits, killing the session.
+        // A session created/enabled DURING its window isn't registered yet, so it
+        // must still be registered below — else it never blocks at all.
+        let alreadyRegistered: Set<String> = {
+            guard let data = SharedScreenTime.sharedDefaults()?.data(forKey: SharedScreenTime.Keys.scheduledActivityMap),
+                  let m = try? JSONDecoder().decode([String: ScheduledActivityMeta].self, from: data)
+            else { return [] }
+            return Set(m.keys)
+        }()
+        let liveSession = sessions.first { $0.enabled && $0.isValid && $0.activeWindow(now: now) != nil }
+        let liveName = liveSession.map { Self.scheduledActivityName(for: $0) }
+        let preserveLive = liveName.map { alreadyRegistered.contains($0) } ?? false
+
+        // Auth confirmed → rebuild everything, preserving only an ALREADY-registered
+        // live window so its running monitor isn't stopped/re-created mid-session.
+        stopAllScheduled(excluding: (preserveLive ? liveName : nil).map { Set([$0]) } ?? [])
 
         struct Candidate {
             let name: String
@@ -50,11 +70,10 @@ public final class ScheduledLockService {
             let when: Date
         }
 
-        let now = Date()
-        let cal = Calendar.current
         var candidates: [Candidate] = []
 
         for s in sessions where s.enabled && s.isValid {
+            if preserveLive, s.id == liveSession?.id { continue }  // leave the running monitor untouched
             if s.isOneOff {
                 guard let next = s.nextOccurrence(after: now) else { continue }
                 // Pin the one-off to the concrete weekday of its next occurrence
@@ -138,6 +157,17 @@ public final class ScheduledLockService {
             }
         }
 
+        // Keep the preserved live window's meta in the map (it was skipped above so
+        // its running monitor stays untouched) so the extension can still recover
+        // its session id + duration when its interval ends.
+        if preserveLive, let liveSession, let liveName {
+            map[liveName] = ScheduledActivityMeta(
+                sessionId: liveSession.id,
+                durationMinutes: liveSession.durationMinutes,
+                weekdays: liveSession.weekdays
+            )
+        }
+
         // Surface registration outcome for the in-app diagnostics.
         let status: String = {
             if failedCount == 0 { return "\(map.count) ok" }
@@ -185,9 +215,21 @@ public final class ScheduledLockService {
         return c
     }
 
+    /// The registered DeviceActivity name for a session — must match the names
+    /// built in `resyncAll` (`<prefix>.<id>.oneoff` / `.daily`).
+    static func scheduledActivityName(for s: ScheduledSession) -> String {
+        let suffix = s.isOneOff ? "oneoff" : "daily"
+        return "\(SharedScreenTime.scheduledActivityPrefix).\(s.id).\(suffix)"
+    }
+
     /// Stop every previously-registered scheduled activity (recovered from the
     /// persisted map). Never affects the manual `"LockedInSession"` activity.
-    public func stopAllScheduled() {
+    ///
+    /// `excluding` names are left running — used to preserve a currently-active
+    /// window's monitor, because stopping an in-progress interval makes the
+    /// extension fire `intervalDidEnd` → `clearShield()` (un-blocking apps
+    /// mid-session) and queues a spurious completion.
+    public func stopAllScheduled(excluding: Set<String> = []) {
         guard #available(iOS 16.0, *) else { return }
 
         // Stop the union of the live map AND the append-only ledger, so a
@@ -203,6 +245,7 @@ public final class ScheduledLockService {
                                          scope: .appGroup) {
             nameSet.formUnion(ledger)
         }
+        nameSet.subtract(excluding)
         guard !nameSet.isEmpty else { return }
 
         let names = nameSet.map { DeviceActivityName($0) }

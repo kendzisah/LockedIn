@@ -82,6 +82,10 @@ public final class NotificationService {
         public static let guildMonthEnd         = "lockedin.guild_month_end"
         /// Prefix for per-occurrence scheduled-session "starting now" notifications.
         public static let scheduledSessionPrefix = "lockedin.scheduled_session"
+        /// Prefix for per-occurrence scheduled-session "complete" notifications.
+        /// Shares the `scheduledSessionPrefix` root so the resync stale-sweep
+        /// (`hasPrefix(scheduledSessionPrefix)`) removes both in one pass.
+        public static let scheduledSessionEndPrefix = "lockedin.scheduled_session.end"
     }
 
     // MARK: - Authorization
@@ -151,23 +155,59 @@ public final class NotificationService {
                 content.body = "Your scheduled focus session is starting. Distractions are blocked."
                 content.sound = .default
 
+                // Completion notification at the window END, so a scheduled session
+                // that runs in the background (app never opened) still tells the user
+                // when it's done. The in-app `scheduleExecutionBlockDone` is skipped
+                // for scheduled sessions so these don't double-fire.
+                let endContent = UNMutableNotificationContent()
+                endContent.title = "Session Complete"
+                endContent.body = s.label.isEmpty
+                    ? "Your scheduled lock-in is done. Nice work."
+                    : "\(s.label) is done. Nice work."
+                endContent.sound = .default
+
                 if s.isOneOff {
                     guard let next = s.nextOccurrence() else { continue }
-                    let comps = Calendar.current.dateComponents(
+                    let startComps = Calendar.current.dateComponents(
                         [.year, .month, .day, .hour, .minute], from: next
                     )
-                    let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
-                    let id = "\(ID.scheduledSessionPrefix).\(s.id).oneoff"
-                    center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger)) { _ in }
+                    center.add(UNNotificationRequest(
+                        identifier: "\(ID.scheduledSessionPrefix).\(s.id).oneoff",
+                        content: content,
+                        trigger: UNCalendarNotificationTrigger(dateMatching: startComps, repeats: false)
+                    )) { _ in }
+
+                    // End is the same calendar day at the end time (windows never
+                    // cross midnight — enforced by validation).
+                    if let endDate = Calendar.current.date(bySettingHour: s.endHour, minute: s.endMinute, second: 0, of: next) {
+                        let endComps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: endDate)
+                        center.add(UNNotificationRequest(
+                            identifier: "\(ID.scheduledSessionEndPrefix).\(s.id).oneoff",
+                            content: endContent,
+                            trigger: UNCalendarNotificationTrigger(dateMatching: endComps, repeats: false)
+                        )) { _ in }
+                    }
                 } else {
                     for wd in s.weekdays {
-                        var comps = DateComponents()
-                        comps.weekday = wd
-                        comps.hour = s.startHour
-                        comps.minute = s.startMinute
-                        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
-                        let id = "\(ID.scheduledSessionPrefix).\(s.id).\(wd)"
-                        center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger)) { _ in }
+                        var startComps = DateComponents()
+                        startComps.weekday = wd
+                        startComps.hour = s.startHour
+                        startComps.minute = s.startMinute
+                        center.add(UNNotificationRequest(
+                            identifier: "\(ID.scheduledSessionPrefix).\(s.id).\(wd)",
+                            content: content,
+                            trigger: UNCalendarNotificationTrigger(dateMatching: startComps, repeats: true)
+                        )) { _ in }
+
+                        var endComps = DateComponents()
+                        endComps.weekday = wd
+                        endComps.hour = s.endHour
+                        endComps.minute = s.endMinute
+                        center.add(UNNotificationRequest(
+                            identifier: "\(ID.scheduledSessionEndPrefix).\(s.id).\(wd)",
+                            content: endContent,
+                            trigger: UNCalendarNotificationTrigger(dateMatching: endComps, repeats: true)
+                        )) { _ in }
                     }
                 }
             }

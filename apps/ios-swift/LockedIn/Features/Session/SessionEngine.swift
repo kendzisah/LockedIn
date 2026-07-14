@@ -81,6 +81,12 @@ public final class SessionEngine {
     public let durationMinutes: Int
     /// Mutable so a Pause Protocol break can push the end out on resume.
     public private(set) var endTimestamp: Date
+    /// Fixed OS window end for a SCHEDULED session (nil for manual). The effective
+    /// end may never exceed this, and the instant wall-clock ≥ `hardEnd` the session
+    /// completes — even mid-break — so the in-app timer agrees with the DAM
+    /// extension's un-shield and the "Session Complete" notification, both keyed to
+    /// the fixed window end. Immutable: a break can only move the end toward it.
+    @ObservationIgnored private let hardEnd: Date?
 
     // ── Timed break (Pause Protocol) ──
     /// True while a timed break is counting down (the focus clock is frozen).
@@ -127,6 +133,7 @@ public final class SessionEngine {
     public init(
         durationMinutes: Int,
         resumeEndTimestamp: Date? = nil,
+        hardEnd: Date? = nil,
         onComplete: @escaping (Status) -> Void
     ) {
         self.durationMinutes = durationMinutes
@@ -134,6 +141,7 @@ public final class SessionEngine {
         let end = resumeEndTimestamp ?? Date().addingTimeInterval(TimeInterval(totalSeconds))
         self.endTimestamp = end
         self.remainingSeconds = max(0, Int(ceil(end.timeIntervalSinceNow)))
+        self.hardEnd = hardEnd
         self.onComplete = onComplete
     }
 
@@ -167,6 +175,12 @@ public final class SessionEngine {
     /// countdown is frozen during a Pause Protocol break).
     public func sync(now: Date = Date()) {
         guard status == .running else { return }
+        // Hard-end boundary takes precedence over the break countdown: once the
+        // fixed OS window has ended, the session completes immediately regardless of
+        // break state — keeping the in-app timer in lockstep with the extension's
+        // un-shield at that instant. Must precede the `onBreak` branch. (nil for
+        // manual sessions, so it never fires for them.)
+        if let h = hardEnd, now >= h { finishNaturally(); return }
         if onBreak {
             let br = max(0, Int(ceil((breakEndTimestamp ?? now).timeIntervalSince(now))))
             breakRemainingSeconds = br
@@ -204,14 +218,21 @@ public final class SessionEngine {
     /// the break adds no focus credit, then notify the owner to re-arm the shield.
     private func finishBreak(now: Date = Date()) {
         let rem = pausedFocusRemaining ?? max(0, Int(ceil(endTimestamp.timeIntervalSince(now))))
-        endTimestamp = now.addingTimeInterval(TimeInterval(rem))
-        remainingSeconds = rem
+        // A scheduled session is bounded by its fixed OS window: a break may pause
+        // the shield but must never push the end past `hardEnd`. Manual sessions
+        // (hardEnd == nil) keep the identical `now + rem` end.
+        var newEnd = now.addingTimeInterval(TimeInterval(rem))
+        if let h = hardEnd { newEnd = min(newEnd, h) }
+        endTimestamp = newEnd
+        remainingSeconds = max(0, Int(ceil(newEnd.timeIntervalSince(now))))
         onBreak = false
         breakEndTimestamp = nil
         breakRemainingSeconds = 0
         pausedFocusRemaining = nil
         if #available(iOS 16.2, *) { forceLiveActivityUpdate(now: now) }
-        onBreakEnded?(rem)
+        // Report the clamped remaining (== rem for manual) so the shield re-arm
+        // never targets a time past the window.
+        onBreakEnded?(remainingSeconds)
     }
 
     /// Hold-to-unlock path. Computes the actual minutes the user ran for and
@@ -259,6 +280,12 @@ public final class SessionEngine {
 
     private func tick() {
         let now = Date()
+
+        // Hard-end boundary wins over a running break (see `sync`): completes a
+        // scheduled session the instant its fixed window ends, even mid-break, so
+        // the in-app timer never runs past the window. Must precede the `onBreak`
+        // branch. nil ⇒ manual session ⇒ never fires.
+        if let h = hardEnd, now >= h { finishNaturally(); return }
 
         // On a break, the focus clock is frozen — count the break down instead
         // and auto-resume focus when it hits zero.
@@ -406,6 +433,10 @@ extension SessionEngine {
             self._liveActivityStorage = LiveActivityHandle(existing)
             // Refresh state to the latest tick so the UI doesn't show
             // stale numbers from before the restart.
+            // Keep the activity FRESH until well past the end so the self-rendering
+            // `Text(timerInterval:)` runs all the way to 0:00 — a shorter stale
+            // window makes iOS freeze the island on the last pushed static value
+            // (a mid-countdown "random" number) once it goes stale.
             let staleDate = Date().addingTimeInterval(Double(remainingSeconds) + 300)
             let content = ActivityContent(state: initial, staleDate: staleDate)
             Task { @MainActor [weak self] in
@@ -418,6 +449,10 @@ extension SessionEngine {
         // Fresh-start path. `Activity.request` is throwing — wrap with
         // structured error capture per the no-silent-catch rule.
         do {
+            // Keep the activity FRESH until well past the end so the self-rendering
+            // `Text(timerInterval:)` runs all the way to 0:00 — a shorter stale
+            // window makes iOS freeze the island on the last pushed static value
+            // (a mid-countdown "random" number) once it goes stale.
             let staleDate = Date().addingTimeInterval(Double(remainingSeconds) + 300)
             let content = ActivityContent(state: initial, staleDate: staleDate)
             let activity = try Activity<SessionActivityAttributes>.request(
