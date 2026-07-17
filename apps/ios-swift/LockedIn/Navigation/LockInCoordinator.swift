@@ -26,6 +26,12 @@ import SwiftUI
 public enum LockInModal: Identifiable, Equatable {
     case paywallOffer
     case durationPicker
+    /// Pre-start gate: the session can't actually block anything yet — either
+    /// Family Controls auth is missing or the allowlist is empty. Presents
+    /// `LockInSetupSheet` with the concrete unmet requirement so the user
+    /// fixes it in place instead of "locking in" a session that blocks nothing,
+    /// silently.
+    case setupRequired(LockInCoordinator.LockInReadiness)
     /// Full-screen view of the active manual session (state lives in
     /// `ActiveSessionStore`, so this carries no payload).
     case executionBlock
@@ -35,6 +41,10 @@ public enum LockInModal: Identifiable, Equatable {
         switch self {
         case .paywallOffer: return "PaywallOffer"
         case .durationPicker: return "DurationPicker"
+        // Deliberately payload-independent: swapping auth → app-selection
+        // keeps the same identity so the fullScreenCover updates in place
+        // instead of dismissing + re-presenting.
+        case .setupRequired: return "SetupRequired"
         case .executionBlock: return "ExecutionBlock"
         case .sessionComplete: return "SessionComplete"
         }
@@ -43,17 +53,57 @@ public enum LockInModal: Identifiable, Equatable {
 
 @MainActor
 public final class LockInCoordinator: ObservableObject {
+
+    /// Whether a Lock-In can actually block apps right now. Checked before
+    /// every manual start (tab tap + post-paywall + setup-sheet resolution) —
+    /// without it, a session started with no Family Controls auth or an empty
+    /// allowlist "runs" while blocking nothing, and the user only finds out
+    /// when the distraction apps keep opening.
+    public enum LockInReadiness: Equatable, Sendable {
+        case ready
+        /// Family Controls authorization is not `.approved`.
+        case needsScreenTimeAuth
+        /// Authorized, but the allowlist is empty → `SharedShieldApplier`
+        /// treats it as "not configured" and applies NO shield (deliberately —
+        /// `.all(except: [])` would lock the whole device).
+        case needsAppSelection
+    }
+
+    /// Evaluate the pre-start gate. Order matters: auth first (the picker is
+    /// useless without it), then a non-empty allowlist —
+    /// `getSelectedAppCount()` counts exactly the tokens the shield applier
+    /// keys on, so `> 0` ⇔ a shield will actually be applied.
+    public static func checkReadiness() -> LockInReadiness {
+        guard LockModeService.shared.currentAuthorizationStatus == .approved else {
+            return .needsScreenTimeAuth
+        }
+        guard LockModeService.shared.getSelectedAppCount() > 0 else {
+            return .needsAppSelection
+        }
+        return .ready
+    }
+
     @Published public var activeModal: LockInModal?
 
     public init() {}
 
     /// Called when the user taps the raised LockIn tab. Mirrors RN's
-    /// `handleLockInPress`. Reads `SubscriptionState` to gate the paywall.
+    /// `handleLockInPress`. Reads `SubscriptionState` to gate the paywall,
+    /// then the Screen-Time readiness gate (auth + non-empty allowlist)
+    /// before offering the duration picker.
     public func openLockInFlow(isSubscribed: Bool) {
-        if isSubscribed {
+        guard isSubscribed else {
+            activeModal = .paywallOffer
+            return
+        }
+        let readiness = Self.checkReadiness()
+        if readiness == .ready {
             activeModal = .durationPicker
         } else {
-            activeModal = .paywallOffer
+            AnalyticsService.shared.track("Lock In Setup Required", properties: [
+                "reason": readiness == .needsScreenTimeAuth ? "screen_time_auth" : "app_selection",
+            ])
+            activeModal = .setupRequired(readiness)
         }
     }
 

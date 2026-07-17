@@ -18,20 +18,59 @@ public struct ScheduledActivityMeta: Codable, Equatable, Sendable {
     /// schedules), so the extension filters by this on each fire. Empty == fire
     /// every day it triggers (one-off, whose schedule already targets one date).
     public let weekdays: [Int]
+    /// Window start/end as minutes-of-day (0…1439), mirroring the session's
+    /// `startHour * 60 + startMinute` / `endHour * 60 + endMinute`. The
+    /// extension needs the actual window instants for two things it cannot
+    /// otherwise do correctly:
+    ///  1. Midnight-drift weekday gating — a callback delivered slightly across
+    ///     midnight would evaluate `weekdays` against the WRONG day if it used
+    ///     `now`; with the window time it derives the day the boundary actually
+    ///     belongs to.
+    ///  2. Back-to-back window detection — on one window's `intervalDidEnd` it
+    ///     can tell whether ANOTHER scheduled window contains `now` and, if so,
+    ///     keep the shield up instead of un-blocking mid-session.
+    /// Optional + default-nil so maps persisted by older builds keep decoding;
+    /// nil ⇒ the extension falls back to the legacy `now`-based gating.
+    public let startMinutesOfDay: Int?
+    public let endMinutesOfDay: Int?
+    /// ONE-OFFS ONLY: the concrete local calendar date (`yyyy-MM-dd`, matching
+    /// `ScheduledCompletionRecord.localYMD`) this activity's single occurrence
+    /// is registered for. A one-off's DeviceActivity schedule is pinned to one
+    /// date, but its meta has empty `weekdays` — without this field every
+    /// liveness scan (`anotherScheduledWindowActive`, the intents' gate)
+    /// treats the entry as "fires any day" and a stale/future one-off reads as
+    /// live on every later day whose time-of-day matches. nil for recurring
+    /// sessions (weekday-gated) and for maps persisted by older builds;
+    /// date-less one-off entries are treated as NOT provably live.
+    public let occurrenceYMD: String?
 
-    public init(sessionId: String, durationMinutes: Int, weekdays: [Int] = []) {
+    public init(
+        sessionId: String,
+        durationMinutes: Int,
+        weekdays: [Int] = [],
+        startMinutesOfDay: Int? = nil,
+        endMinutesOfDay: Int? = nil,
+        occurrenceYMD: String? = nil
+    ) {
         self.sessionId = sessionId
         self.durationMinutes = durationMinutes
         self.weekdays = weekdays
+        self.startMinutesOfDay = startMinutesOfDay
+        self.endMinutesOfDay = endMinutesOfDay
+        self.occurrenceYMD = occurrenceYMD
     }
 
-    // Tolerant decode: a map persisted before `weekdays` existed decodes with
-    // an empty list rather than throwing (and failing the whole map).
+    // Tolerant decode: a map persisted before `weekdays` (or the window-time
+    // fields) existed decodes with empty/nil values rather than throwing (and
+    // failing the whole map).
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         sessionId = try c.decode(String.self, forKey: .sessionId)
         durationMinutes = try c.decode(Int.self, forKey: .durationMinutes)
         weekdays = try c.decodeIfPresent([Int].self, forKey: .weekdays) ?? []
+        startMinutesOfDay = try c.decodeIfPresent(Int.self, forKey: .startMinutesOfDay)
+        endMinutesOfDay = try c.decodeIfPresent(Int.self, forKey: .endMinutesOfDay)
+        occurrenceYMD = try c.decodeIfPresent(String.self, forKey: .occurrenceYMD)
     }
 }
 

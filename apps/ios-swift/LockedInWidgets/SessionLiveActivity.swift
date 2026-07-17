@@ -87,11 +87,15 @@ struct SessionLiveActivity: Widget {
                     EmptyView()
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    // iOS 17+: `Button(intent:)` runs `EndLockInIntent` in
-                    // the extension process — no app foregrounding. iOS 16.2
-                    // ActivityKit doesn't support the intent-based button
-                    // API, so we hide the action on that floor; the user
-                    // can still end via the app or the lock-screen banner.
+                    // iOS 17+: `EndLockInIntent` conforms to
+                    // `LiveActivityIntent`, so `Button(intent:)` performs it
+                    // in the APP process (where the intent-service locator is
+                    // registered) without foregrounding the app — an
+                    // extension-process run would find the locator nil and
+                    // silently no-op. iOS 16.2 ActivityKit doesn't support
+                    // the intent-based button API, so we hide the action on
+                    // that floor; the user can still end via the app or the
+                    // lock-screen banner.
                     if #available(iOS 17.0, *) {
                         Button(intent: EndLockInIntent()) {
                             Text("End early")

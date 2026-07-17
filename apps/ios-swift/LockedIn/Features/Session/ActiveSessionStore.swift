@@ -25,6 +25,17 @@ public final class ActiveSessionStore {
     public private(set) var goal: String?
     public private(set) var streak: Int = 0
 
+    /// True from the instant the engine resolves (set SYNCHRONOUSLY in the
+    /// completion closure, BEFORE the deferred `complete()` Task hop) until
+    /// `complete()` finishes. The single-credit choke point: while the hop is
+    /// in flight, `isActive` is already false and the persisted block still
+    /// exists — the synchronous resume/credit paths (`start`,
+    /// `resumeActiveExecutionBlockIfNeeded`, `resumeScheduledLiveIfNeeded`)
+    /// could otherwise read that limbo state and credit the same session a
+    /// second time (or stomp the engine before it finishes tearing down).
+    /// Everything that starts or credits a session must bail while this is set.
+    public private(set) var isFinishing = false
+
     /// Non-nil when this session was promoted from a scheduled auto-block
     /// window. Threaded back through `onFinish` so `MainNavigator` can mark the
     /// occurrence credited — deduping the DAM extension's background completion
@@ -101,6 +112,11 @@ public final class ActiveSessionStore {
         scheduledOccurrenceId: String? = nil
     ) {
         guard !isActive else { return }
+        // A just-resolved engine is still crediting on a deferred Task hop —
+        // starting now would race its teardown (and the resume paths that call
+        // `start` could re-credit the limbo block). Callers retry on the next
+        // foreground pass, so dropping the call is safe.
+        guard !isFinishing else { return }
         self.hardcore = hardcore
         self.goal = goal
         self.streak = streak
@@ -116,6 +132,14 @@ public final class ActiveSessionStore {
             resumeEndTimestamp: resumeEndTimestamp,
             hardEnd: hardEnd
         ) { [weak self] status in
+            // Flag the finish SYNCHRONOUSLY, before the Task hop defers the
+            // actual crediting: anything else running in this runloop turn
+            // (foreground resume sweep, drain) must see the store as
+            // finishing, not idle — that gap is the double-credit race.
+            self?.isFinishing = true
+            // The hop itself stays: `onComplete` fires from inside a SwiftUI
+            // view-update cycle (tick → observation), and mutating
+            // presentation state synchronously there is undefined behavior.
             Task { @MainActor in self?.complete(status: status) }
         }
         // A break ending (auto at zero, or early) re-arms the shield for the
@@ -151,19 +175,71 @@ public final class ActiveSessionStore {
     /// shield, and counts the break down on the Live Activity — auto-resumes at
     /// zero. No-op if the daily break budget is spent or a break is in progress.
     public func startBreak(seconds: Int) {
-        guard let e = engine, e.status == .running, !e.onBreak, canTakeBreak else { return }
+        // Hardcore = no early exit AND no breaks. The FocusRing / timer screen
+        // disable the button, but guard here too so no other entry point can
+        // lift the shield mid-hardcore-session.
+        guard !hardcore else { return }
+        // `seconds > 0` mirrors the engine's own guard — checking it here too
+        // keeps `recordBreakTaken()` from burning a daily break on a call the
+        // engine would silently drop.
+        guard let e = engine, e.status == .running, !e.onBreak, canTakeBreak, seconds > 0 else { return }
         recordBreakTaken()
         e.startBreak(seconds: seconds)
         HapticsService.shared.warning()
-        // Lift the shield for the break (tears down the focus DAM schedule so it
-        // doesn't auto-unshield at the original end). Re-armed on break end.
-        LockModeService.shared.endSession()
-        NotificationService.shared.cancelExecutionBlockDone()
+
+        // The engine just computed the FIXED post-break end (`breakEnd +
+        // frozenRemaining`, clamped to a scheduled window's hard end) and moved
+        // `endTimestamp` to it — the session will resume against that instant
+        // no matter what happens to the app during the break.
+        guard let breakEnd = e.breakEndsAt else { return } // set by startBreak above
+        let fixedEnd = e.endTimestamp
+
+        // Lift the shield WITHOUT tearing the session down: the persisted
+        // block + hardcore flag survive the break (an app kill mid-break must
+        // resume, not destroy, the session), the block's end is rewritten to
+        // the fixed end, an `ActiveBreakState` is persisted for cold-start
+        // recovery, and the OS re-applies the shield AT break end via the
+        // break-resume DeviceActivity monitor — even if the app never returns.
+        LockModeService.shared.beginBreak(
+            breakEnd: breakEnd,
+            sessionEnd: fixedEnd,
+            durationMinutes: durationMinutes,
+            hardcore: hardcore,
+            scheduledOccurrenceId: scheduledOccurrenceId
+        )
+
+        // Manual sessions: re-arm the completion notification for the fixed
+        // end NOW (not at break end) so it still fires if the app dies
+        // mid-break. Scheduled sessions keep their proactive per-occurrence
+        // "Session Complete" notification instead (avoids a duplicate).
+        if scheduledOccurrenceId == nil {
+            NotificationService.shared.scheduleExecutionBlockDone(endsAt: fixedEnd)
+        }
+
+        // The OS re-blocks at break end on its own now, but the user still
+        // needs pulling back — schedule the "break over" nudge. Cleared on
+        // every in-app break-exit path (`handleBreakEnded` / `complete`).
+        NotificationService.shared.scheduleBreakEnded(endsAt: breakEnd)
+
         AnalyticsService.shared.track("Session Break Started", properties: [
             "duration_minutes": durationMinutes,
             "break_seconds": seconds,
             "breaks_taken_today": breaksTakenToday,
         ])
+    }
+
+    /// Cold-start resume of a persisted break (app killed mid-break). Restores
+    /// the engine's break countdown against the persisted break end WITHOUT
+    /// spending a daily break — it was budgeted when it originally started —
+    /// and WITHOUT moving the fixed session end (already baked into the
+    /// engine via the resume path's `resumeEndTimestamp`).
+    public func resumeBreak(until breakEnd: Date) {
+        guard let e = engine, e.status == .running, !e.onBreak else { return }
+        e.resumeBreak(until: breakEnd)
+        // Defensive re-arm: the nudge scheduled at the original break start
+        // normally survives a process kill, but re-arming is idempotent and
+        // covers a cleared notification center.
+        NotificationService.shared.scheduleBreakEnded(endsAt: breakEnd)
     }
 
     /// End the current break immediately (resume focus now).
@@ -175,6 +251,12 @@ public final class ActiveSessionStore {
     /// for the remaining focus time.
     private func handleBreakEnded(focusRemaining: Int) {
         HapticsService.shared.rigid()
+        // Break is resolving in-app (auto or early) → drop the pending "break over"
+        // nudge; the shield re-applies below. Covers auto break-end + endBreakEarly.
+        NotificationService.shared.cancelBreakEnded()
+        // The break is no longer live — the persisted snapshot must go on every
+        // in-app exit path so a later launch can't resurrect a finished break.
+        LockModeService.shared.clearActiveBreakState()
 
         if scheduledOccurrenceId != nil {
             // Scheduled session: the scheduled DeviceActivity monitor is the SINGLE
@@ -196,11 +278,26 @@ public final class ActiveSessionStore {
                 return
             }
             ScreenTimeModule.shared.shieldApps()
+            // Tear down the break-resume monitor (registered under the MANUAL
+            // activity name at break start) + its future `sessionEndTimestamp`:
+            // the scheduled window's own monitor must stay the SINGLE owner of
+            // the window-end un-shield, and a lingering future manual timestamp
+            // would make the scheduled `intervalDidEnd` defer and strand the
+            // shield past the window. The extension keeps the shield up through
+            // the stale stop callback because this window is still active.
+            ScreenTimeModule.shared.cancelBreakResume()
         } else {
-            // Manual session: re-arm the manual monitor + fail-safe timestamp, and
-            // its completion notification (scheduled sessions use the proactive
-            // per-occurrence "Session Complete" notif instead).
-            Task { _ = await LockModeService.shared.beginSession(durationSeconds: focusRemaining) }
+            // Manual session: re-arm the manual monitor + fail-safe timestamp
+            // for the remaining focus time (replacing the break-resume monitor
+            // — the module stops the activity name before re-registering),
+            // and its completion notification (scheduled sessions use the
+            // proactive per-occurrence "Session Complete" notif instead).
+            // `focusRemaining` is measured against the fixed post-break end, so
+            // this lands within a second of the end armed at break start.
+            // `resumeSessionAfterBreak` (NOT `beginSession`) so the persisted
+            // block keeps describing the ORIGINAL session — rewriting it to
+            // the remainder would under-credit a later kill+expire.
+            Task { _ = await LockModeService.shared.resumeSessionAfterBreak(remainingSeconds: focusRemaining) }
             NotificationService.shared.scheduleExecutionBlockDone(
                 endsAt: Date().addingTimeInterval(TimeInterval(focusRemaining))
             )
@@ -217,9 +314,38 @@ public final class ActiveSessionStore {
         engine?.endEarly()
     }
 
+    /// Logout / account-delete cleanup. Cancels the engine WITHOUT crediting
+    /// (`cancel()` never fires `onComplete`, so nothing lands on the
+    /// freshly-reset state or the next account) and tears down every session
+    /// artifact that could act after sign-out: `endSession()` lifts the
+    /// shield, clears the persisted block / break / hardcore keys, removes
+    /// the fail-safe timestamp, AND stops the manual-named DeviceActivity
+    /// monitor — which is also the break-resume monitor, so a logout taken
+    /// mid-break can no longer have the OS re-shield a signed-out user at
+    /// break end. Session notifications are cancelled for the same reason
+    /// (the bus's blanket `cancelAllNotifications` also runs, but this store
+    /// must be safe standalone).
+    public func fullReset() {
+        engine?.cancel()
+        engine = nil
+        hardcore = false
+        goal = nil
+        streak = 0
+        scheduledOccurrenceId = nil
+        isFinishing = false
+        LockModeService.shared.endSession()
+        NotificationService.shared.cancelExecutionBlockDone()
+        NotificationService.shared.cancelBreakEnded()
+    }
+
     // MARK: - Completion
 
     private func complete(status: SessionEngine.Status) {
+        // `isFinishing` was set synchronously when the engine resolved; it
+        // covers the whole teardown + credit fan-out below. Cleared LAST so a
+        // re-entrant resume triggered by anything in between still bails.
+        defer { isFinishing = false }
+
         // Capture before tearing down.
         let dur = durationMinutes
         let rem = remainingSeconds
@@ -227,8 +353,11 @@ public final class ActiveSessionStore {
         let occ = scheduledOccurrenceId
 
         HapticsService.shared.success()
-        LockModeService.shared.endSession() // un-shield + clear block + hardcore flag
+        LockModeService.shared.endSession() // un-shield + clear block/break state + hardcore flag
         NotificationService.shared.cancelExecutionBlockDone()
+        // A session can complete while on a break (e.g. hold-to-end, or a scheduled
+        // window closing mid-break) — clear any pending "break over" nudge.
+        NotificationService.shared.cancelBreakEnded()
         NotificationService.shared.onSessionCompletedToday()
 
         let isNatural: Bool = {

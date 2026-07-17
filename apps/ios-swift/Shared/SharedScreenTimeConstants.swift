@@ -163,9 +163,21 @@ public enum SharedShieldApplier {
     ///   NO shield. `.all(except: [])` would otherwise lock down the entire
     ///   device — a catastrophic surprise for a user who starts a session
     ///   before choosing any allowed apps.
+    /// - SAFETY: the APP-category policy is written only when the APP allowlist
+    ///   itself is non-empty. A web-domains-only selection used to fall through
+    ///   the combined guard and write `applicationCategories = .all(except: [])`
+    ///   — i.e. every app on the device blocked when the user only asked to
+    ///   allowlist websites. Web keeps its existing behavior (a non-empty
+    ///   selection always writes the web policy).
     /// - Legacy shard stores (`lockedIn.1` … `.7`) are cleared first so a stale
     ///   shield from an older build can't linger alongside the new shield.
-    public static func apply(_ selection: FamilyActivitySelection) {
+    ///
+    /// Returns `true` when a shield was actually written, `false` when the
+    /// selection was empty and the apply deliberately no-op'd — callers (the
+    /// DAM extension's diagnostics) use this to log "shield" vs "no_selection"
+    /// instead of claiming success for a silent no-op.
+    @discardableResult
+    public static func apply(_ selection: FamilyActivitySelection) -> Bool {
         // Retire any shields written by an older sharding build.
         for shard in 1..<SharedScreenTime.legacyShardStoreCount {
             let store = ManagedSettingsStore(named: .init(SharedScreenTime.shieldStoreName(shard: shard)))
@@ -176,9 +188,8 @@ public enum SharedShieldApplier {
         }
 
         let store = primaryStore()
-        let cap = SharedScreenTime.maxAllowlistTokens
-        let allowedApps = Set(Array(selection.applicationTokens).prefix(cap))
-        let allowedWebs = Set(Array(selection.webDomainTokens).prefix(cap))
+        let allowedApps = deterministicAllowlist(selection.applicationTokens)
+        let allowedWebs = deterministicAllowlist(selection.webDomainTokens)
 
         // No allowlist configured → do NOT lock down the whole device.
         guard !allowedApps.isEmpty || !allowedWebs.isEmpty else {
@@ -186,14 +197,48 @@ public enum SharedShieldApplier {
             store.shield.webDomains = nil
             store.shield.applicationCategories = nil
             store.shield.webDomainCategories = nil
-            return
+            return false
         }
 
         // Allowlist model: block EVERY app / website except the user's picks.
+        // The app policy is gated on a non-empty APP allowlist (see SAFETY note
+        // above); the web policy keeps the historical behavior.
         store.shield.applications = nil
         store.shield.webDomains = nil
-        store.shield.applicationCategories = .all(except: allowedApps)
+        store.shield.applicationCategories = allowedApps.isEmpty ? nil : .all(except: allowedApps)
         store.shield.webDomainCategories = .all(except: allowedWebs)
+        return true
+    }
+
+    /// Clamp an allowlist to `maxAllowlistTokens` DETERMINISTICALLY.
+    ///
+    /// The main app applies the shield at session start; the DAM extension
+    /// re-applies it at interval boundaries (and after breaks) in a separate
+    /// process. `Set` iteration order is seeded per-process, so a plain
+    /// `.prefix(50)` on a >50-token selection could keep DIFFERENT subsets in
+    /// the two processes — the set of allowed apps would silently change
+    /// mid-session whenever the extension re-applied. Sorting by each token's
+    /// JSON-encoded bytes first makes the kept subset a pure function of the
+    /// selection, identical across processes and launches.
+    ///
+    /// Encoding details: `.sortedKeys` makes the JSON itself deterministic, and
+    /// each token is wrapped in a single-element array so tokens whose encoded
+    /// form is a bare fragment still encode safely. A token that somehow fails
+    /// to encode sorts with empty bytes (first) — stable, and never expected
+    /// for real tokens. Selections at or under the cap are returned untouched
+    /// (no encoding cost on the hot path).
+    private static func deterministicAllowlist<Token: Hashable & Codable>(_ tokens: Set<Token>) -> Set<Token> {
+        let cap = SharedScreenTime.maxAllowlistTokens
+        guard tokens.count > cap else { return tokens }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let kept = tokens
+            .map { (token: $0, bytes: (try? encoder.encode([$0])) ?? Data()) }
+            .sorted { $0.bytes.lexicographicallyPrecedes($1.bytes) }
+            .prefix(cap)
+            .map(\.token)
+        return Set(kept)
     }
 
     /// Clear the primary store and every legacy shard store. Clearing a store

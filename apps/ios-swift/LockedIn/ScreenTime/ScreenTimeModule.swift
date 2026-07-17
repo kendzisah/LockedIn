@@ -227,8 +227,23 @@ public final class ScreenTimeModule: @unchecked Sendable {
         self.applyShield()
 
         let endDate = Date().addingTimeInterval(TimeInterval(durationSeconds))
+        // Fail-safe floor: the extension's manual-end guard reads this
+        // timestamp with a 2-minute slack (its own boundary-aligned callback
+        // can arrive slightly early). A POST-BREAK remainder can be
+        // arbitrarily short — resuming a session with <2 min left writes a
+        // timestamp inside that slack, and the stale stop callback fired by
+        // stopping the break-resume monitor (below, inside startMonitoring's
+        // stop-then-start) would read the fresh session as "own boundary" and
+        // wipe the just-re-applied shield + timestamp. Floor the WRITTEN
+        // fail-safe well past the slack (the margin also absorbs the stale
+        // callback's delivery latency); the engine still ends the session
+        // (and un-shields) at the REAL end — only the cross-process "a
+        // manual session owns the shield" signal is padded, mirroring the
+        // ≥16-min monitor clamp's overshoot-by-design for short sessions.
+        let failSafeFloorSeconds: TimeInterval = 300
+        let failSafeEnd = max(endDate, Date().addingTimeInterval(failSafeFloorSeconds))
         SharedScreenTime.sharedDefaults()?.set(
-            endDate.timeIntervalSince1970 * 1000,
+            failSafeEnd.timeIntervalSince1970 * 1000,
             forKey: SharedScreenTime.Keys.sessionEndTimestamp
         )
 
@@ -303,6 +318,134 @@ public final class ScreenTimeModule: @unchecked Sendable {
     public func shieldApps() {
         self.applyShield()
         self.shielding = true
+    }
+
+    // MARK: - Break auto-reblock (Pause Protocol)
+
+    /// Register the break-resume monitor: a FUTURE-START, non-repeating
+    /// DeviceActivity interval REUSING the manual `"LockedInSession"` activity
+    /// name, whose `intervalDidStart` fires in the DAM extension at `breakEnd`
+    /// and re-applies the shield — even if the app is backgrounded or killed.
+    /// This is what turns a break into a bounded pause instead of an
+    /// indefinite unshielded one.
+    ///
+    /// - `intervalEnd` = max(`sessionEnd`, `breakEnd` + 16 min): keeps the OS
+    ///   un-shield backstop at the session's REAL fixed end while honoring
+    ///   DeviceActivity's ~15-minute minimum interval length (same clamp as
+    ///   `beginSession`; short remainders over-run the backstop by design —
+    ///   the app's own end path un-shields at the real end).
+    /// - Writes `sessionEndTimestamp` = `sessionEnd`, the FIXED post-break end
+    ///   (contract C3): a future value tells the extension a manual session
+    ///   still owns the shield, so a stale `intervalDidEnd` from the stopped
+    ///   pre-break monitor can't wipe the state mid-break.
+    /// - Start components are FULLY specified (y/m/d/h/m/s): hour/minute-only
+    ///   components match the *next wall-clock occurrence*, which for a
+    ///   future-start interval is ambiguous — absolute components pin the
+    ///   start to the exact break-end instant.
+    @discardableResult
+    public func scheduleBreakResume(breakEnd: Date, sessionEnd: Date) -> Bool {
+        SharedScreenTime.sharedDefaults()?.set(
+            sessionEnd.timeIntervalSince1970 * 1000,
+            forKey: SharedScreenTime.Keys.sessionEndTimestamp
+        )
+
+        guard #available(iOS 16.0, *) else { return false }
+
+        var scheduleSuccess = false
+        var monitorStartError: Error?
+        do {
+            try ObjCExceptionCatcher.execute {
+                let comps: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second]
+                let startComponents = Calendar.current.dateComponents(comps, from: breakEnd)
+                // Same ≥16-minute clamp as `beginSession` — DeviceActivity
+                // rejects intervals shorter than 15 minutes.
+                let minimumMonitorInterval: TimeInterval = 16 * 60
+                let monitorEnd = max(sessionEnd, breakEnd.addingTimeInterval(minimumMonitorInterval))
+                let endComponents = Calendar.current.dateComponents(comps, from: monitorEnd)
+                let schedule = DeviceActivitySchedule(
+                    intervalStart: startComponents,
+                    intervalEnd: endComponents,
+                    repeats: false
+                )
+                let center = DeviceActivityCenter()
+                // Stop the pre-break session monitor first — it would fire
+                // `intervalDidEnd` at the ORIGINAL end, which no longer exists
+                // under the fixed-end break model. (The extension's C3 guard
+                // ignores the stale stop callback because the timestamp above
+                // is in the future.)
+                center.stopMonitoring([DeviceActivityName(SharedScreenTime.activityName)])
+                do {
+                    try center.startMonitoring(
+                        DeviceActivityName(SharedScreenTime.activityName),
+                        during: schedule
+                    )
+                    scheduleSuccess = true
+                } catch {
+                    scheduleSuccess = false
+                    monitorStartError = error
+                }
+            }
+        } catch {
+            scheduleSuccess = false
+            monitorStartError = error
+        }
+
+        if !scheduleSuccess {
+            let iosVersion = UIDevice.current.systemVersion
+            let breakSecondsLeft = Int(breakEnd.timeIntervalSinceNow)
+            let capturedError = monitorStartError
+            Task { @MainActor in
+                if let err = capturedError {
+                    AnalyticsService.shared.captureException(err, properties: [
+                        "context": "device_activity_break_resume",
+                        "ios_version": iosVersion,
+                        "break_seconds_left": breakSecondsLeft,
+                    ])
+                }
+                AnalyticsService.shared.track("device_activity_break_resume_failed", properties: [
+                    "ios_version": iosVersion,
+                    "break_seconds_left": breakSecondsLeft,
+                ])
+            }
+        }
+        return scheduleSuccess
+    }
+
+    /// Stop the break-resume monitor WITHOUT lifting the shield — the inverse
+    /// of `removeShield()`'s "clear everything" semantics. Used when a promoted
+    /// SCHEDULED session's break ends in-app: the shield must stay up (the
+    /// window is still open) but the manual-named monitor and its
+    /// manual-owns-the-shield `sessionEndTimestamp` have to go, otherwise the
+    /// scheduled window-end `intervalDidEnd` would defer to a phantom manual
+    /// session and strand the shield past the window.
+    ///
+    /// The timestamp is removed BEFORE the stop so the extension's stale
+    /// `intervalDidEnd` (stopping an in-progress interval fires it) evaluates
+    /// "no manual session" and falls into its scheduled-window-active guard,
+    /// which keeps the shield up.
+    public func cancelBreakResume() {
+        SharedScreenTime.sharedDefaults()?.removeObject(
+            forKey: SharedScreenTime.Keys.sessionEndTimestamp
+        )
+        guard #available(iOS 16.0, *) else { return }
+        do {
+            try ObjCExceptionCatcher.execute {
+                DeviceActivityCenter().stopMonitoring(
+                    [DeviceActivityName(SharedScreenTime.activityName)]
+                )
+            }
+        } catch {
+            let iosVersion = UIDevice.current.systemVersion
+            Task { @MainActor in
+                AnalyticsService.shared.captureException(error, properties: [
+                    "context": "device_activity_break_resume_stop",
+                    "ios_version": iosVersion,
+                ])
+                AnalyticsService.shared.track("device_activity_break_resume_stop_failed", properties: [
+                    "ios_version": iosVersion,
+                ])
+            }
+        }
     }
 
     /// Remove the shield (normal completion / hold-to-unlock path).

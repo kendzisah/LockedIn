@@ -89,6 +89,30 @@ public struct ScheduledSession: Codable, Identifiable, Equatable, Sendable {
         if !isOneOff {
             let wd = cal.component(.weekday, from: now)
             guard weekdays.contains(wd) else { return nil }
+        } else {
+            // A one-off targets ONE concrete date. The source of truth is the
+            // date its DeviceActivity REGISTRATION pinned — the App-Group
+            // map's `occurrenceYMD`, the same field the extension and the
+            // AppIntents gate already key on. Registration pins to
+            // `nextOccurrence(after: now)` at resync time, which diverges from
+            // any createdAt-derived date whenever registration happens after
+            // the createdAt occurrence passed (a spent one-off re-enabled, a
+            // one-off edited to a later time, a first day missed while auth
+            // was off). Deriving liveness from anything else blinds EVERY
+            // mid-window safety path for the registered day: no promotion, a
+            // mid-window `resyncAll` STOPS the live monitor (un-shield + a
+            // spurious full-duration record), and disable/delete skips its
+            // pre-poison. Gate on the registered date; fall back to the
+            // createdAt derivation only when no registration exists yet (auth
+            // still off, or created moments ago mid-first-resync) — that
+            // fallback still fails toward NOT live on any later day whose
+            // time-of-day matches, so no phantom promotions.
+            if let registeredYMD = registeredOneOffYMD() {
+                guard registeredYMD == ScheduledCompletionRecord.localYMD(now) else { return nil }
+            } else {
+                guard let fire = nextOccurrence(after: Date(timeIntervalSince1970: createdAt / 1000)),
+                      cal.isDate(fire, inSameDayAs: now) else { return nil }
+            }
         }
         guard let start = cal.date(bySettingHour: startHour, minute: startMinute, second: 0, of: now),
               let end = cal.date(bySettingHour: endHour, minute: endMinute, second: 0, of: now),
@@ -96,6 +120,19 @@ public struct ScheduledSession: Codable, Identifiable, Equatable, Sendable {
         else { return nil }
         let occurrenceId = "\(id).\(ScheduledCompletionRecord.localYMD(end))"
         return (occurrenceId, end)
+    }
+
+    /// The `occurrenceYMD` this one-off's DeviceActivity registration pinned,
+    /// read from the App-Group activity map `ScheduledLockService` writes
+    /// (key shape must match `ScheduledLockService.scheduledActivityName`).
+    /// nil when the session has no registration (auth off / not yet synced)
+    /// or the map is unreadable.
+    private func registeredOneOffYMD() -> String? {
+        guard let data = SharedScreenTime.sharedDefaults()?
+                .data(forKey: SharedScreenTime.Keys.scheduledActivityMap),
+              let map = try? JSONDecoder().decode([String: ScheduledActivityMeta].self, from: data)
+        else { return nil }
+        return map["\(SharedScreenTime.scheduledActivityPrefix).\(id).oneoff"]?.occurrenceYMD
     }
 
     /// The soonest start `Date` strictly after `after`. nil if invalid.

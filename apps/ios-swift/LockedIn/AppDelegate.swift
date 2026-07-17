@@ -43,11 +43,28 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     // MARK: - Foreground notifications
 
+    /// Foreground presentation policy. The "break over" and "session complete"
+    /// nudges exist ONLY to pull the user back into the app from the outside —
+    /// when they're already looking at LockedIn the in-app UI (focus ring /
+    /// completion screen) is showing the same state, so presenting the banner
+    /// on top would be a redundant, stale-feeling double announcement. The
+    /// scheduled per-occurrence "Session Complete" (prefix-matched — its ids
+    /// are date-scoped) is the scheduled counterpart of `executionBlockDone`:
+    /// promoted scheduled sessions deliberately skip `executionBlockDone` in
+    /// favor of it, so it gets the same suppression. Every other notification
+    /// keeps the full banner treatment.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let id = notification.request.identifier
+        if id == NotificationService.ID.breakEnded
+            || id == NotificationService.ID.executionBlockDone
+            || id.hasPrefix(NotificationService.ID.scheduledSessionEndPrefix) {
+            completionHandler([])
+            return
+        }
         completionHandler([.banner, .sound, .badge])
     }
 

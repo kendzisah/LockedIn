@@ -49,12 +49,13 @@ public final class ScheduledLockService {
         // queues a spurious completion the app then credits, killing the session.
         // A session created/enabled DURING its window isn't registered yet, so it
         // must still be registered below — else it never blocks at all.
-        let alreadyRegistered: Set<String> = {
+        let previousMap: [String: ScheduledActivityMeta] = {
             guard let data = SharedScreenTime.sharedDefaults()?.data(forKey: SharedScreenTime.Keys.scheduledActivityMap),
                   let m = try? JSONDecoder().decode([String: ScheduledActivityMeta].self, from: data)
-            else { return [] }
-            return Set(m.keys)
+            else { return [:] }
+            return m
         }()
+        let alreadyRegistered = Set(previousMap.keys)
         let liveSession = sessions.first { $0.enabled && $0.isValid && $0.activeWindow(now: now) != nil }
         let liveName = liveSession.map { Self.scheduledActivityName(for: $0) }
         let preserveLive = liveName.map { alreadyRegistered.contains($0) } ?? false
@@ -75,6 +76,42 @@ public final class ScheduledLockService {
         for s in sessions where s.enabled && s.isValid {
             if preserveLive, s.id == liveSession?.id { continue }  // leave the running monitor untouched
             if s.isOneOff {
+                if let live = s.activeWindow(now: now) {
+                    // The one-off's window is LIVE RIGHT NOW but its monitor was
+                    // never registered (this branch is only reachable when
+                    // `preserveLive` didn't claim it — e.g. the setup banner's
+                    // resync after a mid-window auth grant, the exact flow the
+                    // un-registered-live-window fix added). `nextOccurrence` is
+                    // strictly future, so pinning to it would arm a phantom
+                    // monitor for the NEXT day instead of covering today's
+                    // in-progress window — no window-end monitor today (shield
+                    // stranded if the app dies) plus a bogus auto-block +
+                    // full-duration completion tomorrow. Register the live
+                    // REMAINDER as an absolute-dated non-repeating interval
+                    // (same shape as the break-resume monitor); the ≥16-min
+                    // clamp mirrors `beginSession` — short remainders overrun
+                    // the OS backstop by design, the in-app end path un-shields
+                    // at the real window end.
+                    let comps: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second]
+                    let monitorEnd = max(live.end, now.addingTimeInterval(16 * 60))
+                    candidates.append(Candidate(
+                        name: "\(SharedScreenTime.scheduledActivityPrefix).\(s.id).oneoff",
+                        schedule: DeviceActivitySchedule(
+                            intervalStart: cal.dateComponents(comps, from: now),
+                            intervalEnd: cal.dateComponents(comps, from: monitorEnd),
+                            repeats: false
+                        ),
+                        meta: ScheduledActivityMeta(
+                            sessionId: s.id,
+                            durationMinutes: s.durationMinutes,
+                            startMinutesOfDay: s.startMinutesOfDay,
+                            endMinutesOfDay: s.endMinutesOfDay,
+                            occurrenceYMD: ScheduledCompletionRecord.localYMD(now)
+                        ),
+                        when: now
+                    ))
+                    continue
+                }
                 guard let next = s.nextOccurrence(after: now) else { continue }
                 // Pin the one-off to the concrete weekday of its next occurrence
                 // rather than a bare hour/minute. A fully-specified
@@ -90,7 +127,19 @@ public final class ScheduledLockService {
                         intervalEnd: Self.components(weekday: oneOffWeekday, hour: s.endHour, minute: s.endMinute),
                         repeats: false
                     ),
-                    meta: ScheduledActivityMeta(sessionId: s.id, durationMinutes: s.durationMinutes),
+                    // Window minutes-of-day let the extension derive the day a
+                    // boundary callback belongs to (midnight drift) and detect
+                    // back-to-back windows at `intervalDidEnd`. `occurrenceYMD`
+                    // pins the one-off's liveness scans to its single concrete
+                    // date — without it a lingering entry matches EVERY later
+                    // day whose time-of-day fits.
+                    meta: ScheduledActivityMeta(
+                        sessionId: s.id,
+                        durationMinutes: s.durationMinutes,
+                        startMinutesOfDay: s.startMinutesOfDay,
+                        endMinutesOfDay: s.endMinutesOfDay,
+                        occurrenceYMD: ScheduledCompletionRecord.localYMD(next)
+                    ),
                     when: next
                 ))
             } else {
@@ -112,7 +161,9 @@ public final class ScheduledLockService {
                     meta: ScheduledActivityMeta(
                         sessionId: s.id,
                         durationMinutes: s.durationMinutes,
-                        weekdays: s.weekdays
+                        weekdays: s.weekdays,
+                        startMinutesOfDay: s.startMinutesOfDay,
+                        endMinutesOfDay: s.endMinutesOfDay
                     ),
                     when: when
                 ))
@@ -160,11 +211,31 @@ public final class ScheduledLockService {
         // Keep the preserved live window's meta in the map (it was skipped above so
         // its running monitor stays untouched) so the extension can still recover
         // its session id + duration when its interval ends.
+        //
+        // WINDOW FIELDS COME FROM THE PRIOR REGISTRATION, not the (possibly
+        // just-edited) session: a running DeviceActivity interval cannot be
+        // re-pointed without stopping it, so the monitor still runs the
+        // schedule it was REGISTERED with. An edit that kept the occurrence
+        // live (same id + date) but moved the times would otherwise make the
+        // extension's gates and its completion record describe a window the
+        // monitor never ran — e.g. extending 9–10 to 9–12 mid-window leaves
+        // the monitor ending at 10:00 while a session-derived meta would
+        // credit a 180-minute duration for it. Weekdays DO come fresh from
+        // the session so a weekday edit still gates future daily fires until
+        // the post-window resync rebuilds everything.
         if preserveLive, let liveSession, let liveName {
+            let prior = previousMap[liveName]
             map[liveName] = ScheduledActivityMeta(
                 sessionId: liveSession.id,
-                durationMinutes: liveSession.durationMinutes,
-                weekdays: liveSession.weekdays
+                durationMinutes: prior?.durationMinutes ?? liveSession.durationMinutes,
+                weekdays: liveSession.weekdays,
+                startMinutesOfDay: prior?.startMinutesOfDay ?? liveSession.startMinutesOfDay,
+                endMinutesOfDay: prior?.endMinutesOfDay ?? liveSession.endMinutesOfDay,
+                // The preserved window is live NOW, so a one-off's single
+                // occurrence date is today (recurring stays weekday-gated).
+                occurrenceYMD: liveSession.isOneOff
+                    ? ScheduledCompletionRecord.localYMD(now)
+                    : nil
             )
         }
 

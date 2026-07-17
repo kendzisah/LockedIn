@@ -87,6 +87,17 @@ struct FocusRing: View {
                         color: SystemTokens.glowAccent,
                         action: { session.endBreakEarly() }
                     )
+                } else if session.hardcore {
+                    // Hardcore = no breaks, ever — surface the rule instead of
+                    // a tappable break button (the store guards `startBreak`
+                    // too; this is the UX half). Style matches the exhausted-
+                    // budget row below.
+                    trackerActionButton(
+                        title: "HARDCORE — NO BREAKS",
+                        color: SystemTokens.textMuted,
+                        action: {}
+                    )
+                    .disabled(true)
                 } else if session.breaksRemainingToday > 0 {
                     trackerActionButton(
                         title: "❚❚  TAKE A BREAK · \(session.breaksRemainingToday) LEFT",

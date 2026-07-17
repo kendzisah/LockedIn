@@ -72,6 +72,7 @@ public final class NotificationService {
     public enum ID {
         public static let dailyReminder         = "lockedin.daily_reminder"
         public static let executionBlockDone    = "lockedin.execution_block_done"
+        public static let breakEnded            = "lockedin.break_ended"
         public static let streakMilestone       = "lockedin.streak_milestone"
         public static let streakProtection      = "lockedin.streak_protection"       // evening
         public static let streakProtectionNoon  = "lockedin.streak_protection_noon"  // midday
@@ -135,12 +136,28 @@ public final class NotificationService {
 
     // MARK: - Scheduled sessions
 
+    /// How many upcoming occurrences per session get a start+end notification
+    /// pair. iOS caps PENDING local notifications at 64 per app and silently
+    /// drops requests beyond it. The previous per-weekday repeating model cost
+    /// up to 14 pending requests per session (7 weekdays × start/end), so 4–5
+    /// sessions starved every other notification in the app. Two absolute
+    /// occurrences ⇒ ≤4 pending per session, and the horizon is rolled forward
+    /// by `ScheduledSessionsStore.resyncMonitoring()` on every foreground.
+    private static let scheduledOccurrenceHorizon = 2
+
     /// Re-schedule the "starting now" heads-up notifications for every enabled
-    /// scheduled session (one per recurring weekday, or one fire-once for a
-    /// one-off). Cancels all prior scheduled-session notifications first. Also
-    /// the standalone fallback when Family Controls auto-block is unavailable.
+    /// scheduled session: one absolute, NON-repeating start/end pair for each
+    /// of the next `scheduledOccurrenceHorizon` occurrences (a one-off has a
+    /// single occurrence, so it collapses into the same loop). Cancels all
+    /// prior scheduled-session notifications first. Also the standalone
+    /// fallback when Family Controls auto-block is unavailable.
+    ///
+    /// Identifiers are `"<prefix>.<sessionId>.<yyyy-MM-dd>"` (and the
+    /// end-prefix equivalent) — date-scoped so consecutive occurrences don't
+    /// overwrite each other, and covered by the `scheduledSessionPrefix` sweep.
     public func resyncScheduledSessionNotifications(_ sessions: [ScheduledSession]) {
         let center = UNUserNotificationCenter.current()
+        let horizon = Self.scheduledOccurrenceHorizon
         center.getPendingNotificationRequests { requests in
             let stale = requests
                 .map(\.identifier)
@@ -148,6 +165,9 @@ public final class NotificationService {
             if !stale.isEmpty {
                 center.removePendingNotificationRequests(withIdentifiers: stale)
             }
+
+            let cal = Calendar.current
+            let now = Date()
 
             for s in sessions where s.enabled && s.isValid {
                 let content = UNMutableNotificationContent()
@@ -166,47 +186,54 @@ public final class NotificationService {
                     : "\(s.label) is done. Nice work."
                 endContent.sound = .default
 
-                if s.isOneOff {
-                    guard let next = s.nextOccurrence() else { continue }
-                    let startComps = Calendar.current.dateComponents(
+                // The occurrence whose window contains `now` is INVISIBLE to
+                // `upcomingOccurrences` (strictly-future starts only), so a
+                // mid-window resync would sweep its end notification above and
+                // never re-add it — and scheduled sessions have no other
+                // completion notif (`ActiveSessionStore` deliberately skips
+                // `scheduleExecutionBlockDone` for them because this
+                // per-occurrence one covers them). Re-add the LIVE
+                // occurrence's "Session Complete" explicitly.
+                let liveWindow = s.activeWindow(now: now)
+                if let live = liveWindow {
+                    let ymd = ScheduledCompletionRecord.localYMD(live.end)
+                    let endComps = cal.dateComponents(
+                        [.year, .month, .day, .hour, .minute], from: live.end
+                    )
+                    center.add(UNNotificationRequest(
+                        identifier: "\(ID.scheduledSessionEndPrefix).\(s.id).\(ymd)",
+                        content: endContent,
+                        trigger: UNCalendarNotificationTrigger(dateMatching: endComps, repeats: false)
+                    )) { _ in }
+                }
+
+                // A one-off's single real occurrence IS the live one —
+                // `upcomingOccurrences` would roll to a tomorrow that is
+                // never registered (the session auto-disables once credited),
+                // arming a phantom "locking in" ping.
+                if s.isOneOff && liveWindow != nil { continue }
+
+                for next in s.upcomingOccurrences(limit: horizon, after: now) {
+                    // Date-scoped suffix keeps the two occurrences' ids distinct.
+                    let ymd = ScheduledCompletionRecord.localYMD(next)
+
+                    let startComps = cal.dateComponents(
                         [.year, .month, .day, .hour, .minute], from: next
                     )
                     center.add(UNNotificationRequest(
-                        identifier: "\(ID.scheduledSessionPrefix).\(s.id).oneoff",
+                        identifier: "\(ID.scheduledSessionPrefix).\(s.id).\(ymd)",
                         content: content,
                         trigger: UNCalendarNotificationTrigger(dateMatching: startComps, repeats: false)
                     )) { _ in }
 
                     // End is the same calendar day at the end time (windows never
                     // cross midnight — enforced by validation).
-                    if let endDate = Calendar.current.date(bySettingHour: s.endHour, minute: s.endMinute, second: 0, of: next) {
-                        let endComps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: endDate)
+                    if let endDate = cal.date(bySettingHour: s.endHour, minute: s.endMinute, second: 0, of: next) {
+                        let endComps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: endDate)
                         center.add(UNNotificationRequest(
-                            identifier: "\(ID.scheduledSessionEndPrefix).\(s.id).oneoff",
+                            identifier: "\(ID.scheduledSessionEndPrefix).\(s.id).\(ymd)",
                             content: endContent,
                             trigger: UNCalendarNotificationTrigger(dateMatching: endComps, repeats: false)
-                        )) { _ in }
-                    }
-                } else {
-                    for wd in s.weekdays {
-                        var startComps = DateComponents()
-                        startComps.weekday = wd
-                        startComps.hour = s.startHour
-                        startComps.minute = s.startMinute
-                        center.add(UNNotificationRequest(
-                            identifier: "\(ID.scheduledSessionPrefix).\(s.id).\(wd)",
-                            content: content,
-                            trigger: UNCalendarNotificationTrigger(dateMatching: startComps, repeats: true)
-                        )) { _ in }
-
-                        var endComps = DateComponents()
-                        endComps.weekday = wd
-                        endComps.hour = s.endHour
-                        endComps.minute = s.endMinute
-                        center.add(UNNotificationRequest(
-                            identifier: "\(ID.scheduledSessionEndPrefix).\(s.id).\(wd)",
-                            content: endContent,
-                            trigger: UNCalendarNotificationTrigger(dateMatching: endComps, repeats: true)
                         )) { _ in }
                     }
                 }
@@ -237,6 +264,38 @@ public final class NotificationService {
     public func cancelExecutionBlockDone() {
         UNUserNotificationCenter.current().removePendingNotificationRequests(
             withIdentifiers: [ID.executionBlockDone]
+        )
+    }
+
+    // MARK: - Break over
+
+    /// Fire-once "break over" nudge at break-end. iOS can't re-apply the Screen
+    /// Time shield at a sub-15-min wall-clock instant in the background (DeviceActivity
+    /// has a ~15-min minimum interval; notifications can't run code), so this pulls
+    /// the user back to LockedIn — whose foreground sync re-applies the shield
+    /// instantly. Best-effort nudge, not a guarantee.
+    ///
+    /// Cancelled on every in-app break/session exit (`ActiveSessionStore`
+    /// `handleBreakEnded` / `complete`), and on logout/FULL_RESET via the blanket
+    /// `cancelAllNotifications()` in `LogoutCleanupBus`.
+    public func scheduleBreakEnded(endsAt: Date) {
+        cancelBreakEnded()
+        let interval = endsAt.timeIntervalSinceNow
+        guard interval > 0 else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Break over"
+        content.body = "Time to lock back in — open LockedIn to resume focus."
+        content.sound = .default
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
+        let request = UNNotificationRequest(identifier: ID.breakEnded, content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request) { _ in }
+    }
+
+    public func cancelBreakEnded() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(
+            withIdentifiers: [ID.breakEnded]
         )
     }
 

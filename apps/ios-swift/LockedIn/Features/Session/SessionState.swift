@@ -141,6 +141,55 @@ public struct SessionStatePersistedShape: Codable, Equatable {
 // Same JSON shape (`@lockedin/active_execution_block`); the Session feature
 // references that single type to avoid module-level redeclaration.
 
+// MARK: - Active break persistence (Pause Protocol)
+
+/// Persisted snapshot of a live Pause-Protocol break, written by
+/// `LockModeService.beginBreak` at break start and cleared on every break/
+/// session exit. A sibling of `ActiveExecutionBlock` (NOT folded into it —
+/// old persisted blocks must keep decoding) so an app kill mid-break can be
+/// recovered on next launch: `MainNavigator.resumeActiveExecutionBlockIfNeeded`
+/// resumes the break in place, resumes the running session if the break
+/// elapsed, or falls through to the expired-block credit if the whole session
+/// did.
+///
+/// Stored under `SessionState.activeBreakStateKey` in BOTH the App Group and
+/// standard suites (mirrors the block's dual-write). The App Group copy is the
+/// cross-process contract (C4) — intents/widgets may read it to tell "on a
+/// break" apart from "no session".
+public struct ActiveBreakState: Codable, Equatable, Sendable {
+    /// Epoch ms the break ends — the instant the OS re-applies the shield via
+    /// the break-resume DeviceActivity monitor.
+    public let breakEndsAtMs: Double
+    /// Epoch ms of the FIXED post-break session end (`breakEnd +
+    /// frozenRemaining`, clamped to a scheduled window's hard end), computed
+    /// once at break start. Matches the persisted block's rewritten
+    /// `endTimestamp` and the App Group `sessionEndTimestamp` (contract C3).
+    public let sessionEndsAtMs: Double
+    /// Original session length — for rebuilding the engine on resume.
+    public let durationMinutes: Int
+    /// Hardcore flag snapshot (defensive: hardcore sessions can't start breaks,
+    /// but the resume path shouldn't have to know that invariant).
+    public let hardcore: Bool
+    /// Non-nil when the break belongs to a promoted scheduled occurrence — the
+    /// resume path then re-attaches via `currentActiveOccurrence()` matching
+    /// instead of the manual persisted block.
+    public let scheduledOccurrenceId: String?
+
+    public init(
+        breakEndsAtMs: Double,
+        sessionEndsAtMs: Double,
+        durationMinutes: Int,
+        hardcore: Bool,
+        scheduledOccurrenceId: String?
+    ) {
+        self.breakEndsAtMs = breakEndsAtMs
+        self.sessionEndsAtMs = sessionEndsAtMs
+        self.durationMinutes = durationMinutes
+        self.hardcore = hardcore
+        self.scheduledOccurrenceId = scheduledOccurrenceId
+    }
+}
+
 // MARK: - SessionState (Observable)
 
 /// Lock button lifecycle phase. Matches RN `SessionPhase`.
@@ -173,6 +222,11 @@ public final class SessionState {
     /// Whether the active block is a Hardcore session (no early exit / breaks).
     /// Persisted so a minimize / cold-resume re-presents with hardcore intact.
     public static let activeBlockHardcoreKey = "@lockedin/active_block_hardcore"
+    /// JSON `ActiveBreakState` — the live Pause-Protocol break, if any.
+    /// Written at break start, cleared on every break/session exit (including
+    /// `LockModeService.endSession`). The exact string is a cross-workstream
+    /// contract (C4) — intents read it via the App Group; do not rename.
+    public static let activeBreakStateKey = "@lockedin/active_break_state"
 
     // MARK: - Phase
 

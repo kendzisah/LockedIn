@@ -41,6 +41,15 @@ struct ScheduledSessionsScreen: View {
     @State private var showDiagnostics = false
     #endif
 
+    /// Consumer-facing (all builds) setup-health snapshot behind the warning
+    /// banner. A scheduled session with Screen Time access off, or with zero
+    /// allowed apps picked, "runs" but blocks NOTHING — silently. The two
+    /// signals are captured into plain state (not read inline in `body`) so
+    /// the Family Controls / App-Group reads don't run on every SwiftUI
+    /// rebuild; refreshed on appear and after every action that can change them.
+    @State private var setupAuth: ScreenTimeModule.AuthorizationState = .approved
+    @State private var setupSelectedCount = 1
+
     var body: some View {
         ZStack(alignment: .top) {
             ScreenGradient().ignoresSafeArea()
@@ -50,6 +59,8 @@ struct ScheduledSessionsScreen: View {
 
                 ScrollView {
                     VStack(spacing: 10) {
+                        setupWarningBanner
+
                         if store.sessions.isEmpty {
                             emptyState
                         } else {
@@ -70,6 +81,7 @@ struct ScheduledSessionsScreen: View {
             }
         }
         .sheet(item: $editorTarget, onDismiss: {
+            refreshSetupHealth()
             #if DEBUG
             diag = ScheduledLockDiagnostics.capture()
             #endif
@@ -80,10 +92,117 @@ struct ScheduledSessionsScreen: View {
             )
         }
         .onAppear {
+            refreshSetupHealth()
             #if DEBUG
             diag = ScheduledLockDiagnostics.capture()
             #endif
         }
+    }
+
+    // MARK: - Setup warning banner (all builds)
+
+    private func refreshSetupHealth() {
+        setupAuth = ScreenTimeModule.shared.getAuthorizationStatus()
+        setupSelectedCount = ScreenTimeModule.shared.getSelectedAppCount()
+    }
+
+    /// Auth problem outranks the empty-allowlist problem — without Family
+    /// Controls access nothing else matters (and the picker needs auth anyway).
+    @ViewBuilder
+    private var setupWarningBanner: some View {
+        if setupAuth != .approved {
+            warningBanner(
+                color: SystemTokens.red,
+                icon: "exclamationmark.shield.fill",
+                message: "Auto-block is OFF — grant Screen Time access",
+                actionTitle: "⟐  GRANT ACCESS",
+                action: {
+                    Task { @MainActor in
+                        _ = await ScreenTimeModule.shared.requestAuthorization()
+                        refreshSetupHealth()
+                        // Auth may have just resolved — re-register the
+                        // DeviceActivity schedules that `resyncAll` skipped
+                        // while unauthorized.
+                        resyncIncludingLiveWindow()
+                    }
+                }
+            )
+        } else if setupSelectedCount == 0 {
+            warningBanner(
+                color: SystemTokens.gold,
+                icon: "app.badge.checkmark",
+                message: "No allowed apps chosen — sessions won't block anything",
+                actionTitle: "⟐  CHOOSE ALLOWED APPS",
+                action: {
+                    Task { @MainActor in
+                        _ = await ScreenTimeModule.shared.showAppPicker()
+                        refreshSetupHealth()
+                        // A live window's monitor may still be unregistered
+                        // (e.g. auth + picker both fixed in one visit) —
+                        // same unguarded re-register as the auth action.
+                        resyncIncludingLiveWindow()
+                    }
+                }
+            )
+        }
+    }
+
+    /// Re-register DeviceActivity schedules AFTER a setup change (auth grant /
+    /// app selection) — including a CURRENTLY-LIVE window.
+    /// `store.resyncMonitoring()` alone can't do that: it skips the
+    /// DeviceActivity half while a window is live (its stop-all would kill a
+    /// running monitor), but that guard also strands this flow — the live
+    /// window it's warning about was never registered (auth was off), so
+    /// nothing would arm it and the shield the in-app promotion applies would
+    /// have no monitor to clear it at window end. `resyncAll`'s
+    /// preserve-live + register-during-window handling makes the direct call
+    /// safe mid-window.
+    private func resyncIncludingLiveWindow() {
+        store.resyncMonitoring()
+        if store.currentActiveOccurrence() != nil {
+            ScheduledLockService.shared.resyncAll(store.sessions)
+        }
+    }
+
+    /// HUD-panel style warning card (matches the diagnostics card's shape:
+    /// 14pt padding, 12pt radius, hairline stroke) tinted by severity.
+    private func warningBanner(
+        color: Color,
+        icon: String,
+        message: String,
+        actionTitle: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(color)
+                Text(message)
+                    .font(.custom(FontFamily.headingSemiBold.rawValue, size: 13))
+                    .foregroundColor(SystemTokens.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Button(action: action) {
+                Text(actionTitle)
+                    .font(.custom(FontFamily.display.rawValue, size: 10))
+                    .tracking(1.4)
+                    .foregroundColor(color)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(color.opacity(0.10))
+                    .overlay(RoundedRectangle(cornerRadius: 4)
+                        .stroke(color.opacity(0.35), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background(color.opacity(0.06))
+        .overlay(RoundedRectangle(cornerRadius: 12)
+            .stroke(color.opacity(0.25), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: - Header

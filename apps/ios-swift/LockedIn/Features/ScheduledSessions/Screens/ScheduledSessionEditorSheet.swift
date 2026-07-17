@@ -51,9 +51,14 @@ struct ScheduledSessionEditorSheet: View {
     }
     private var isValid: Bool { durationMinutes >= ScheduledSession.minWindowMinutes }
     /// Message for the duration row / save gating — distinguishes "end before
-    /// start" from "shorter than the iOS DeviceActivity minimum".
+    /// start" from "shorter than the iOS DeviceActivity minimum". An end
+    /// earlier than the start usually means the user WANTED a cross-midnight
+    /// window (e.g. 22:00 → 06:00), which v1 doesn't support — say that
+    /// explicitly instead of implying they merely mis-ordered the times.
     private var durationProblem: String? {
-        if durationMinutes <= 0 { return "End time must be after start time" }
+        if durationMinutes <= 0 {
+            return "End time must be after start time — overnight sessions aren't supported yet."
+        }
         if durationMinutes < ScheduledSession.minWindowMinutes {
             return "Must be at least \(ScheduledSession.minWindowMinutes) min — iOS won't monitor shorter windows"
         }

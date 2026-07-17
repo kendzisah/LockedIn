@@ -131,12 +131,156 @@ public final class LockModeService {
         return scheduled
     }
 
+    /// Resume focus after an in-app break end: re-apply the shield and re-arm
+    /// the manual monitor + fail-safe timestamp for the remaining seconds
+    /// while PRESERVING the persisted block's original metadata. The old path
+    /// (`beginSession(durationSeconds:)`) persisted a fresh remaining-only
+    /// block, so a later kill+expire credited only the post-break remainder —
+    /// dropping the pre-break focus a surviving process would have credited in
+    /// full. Here the block keeps its `startTimestamp`/`durationMinutes` (the
+    /// ORIGINAL session, as `beginBreak` maintained) and only `endTimestamp`
+    /// moves to the actual resume target: the fixed post-break end on an auto
+    /// break-end, or the pulled-back end after `endBreakEarly` (leaving the
+    /// old fixed end in place would pad the unused break tail back onto a
+    /// kill-resume).
+    ///
+    /// Defensive fallback: if no block survived (torn down elsewhere), persist
+    /// a remaining-time block so the cold-start resume paths still work.
+    @discardableResult
+    public func resumeSessionAfterBreak(remainingSeconds: Int) async -> Bool {
+        let auth = await ScreenTimeModule.shared.requestAuthorization()
+        if auth != .approved { return false }
+
+        let secs = max(1, remainingSeconds)
+        let now = Date()
+        let endTimestampMs = (now.timeIntervalSince1970 + TimeInterval(secs)) * 1000.0
+        let active: ActiveExecutionBlock
+        if let block = loadActiveExecutionBlock() {
+            active = ActiveExecutionBlock(
+                startTimestamp: block.startTimestamp,
+                endTimestamp: endTimestampMs,
+                durationMinutes: block.durationMinutes
+            )
+        } else {
+            active = ActiveExecutionBlock(
+                startTimestamp: now.timeIntervalSince1970 * 1000.0,
+                endTimestamp: endTimestampMs,
+                durationMinutes: max(1, Int(ceil(Double(secs) / 60.0)))
+            )
+        }
+        Defaults.setCodable(active, SessionState.activeExecutionBlockKey, scope: .appGroup)
+        Defaults.setCodable(active, SessionState.activeExecutionBlockKey, scope: .standard)
+
+        let scheduled = ScreenTimeModule.shared.beginSession(durationSeconds: secs)
+        if !scheduled {
+            ScreenTimeModule.shared.shieldApps()
+        }
+        return scheduled
+    }
+
+    // MARK: - Pause Protocol (timed break)
+
+    /// Begin a Pause-Protocol break. Unlike `endSession()`, this lifts the
+    /// shield WITHOUT tearing the session down:
+    ///
+    /// - The persisted `activeExecutionBlock` + hardcore flag stay intact — an
+    ///   app kill mid-break must still resume (or credit) the session. The
+    ///   block's `endTimestamp` is REWRITTEN to `sessionEnd` so the cold-start
+    ///   paths agree with the engine's fixed post-break end.
+    /// - An `ActiveBreakState` snapshot is persisted (both scopes, mirroring
+    ///   the block's dual-write) so the resume path can tell "mid-break" from
+    ///   "mid-session".
+    /// - A future-start DeviceActivity monitor is registered whose
+    ///   `intervalDidStart` re-applies the shield AT `breakEnd`, app dead or
+    ///   alive — the OS, not the app, ends the unshielded window.
+    ///
+    /// `sessionEnd` is the FIXED wall-clock end computed once at break start
+    /// (`breakEnd + frozenRemaining`, clamped to a scheduled window's hard
+    /// end). While the break runs, the App Group `sessionEndTimestamp` holds
+    /// this value (contract C3).
+    ///
+    /// The resume monitor is SKIPPED when `breakEnd >= sessionEnd`: that only
+    /// happens for a promoted scheduled session whose break runs to/past the
+    /// clamped window end — there is no post-break focus left to re-shield,
+    /// and the scheduled monitor owns the window-end clear (a lingering future
+    /// manual timestamp would make it defer and strand the shield).
+    ///
+    /// Returns `true` when the resume monitor was accepted by the OS.
+    @discardableResult
+    public func beginBreak(
+        breakEnd: Date,
+        sessionEnd: Date,
+        durationMinutes: Int,
+        hardcore: Bool,
+        scheduledOccurrenceId: String?
+    ) -> Bool {
+        // Lift the shield + stop the pre-break session monitor (it targets the
+        // pre-break end, which no longer exists). This also clears
+        // `sessionEndTimestamp`; `scheduleBreakResume` rewrites it to the fixed
+        // end below. Crucially it does NOT touch the block / hardcore / break
+        // keys — that teardown is `endSession()`'s job, at real session end.
+        ScreenTimeModule.shared.removeShield()
+
+        // Rewrite the persisted manual block's end to the fixed post-break end
+        // so cold-start resume + expired-credit see the real end. Duration is
+        // preserved — the block still describes the ORIGINAL session. Promoted
+        // scheduled sessions persist no manual block (the scheduled window is
+        // their source of truth) — nothing to rewrite.
+        if let block = loadActiveExecutionBlock() {
+            let rewritten = ActiveExecutionBlock(
+                startTimestamp: block.startTimestamp,
+                endTimestamp: sessionEnd.timeIntervalSince1970 * 1000.0,
+                durationMinutes: block.durationMinutes
+            )
+            Defaults.setCodable(rewritten, SessionState.activeExecutionBlockKey, scope: .appGroup)
+            Defaults.setCodable(rewritten, SessionState.activeExecutionBlockKey, scope: .standard)
+        }
+
+        let breakState = ActiveBreakState(
+            breakEndsAtMs: breakEnd.timeIntervalSince1970 * 1000.0,
+            sessionEndsAtMs: sessionEnd.timeIntervalSince1970 * 1000.0,
+            durationMinutes: durationMinutes,
+            hardcore: hardcore,
+            scheduledOccurrenceId: scheduledOccurrenceId
+        )
+        Defaults.setCodable(breakState, SessionState.activeBreakStateKey, scope: .appGroup)
+        Defaults.setCodable(breakState, SessionState.activeBreakStateKey, scope: .standard)
+
+        guard breakEnd < sessionEnd else { return false }
+        return ScreenTimeModule.shared.scheduleBreakResume(
+            breakEnd: breakEnd,
+            sessionEnd: sessionEnd
+        )
+    }
+
+    /// Read the persisted active break (if any). Prefers App Group suite,
+    /// falls back to standard defaults — same precedence as the block.
+    public func loadActiveBreakState() -> ActiveBreakState? {
+        if let appGroup = Defaults.codable(ActiveBreakState.self, SessionState.activeBreakStateKey, scope: .appGroup) {
+            return appGroup
+        }
+        return Defaults.codable(ActiveBreakState.self, SessionState.activeBreakStateKey, scope: .standard)
+    }
+
+    /// Drop the persisted break snapshot (both scopes). Called on every
+    /// in-app break exit and by the resume path once it has consumed (or
+    /// invalidated) the snapshot.
+    public func clearActiveBreakState() {
+        Defaults.remove(SessionState.activeBreakStateKey, scope: .appGroup)
+        Defaults.remove(SessionState.activeBreakStateKey, scope: .standard)
+    }
+
     /// End the current session — un-shield apps, cancel the DAM schedule,
-    /// and clear the App Group keys the extension reads.
+    /// and clear the App Group keys the extension reads. Also drops any
+    /// persisted break snapshot: a session can end mid-break (hold-to-end, a
+    /// scheduled window closing) and a surviving break key would make the next
+    /// launch resurrect a dead session.
     public func endSession() {
         ScreenTimeModule.shared.removeShield()
         Defaults.remove(SessionState.activeExecutionBlockKey, scope: .appGroup)
         Defaults.remove(SessionState.activeExecutionBlockKey, scope: .standard)
+        Defaults.remove(SessionState.activeBreakStateKey, scope: .appGroup)
+        Defaults.remove(SessionState.activeBreakStateKey, scope: .standard)
         Defaults.remove(SessionState.activeBlockHardcoreKey)
     }
 

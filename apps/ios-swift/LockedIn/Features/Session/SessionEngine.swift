@@ -79,7 +79,12 @@ public final class SessionEngine {
     public private(set) var remainingSeconds: Int
     public let totalSeconds: Int
     public let durationMinutes: Int
-    /// Mutable so a Pause Protocol break can push the end out on resume.
+    /// Wall-clock end of the focus countdown. Mutable because a Pause Protocol
+    /// break moves it ONCE, at break START, to the fixed post-break end
+    /// (`breakEnd + frozenRemaining`, clamped to `hardEnd`) — so while a break
+    /// runs this already holds the instant the session will finish, no matter
+    /// how long the app spends backgrounded or dead. `endBreakEarly` pulls it
+    /// back in (`now + frozenRemaining`); nothing else moves it.
     public private(set) var endTimestamp: Date
     /// Fixed OS window end for a SCHEDULED session (nil for manual). The effective
     /// end may never exceed this, and the instant wall-clock ≥ `hardEnd` the session
@@ -94,6 +99,9 @@ public final class SessionEngine {
     /// Seconds left in the current break (drives the UI + Live Activity).
     public private(set) var breakRemainingSeconds = 0
     @ObservationIgnored private var breakEndTimestamp: Date?
+    /// Wall-clock instant the current break ends (nil when not on a break). Read by
+    /// the store to schedule the "break over" nudge notification.
+    public var breakEndsAt: Date? { breakEndTimestamp }
     @ObservationIgnored private var pausedFocusRemaining: Int?
     /// Fired with the focus seconds remaining when a break ends (auto at the
     /// break timer's zero, or via `endBreakEarly()`). The owner (store)
@@ -199,40 +207,85 @@ public final class SessionEngine {
     /// Start a timed break: freeze the focus countdown, run a `seconds` break
     /// countdown (surfaced on the Live Activity), and auto-resume focus at the
     /// break's end. The ticker keeps running throughout.
+    ///
+    /// FIXED-END MODEL: the post-break end is computed ONCE, here —
+    /// `breakEnd + frozenRemaining`, clamped to `hardEnd` — and written to
+    /// `endTimestamp` immediately. The session resumes against that wall-clock
+    /// instant regardless of app state at break end (the OS re-applies the
+    /// shield at `breakEnd` via the break-resume DeviceActivity monitor the
+    /// store registers), so a backgrounded/killed app can no longer freeze the
+    /// focus clock into an indefinite unshielded pause.
     public func startBreak(seconds: Int, now: Date = Date()) {
         guard status == .running, !onBreak, seconds > 0 else { return }
-        pausedFocusRemaining = max(0, Int(ceil(endTimestamp.timeIntervalSince(now))))
-        breakEndTimestamp = now.addingTimeInterval(TimeInterval(seconds))
+        let frozenRemaining = max(0, Int(ceil(endTimestamp.timeIntervalSince(now))))
+        pausedFocusRemaining = frozenRemaining
+        let breakEnd = now.addingTimeInterval(TimeInterval(seconds))
+        breakEndTimestamp = breakEnd
         breakRemainingSeconds = seconds
+        // A scheduled session is bounded by its fixed OS window: a break may
+        // pause the shield but must never push the end past `hardEnd` — for a
+        // promoted scheduled session this clamps EXACTLY to the window end, so
+        // the extension's window-end clear is never stranded. Manual sessions
+        // (hardEnd == nil) get the unclamped `breakEnd + frozenRemaining`.
+        var fixedEnd = breakEnd.addingTimeInterval(TimeInterval(frozenRemaining))
+        if let h = hardEnd { fixedEnd = min(fixedEnd, h) }
+        endTimestamp = fixedEnd
         onBreak = true
         if #available(iOS 16.2, *) { forceLiveActivityUpdate(now: now) }
     }
 
-    /// End the break now and resume the focus countdown.
-    public func endBreakEarly(now: Date = Date()) {
-        guard onBreak else { return }
-        finishBreak(now: now)
+    /// Cold-start resume of a persisted break: restore the break countdown
+    /// WITHOUT touching `endTimestamp` — the fixed post-break end was baked
+    /// into the persisted block at break start and re-entered the engine via
+    /// `resumeEndTimestamp`, so moving it here would double-extend the session.
+    public func resumeBreak(until breakEnd: Date, now: Date = Date()) {
+        guard status == .running, !onBreak else { return }
+        // Frozen focus remaining = fixed end − break end (what `startBreak`
+        // originally froze); `endBreakEarly` uses it to pull the end back in.
+        pausedFocusRemaining = max(0, Int(ceil(endTimestamp.timeIntervalSince(breakEnd))))
+        breakEndTimestamp = breakEnd
+        breakRemainingSeconds = max(0, Int(ceil(breakEnd.timeIntervalSince(now))))
+        onBreak = true
+        // Flip the Live Activity from the focus phase (`start()` just pushed
+        // it) to the break countdown.
+        if #available(iOS 16.2, *) { forceLiveActivityUpdate(now: now) }
     }
 
-    /// Resume focus after a break — push the end out by the frozen remaining so
-    /// the break adds no focus credit, then notify the owner to re-arm the shield.
-    private func finishBreak(now: Date = Date()) {
-        let rem = pausedFocusRemaining ?? max(0, Int(ceil(endTimestamp.timeIntervalSince(now))))
-        // A scheduled session is bounded by its fixed OS window: a break may pause
-        // the shield but must never push the end past `hardEnd`. Manual sessions
-        // (hardEnd == nil) keep the identical `now + rem` end.
+    /// End the break now and resume the focus countdown. Pulls the fixed end
+    /// back in (`now + frozenRemaining`, re-clamped to `hardEnd`) so cutting a
+    /// break short doesn't leave the unused break tail padded onto the session.
+    public func endBreakEarly(now: Date = Date()) {
+        guard onBreak else { return }
+        let rem = pausedFocusRemaining
+            ?? max(0, Int(ceil(endTimestamp.timeIntervalSince(breakEndTimestamp ?? now))))
         var newEnd = now.addingTimeInterval(TimeInterval(rem))
         if let h = hardEnd { newEnd = min(newEnd, h) }
         endTimestamp = newEnd
-        remainingSeconds = max(0, Int(ceil(newEnd.timeIntervalSince(now))))
+        finishBreak(now: now)
+    }
+
+    /// Resume focus after a break, against the FIXED end computed at break
+    /// start (or the pulled-back end from `endBreakEarly`). If the fixed end
+    /// already passed — the break auto-ended while the app was backgrounded and
+    /// the whole remaining focus ran out under the OS-re-applied shield — the
+    /// session completes naturally instead of resuming.
+    private func finishBreak(now: Date = Date()) {
         onBreak = false
         breakEndTimestamp = nil
         breakRemainingSeconds = 0
         pausedFocusRemaining = nil
+        let r = max(0, Int(ceil(endTimestamp.timeIntervalSince(now))))
+        remainingSeconds = r
+        if r <= 0 {
+            // The time burned past break-end was shielded (break-resume monitor
+            // re-applied it), so it counts as focus → natural completion.
+            finishNaturally()
+            return
+        }
         if #available(iOS 16.2, *) { forceLiveActivityUpdate(now: now) }
-        // Report the clamped remaining (== rem for manual) so the shield re-arm
-        // never targets a time past the window.
-        onBreakEnded?(remainingSeconds)
+        // Report the remaining focus (clamped to the window for scheduled
+        // sessions) so the shield re-arm never targets a time past the window.
+        onBreakEnded?(r)
     }
 
     /// Hold-to-unlock path. Computes the actual minutes the user ran for and
@@ -407,6 +460,15 @@ extension SessionEngine {
     /// matching activity and we can rebind to it instead of stacking a
     /// second one.
     func beginOrAttachLiveActivity() {
+        // Respect the user's Live Activities permission: never call
+        // `Activity.request` when they're disabled — it throws, and blindly
+        // requesting is what surfaces the "Allow Live Activities?" prompt / errors.
+        // The session runs fine without the widget.
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            AnalyticsService.shared.track("live_activity_unavailable")
+            return
+        }
+
         // Build the attributes + content state up front.
         let nowMs = Date().timeIntervalSince1970 * 1000.0
         let startMs = endTimestamp.timeIntervalSince1970 * 1000.0 - Double(totalSeconds) * 1000.0
@@ -499,6 +561,12 @@ extension SessionEngine {
         let nowMs = now.timeIntervalSince1970 * 1000.0
         let state: SessionActivityAttributes.ContentState
         let staleSeconds: Int
+        // Seconds to keep the activity FRESH past its end. The focus phase keeps a
+        // buffer so its self-rendering `Text(timerInterval:)` reaches 0:00 without
+        // freezing on a stale mid-value; a break goes stale AT break-end (buffer 0)
+        // so the island visibly dims — a background-safe "break over, open the app"
+        // cue (iOS can't flip it to the focus phase in the background).
+        let staleBuffer: Double
 
         if onBreak, let breakEnd = breakEndTimestamp {
             // The Dynamic Island shows the BREAK countdown (not the frozen
@@ -511,6 +579,10 @@ extension SessionEngine {
                 endTimestampMs: breakEnd.timeIntervalSince1970 * 1000.0
             )
             staleSeconds = breakRemainingSeconds
+            // +1s so the floored `breakRemainingSeconds` can't dim the island a
+            // hair BEFORE break-end; it still dims right at 0:00, well before the
+            // focus phase would resume.
+            staleBuffer = 1
         } else {
             state = SessionActivityAttributes.ContentState(
                 remainingSeconds: remainingSeconds,
@@ -523,9 +595,10 @@ extension SessionEngine {
                 endTimestampMs: endTimestamp.timeIntervalSince1970 * 1000.0
             )
             staleSeconds = remainingSeconds
+            staleBuffer = 300
         }
 
-        let staleDate = now.addingTimeInterval(Double(staleSeconds) + 300)
+        let staleDate = now.addingTimeInterval(Double(staleSeconds) + staleBuffer)
         let content = ActivityContent(state: state, staleDate: staleDate)
         let activity = handle.activity
         Task { @MainActor in

@@ -37,3 +37,16 @@ public struct EndLockInIntent: AppIntent {
         return .result(dialog: "Lock-in ended.")
     }
 }
+
+/// The Dynamic Island's "End early" `Button(intent:)` (iOS 17+ surface)
+/// would otherwise perform this intent in the WIDGET-EXTENSION process,
+/// where `LockInIntentServiceLocator.shared` is nil — the tap hits
+/// `IntentError.serviceUnavailable`, Live Activity buttons surface no error
+/// dialog, and the session keeps running while the end hook / hardcore
+/// guard never execute. `LiveActivityIntent` (iOS 17+, matching the
+/// button's own availability floor) tells the OS to run `perform()` in the
+/// APP process instead, where the locator is registered at boot.
+/// NEEDS a physical-device smoke test — Live Activity intent routing can't
+/// be exercised in the simulator.
+@available(iOS 17.0, *)
+extension EndLockInIntent: LiveActivityIntent {}

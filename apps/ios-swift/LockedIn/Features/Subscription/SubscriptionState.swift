@@ -23,12 +23,17 @@
 //  source of truth for AppsFlyer and ad-network postbacks (Meta). Firing
 //  `af_subscribe` / `af_start_trial` here would double-count conversions.
 //
-//  Persistence: none — RevenueCat owns its own state.
+//  Persistence: RevenueCat owns its own state. The ONLY thing persisted here
+//  is the App Group entitlement mirror (`@lockedin/is_subscribed`, contract
+//  C4) written by `setSubscribed(_:)` so out-of-process consumers — the
+//  AppIntentsKit gate (Siri / Shortcuts / widget-button starts) and the
+//  QuickStart widget — can enforce the Pro gate without RevenueCat access.
 //
 
 import Foundation
 import Observation
 import RevenueCat
+import WidgetKit
 
 // MARK: - Subscription state
 
@@ -52,6 +57,68 @@ public final class SubscriptionState {
     private var loggedInUserID: String?
     private var listenerTask: Task<Void, Never>?
     private var configured = false
+
+    // MARK: - App Group entitlement mirror (contract C4)
+
+    /// App Group key mirroring `isSubscribed` for out-of-process readers —
+    /// AppIntentsKit's `LockInAppGroupGate` (Siri / Shortcuts / widget-button
+    /// gating) and the QuickStart widget's timeline. Frozen cross-workstream
+    /// string; a missing key reads as NOT subscribed on the consumer side, so
+    /// the mirror only ever widens access when an entitlement is actually
+    /// active.
+    private static let isSubscribedMirrorKey = "@lockedin/is_subscribed"
+
+    /// App Group key mirroring the active entitlement's expiration (epoch ms)
+    /// next to the boolean — frozen duplicate of
+    /// `LockInAppGroupGate.subscriptionExpiresAtKey`. The boolean alone has no
+    /// horizon: it is rewritten only when THIS app re-evaluates the
+    /// entitlement, so a lapse while the app stays closed would leave direct
+    /// Siri / Shortcuts starts passing on a stale `true` indefinitely. The
+    /// gate fails closed once the mirrored expiry (plus grace) is past.
+    /// Removed (no horizon) for lifetime entitlements / unknown expiry.
+    private static let subscriptionExpiresAtMirrorKey = "@lockedin/subscription_expires_at_ms"
+
+    /// `QuickStartWidget.kind` (LockedInWidgets target) — documented
+    /// duplicate; the widget target can't be imported here. Reloaded on
+    /// entitlement changes so the widget flips between its interactive
+    /// tap-target and non-interactive deep-link layouts without waiting for
+    /// its 24h timeline refresh.
+    private static let quickStartWidgetKind = "LockedInQuickStartWidget"
+
+    /// SINGLE funnel for every `isSubscribed` assignment. Keeps the App
+    /// Group mirror in lockstep with the in-memory flag — a direct
+    /// `isSubscribed = ...` write would let Siri / widget gating drift from
+    /// what the app shows the user. Add new entitlement paths through here.
+    ///
+    /// `expiresAt` is the active entitlement's `expirationDate` when known:
+    /// it bounds how long the mirrored `true` stays trusted out-of-process
+    /// (see `subscriptionExpiresAtMirrorKey`). Pass nil for "no horizon"
+    /// (lifetime entitlement, unknown expiry, or `subscribed == false`).
+    private func setSubscribed(_ subscribed: Bool, expiresAt: Date?) {
+        // Detect "mirror out of sync" BEFORE writing: covers both a real
+        // entitlement flip and the first-ever write on installs that predate
+        // the mirror (key missing while the user is subscribed).
+        let mirrorOutOfSync = (Defaults.appGroup.object(forKey: Self.isSubscribedMirrorKey) as? Bool) != subscribed
+
+        isSubscribed = subscribed
+        Defaults.setBool(subscribed, Self.isSubscribedMirrorKey, scope: .appGroup)
+        if subscribed, let expiresAt {
+            Defaults.setDouble(
+                expiresAt.timeIntervalSince1970 * 1000.0,
+                Self.subscriptionExpiresAtMirrorKey,
+                scope: .appGroup
+            )
+        } else {
+            Defaults.remove(Self.subscriptionExpiresAtMirrorKey, scope: .appGroup)
+        }
+
+        // Reload only when the widget-visible state actually changed —
+        // WidgetKit budgets reloads, and entitlement re-evaluations happen on
+        // every customer-info tick.
+        if mirrorOutOfSync {
+            WidgetCenter.shared.reloadTimelines(ofKind: Self.quickStartWidgetKind)
+        }
+    }
 
     // MARK: - Lifecycle
 
@@ -83,8 +150,8 @@ public final class SubscriptionState {
         if let info = await SubscriptionService.shared.customerInfo() {
             previousCustomerInfo = info
             let entitled = SubscriptionService.hasEntitlement(in: info)
-            isSubscribed = entitled
             currentEntitlement = info.entitlements.active[SubscriptionService.entitlementID]
+            setSubscribed(entitled, expiresAt: currentEntitlement?.expirationDate)
             if entitled {
                 lastPeriodType = currentEntitlement?.periodType
             }
@@ -117,7 +184,7 @@ public final class SubscriptionState {
     public func handleLogout() async {
         loggedInUserID = nil
         await SubscriptionService.shared.logOut()
-        isSubscribed = false
+        setSubscribed(false, expiresAt: nil)
         currentEntitlement = nil
         lastPeriodType = nil
         previousCustomerInfo = nil
@@ -138,8 +205,8 @@ public final class SubscriptionState {
             return isSubscribed
         }
         let subscribed = SubscriptionService.hasEntitlement(in: info)
-        isSubscribed = subscribed
         currentEntitlement = info.entitlements.active[SubscriptionService.entitlementID]
+        setSubscribed(subscribed, expiresAt: currentEntitlement?.expirationDate)
 
         if subscribed && !wasPreviouslySubscribed {
             let entitlement = currentEntitlement
@@ -164,10 +231,10 @@ public final class SubscriptionState {
     @discardableResult
     public func restorePurchases() async -> Bool {
         let subscribed = await SubscriptionService.shared.restorePurchases()
-        isSubscribed = subscribed
         if subscribed, let info = await SubscriptionService.shared.customerInfo() {
             currentEntitlement = info.entitlements.active[SubscriptionService.entitlementID]
         }
+        setSubscribed(subscribed, expiresAt: subscribed ? currentEntitlement?.expirationDate : nil)
         return subscribed
     }
 
@@ -182,10 +249,10 @@ public final class SubscriptionState {
     public func purchase(package: Package) async -> SubscriptionService.PurchaseOutcome {
         let outcome = await SubscriptionService.shared.purchaseOutcome(package: package)
         if outcome == .subscribed {
-            isSubscribed = true
             if let info = await SubscriptionService.shared.customerInfo() {
                 currentEntitlement = info.entitlements.active[SubscriptionService.entitlementID]
             }
+            setSubscribed(true, expiresAt: currentEntitlement?.expirationDate)
         }
         return outcome
     }
@@ -230,8 +297,8 @@ public final class SubscriptionState {
     private func handle(info: CustomerInfo) {
         let wasSubscribed = SubscriptionService.hasEntitlement(in: previousCustomerInfo)
         let entitled = SubscriptionService.hasEntitlement(in: info)
-        isSubscribed = entitled
         currentEntitlement = info.entitlements.active[SubscriptionService.entitlementID]
+        setSubscribed(entitled, expiresAt: currentEntitlement?.expirationDate)
 
         if entitled {
             let entitlement = currentEntitlement
@@ -263,12 +330,17 @@ public final class SubscriptionState {
     }
 
     private func applyEntitlementTransition(subscribed: Bool) {
-        isSubscribed = subscribed
+        setSubscribed(subscribed, expiresAt: nil)
         guard subscribed else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
             if let info = await SubscriptionService.shared.customerInfo() {
                 self.currentEntitlement = info.entitlements.active[SubscriptionService.entitlementID]
+                // Refine the mirror's expiry horizon now the entitlement is
+                // known (the synchronous write above had no horizon).
+                if self.isSubscribed {
+                    self.setSubscribed(true, expiresAt: self.currentEntitlement?.expirationDate)
+                }
             }
         }
     }

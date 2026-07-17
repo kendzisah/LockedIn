@@ -180,6 +180,34 @@ public enum GuildBackgroundStore {
         withCacheLock { guildCreditedSetUnlocked().contains(occurrenceId) }
     }
 
+    /// Mark an occurrence guild-credited WITHOUT touching the stats cache.
+    /// Called by the app when it POISONS an occurrence (mid-window disable /
+    /// delete / invalidating edit, or a sub-60s hold-to-end of the promoted
+    /// timer): the poison set lives in app-only standard `UserDefaults`,
+    /// which the DAM extension cannot read — without this mark the
+    /// extension's window-end `creditScheduledSessionInBackground` would
+    /// still add the FULL window's minutes to the month cache (and push them
+    /// server-side, where GREATEST makes them permanent) for a session the
+    /// user cancelled. With the mark, `mutateStats(occurrenceId:)` returns
+    /// nil and the push is skipped.
+    public static func markGuildCredited(_ occurrenceId: String) {
+        withCacheLock { markGuildCreditedUnlocked(occurrenceId) }
+    }
+
+    /// Remove a guild-credited mark. The inverse of the poison-time mark
+    /// above: when the app UN-poisons an occurrence (mid-window re-enable,
+    /// or the drain consuming a poison so a later legitimate same-day
+    /// completion can credit), the guild mark must lift too or that later
+    /// completion's minutes are silently skipped by every dedup path.
+    public static func removeGuildCredited(_ occurrenceId: String) {
+        withCacheLock {
+            var set = guildCreditedSetUnlocked()
+            guard set.remove(occurrenceId) != nil else { return }
+            guard let data = try? JSONEncoder().encode(Array(prune(set))) else { return }
+            defaults()?.set(data, forKey: Keys.guildCreditedOccurrences)
+        }
+    }
+
     // MARK: - Unlocked internals (call ONLY from inside `withCacheLock`)
 
     private static func getMonthlyStatsUnlocked(now: Date) -> MonthlyGuildStats {

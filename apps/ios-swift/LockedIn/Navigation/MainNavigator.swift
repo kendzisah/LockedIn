@@ -138,11 +138,35 @@ public struct MainNavigator: View {
             // Route a finished manual session into the shared credit fan-out.
             // If the session was promoted from a scheduled window, mark the
             // occurrence credited first so the DAM extension's background
-            // completion queue can't double-credit it. Skip marking on the
-            // sub-60s bail (actualMinutes == 0) — let the background queue
-            // credit it later if the window still runs to completion.
+            // completion queue can't double-credit it.
+            //
+            // Sub-60s bail (actualMinutes == 0) of a promoted scheduled
+            // session: the user hold-to-ended within the first minute — the
+            // "not now" reaction to an auto-started block. `complete()`
+            // already tore the shield down, so blocking has genuinely
+            // stopped; POISON the occurrence (not credit) so (a) the
+            // still-armed scheduled monitor's full-duration record at window
+            // end is dropped by the drain — sub-60s earns nothing, and the
+            // window ran unshielded after the cancel — and (b)
+            // `currentActiveOccurrence` reads the occurrence as inactive, so
+            // the 30s foreground ticker can't re-promote (re-shield + re-
+            // present) the session the user just killed.
             activeSession.onFinish = { actualMinutes, wasNatural, scheduledOccurrenceId in
+                if actualMinutes == 0, let occ = scheduledOccurrenceId {
+                    scheduledSessions.poisonOccurrence(occ)
+                }
                 if actualMinutes > 0, let occ = scheduledOccurrenceId {
+                    // Idempotence (single-credit choke point): the store's
+                    // `complete()` runs on a deferred Task hop, so the drain /
+                    // expired-block paths can win the race and credit this
+                    // occurrence first. Whichever path runs first wins; the
+                    // loser skips crediting entirely — it must NOT call
+                    // `handleSessionFinish` (XP/streak/guild would double) —
+                    // and just resolves the timer cover.
+                    guard !scheduledSessions.isCredited(occ) else {
+                        lockIn.dismissAll()
+                        return
+                    }
                     scheduledSessions.markCredited(occ)
                 }
                 // Forward the occurrence id so the guild credit is deduped against
@@ -185,8 +209,12 @@ public struct MainNavigator: View {
         }
         .onAppear {
             resumeActiveExecutionBlockIfNeeded()
-            resumeScheduledLiveIfNeeded()
+            // Drain BEFORE the scheduled-live sweep: a completion that arrived
+            // while backgrounded/killed marks its occurrence credited (and
+            // auto-disables a fired one-off) so the promotion pass below can't
+            // promote a window that already finished.
             drainScheduledCompletions()
+            resumeScheduledLiveIfNeeded()
         }
         .onChange(of: scenePhase) { _, newPhase in
             // Re-mount the active execution-block screen if the user
@@ -209,8 +237,59 @@ public struct MainNavigator: View {
             // blocking re-engages for upcoming windows.
             scheduledSessions.resyncMonitoring()
             resumeActiveExecutionBlockIfNeeded()
-            resumeScheduledLiveIfNeeded()
+            // Drain BEFORE the scheduled-live sweep (see `.onAppear`): a
+            // fired one-off must be credited + auto-disabled before the
+            // promotion pass, or its stale window could promote as a phantom.
             drainScheduledCompletions()
+            resumeScheduledLiveIfNeeded()
+            // LAST: with every live-session claim above settled, clear any
+            // shield stranded by a failed monitor registration + app kill.
+            sweepStaleShieldIfNeeded()
+        }
+        // Contract C4: an EXTERNAL start (Siri / Shortcuts / widget handoff)
+        // just persisted its block + applied the shield OUTSIDE the in-app
+        // flow. Present the timer immediately — the scenePhase `.active`
+        // resume sweep runs BEFORE the async intent start writes the block,
+        // so without this observer the session runs headless (shield up, idle
+        // Home, no engine) until the next background→foreground cycle.
+        // `onReceive` (not a manual `addObserver`) so a navigator re-mount
+        // can't stack duplicate or stale-capture observers.
+        .onReceive(NotificationCenter.default.publisher(for: .lockedInSessionExternallyStarted)) { _ in
+            // A PRE-session modal (duration picker / setup gate) would block
+            // the resume — and a later picker confirm would overwrite the
+            // just-persisted block mid-run (the stomp defect #6 closed). A
+            // lingering completion celebration blocks it too, and its credit
+            // was already granted before it presented — dismissing loses
+            // nothing. The externally started session takes precedence.
+            switch lockIn.activeModal {
+            case .durationPicker, .setupRequired, .sessionComplete:
+                lockIn.activeModal = nil
+            default:
+                break
+            }
+            resumeActiveExecutionBlockIfNeeded()
+        }
+        // An EXTERNAL start request (widget deep link / pending-intent
+        // handoff) was refused because Screen Time setup is incomplete
+        // (Family Controls revoked or empty allowlist). Present the same
+        // `LockInSetupSheet` the in-app flow uses for exactly this state —
+        // without it the tap foregrounds the app to an idle Home with no
+        // explanation. Never stomps a live session surface: only presents
+        // over no modal or another PRE-session modal.
+        .onReceive(NotificationCenter.default.publisher(for: .lockedInExternalStartSetupRequired)) { _ in
+            guard !activeSession.isActive else { return }
+            let readiness = LockInCoordinator.checkReadiness()
+            guard readiness != .ready else { return }
+            switch lockIn.activeModal {
+            case nil, .durationPicker, .setupRequired:
+                AnalyticsService.shared.track("Lock In Setup Required", properties: [
+                    "reason": readiness == .needsScreenTimeAuth ? "screen_time_auth" : "app_selection",
+                    "source": "external_start",
+                ])
+                lockIn.activeModal = .setupRequired(readiness)
+            default:
+                break
+            }
         }
         // Auto-present a scheduled window that starts while the app is already
         // foregrounded. `onAppear` / `scenePhase` only fire on launch + resume,
@@ -229,14 +308,38 @@ public struct MainNavigator: View {
         .fullScreenCover(item: $lockIn.activeModal) { modal in
             switch modal {
             case .paywallOffer:
-                // Hard gate before a paid Lock-In. On success, proceed into the
-                // duration picker (swaps this cover's content).
+                // Hard gate before a paid Lock-In. On success, re-run the
+                // Screen-Time readiness gate before the duration picker — a
+                // fresh subscriber may still be missing Family Controls auth
+                // or an allowlist, and their first session must actually
+                // block something.
                 HUDPaywallScreen(
                     context: .lockIn,
                     isDismissable: false,
-                    onSubscribed: { lockIn.activeModal = .durationPicker }
+                    onSubscribed: {
+                        let readiness = LockInCoordinator.checkReadiness()
+                        lockIn.activeModal = readiness == .ready
+                            ? .durationPicker
+                            : .setupRequired(readiness)
+                    }
                 )
                 .environment(subscription)
+            case .setupRequired(let readiness):
+                // Pre-start gate (Fix 5): resolve missing Screen Time auth /
+                // empty allowlist in place. On resolution, re-check — advance
+                // to the picker when ready, or swap to the next unmet
+                // requirement (auth granted but no apps selected yet). Same
+                // modal identity, so the cover updates without re-presenting.
+                LockInSetupSheet(
+                    readiness: readiness,
+                    onResolved: {
+                        let next = LockInCoordinator.checkReadiness()
+                        lockIn.activeModal = next == .ready
+                            ? .durationPicker
+                            : .setupRequired(next)
+                    },
+                    onDismiss: { lockIn.dismissAll() }
+                )
             case .durationPicker:
                 DurationPickerSheet(
                     isPresented: Binding(
@@ -598,16 +701,33 @@ public struct MainNavigator: View {
     /// - **Warm foreground path**: covers the rare case where the cover got
     ///   dropped without the process dying.
     ///
-    /// Skips when a modal is already up, when no block is persisted, or when
-    /// the persisted `endTimestamp` is already in the past (don't resurrect a
-    /// stale timer — let the cold-start sweep clean it up).
+    /// Skips when a modal is already up, when the store is mid-credit
+    /// (`isFinishing` — crediting the limbo block here is the double-credit
+    /// race), when no block is persisted, or when the persisted `endTimestamp`
+    /// is already in the past (don't resurrect a stale timer — let the
+    /// cold-start sweep clean it up).
+    ///
+    /// A persisted `ActiveBreakState` (app killed mid-break) is handled first:
+    /// still mid-break → resume the break in place; break elapsed but the
+    /// fixed end hasn't → resume running (defensively re-shielding — the
+    /// break-resume monitor should have, but its registration can fail);
+    /// fixed end passed → clear the break and fall through to the normal
+    /// expired-block credit (the block's `endTimestamp` was rewritten to the
+    /// fixed end at break start, so it credits the right amount).
     private func resumeActiveExecutionBlockIfNeeded() {
         guard lockIn.activeModal == nil else { return }
+        guard !activeSession.isFinishing else { return }
 
         // Live in memory (e.g. cold-start already rehydrated, or the user
         // minimized within the app) → just re-present the screen.
         if activeSession.isActive {
             lockIn.activeModal = .executionBlock
+            return
+        }
+
+        // ── Break recovery (Fix 7) ──
+        if let br = LockModeService.shared.loadActiveBreakState(),
+           resumePersistedBreakIfPossible(br) {
             return
         }
 
@@ -639,6 +759,114 @@ public struct MainNavigator: View {
         }
     }
 
+    /// Recover a session whose process died mid-break. Returns `true` when the
+    /// break state fully handled the resume (present a screen / nothing left
+    /// to do); `false` when the caller should fall through to the normal
+    /// persisted-block path (break expired → credit; or stale snapshot).
+    private func resumePersistedBreakIfPossible(_ br: ActiveBreakState) -> Bool {
+        let now = Date()
+        let breakEnd = Date(timeIntervalSince1970: br.breakEndsAtMs / 1000)
+        let fixedEnd = Date(timeIntervalSince1970: br.sessionEndsAtMs / 1000)
+
+        if let occ = br.scheduledOccurrenceId {
+            // Promoted scheduled session: no manual block is persisted for it,
+            // so re-attach via the scheduled window itself. Only resume while
+            // THIS occurrence's window is still open and uncredited — after
+            // that, the scheduled machinery (drain / extension queue) owns
+            // crediting and the snapshot is just stale.
+            guard let active = scheduledSessions.currentActiveOccurrence(),
+                  active.occurrenceId == occ else {
+                LockModeService.shared.clearActiveBreakState()
+                NotificationService.shared.cancelBreakEnded()
+                return false
+            }
+
+            if now >= breakEnd {
+                // Break elapsed while dead → back to focus. Defensive shield:
+                // the break-resume monitor should have re-applied at breakEnd,
+                // but registration can fail and re-applying is idempotent.
+                LockModeService.shared.clearActiveBreakState()
+                NotificationService.shared.cancelBreakEnded()
+                ScreenTimeModule.shared.shieldApps()
+                // Mirror `handleBreakEnded`'s scheduled path: tear down the
+                // break-resume monitor (manual activity name) + its future
+                // `sessionEndTimestamp` so the scheduled window-end
+                // `intervalDidEnd` stays the SINGLE owner of the un-shield.
+                // Leaving them armed lets a slightly-early window-end callback
+                // read `manualSessionActive()` and skip the clear — stranding
+                // the shield past the window until the manual monitor's late
+                // backstop. (`cancelBreakResume` removes the timestamp BEFORE
+                // the stop, so the stale stop callback falls into the
+                // scheduled-window-active guard and keeps the shield up.)
+                ScreenTimeModule.shared.cancelBreakResume()
+            }
+            activeSession.start(
+                durationMinutes: active.session.durationMinutes,
+                hardcore: false, // scheduled sessions allow exit/pause
+                resumeEndTimestamp: active.end, // engine end = OS window end (fixed end clamps to it)
+                goal: onboarding.primaryGoal,
+                streak: home.consecutiveStreak,
+                scheduledOccurrenceId: occ
+            )
+            if now < breakEnd {
+                activeSession.resumeBreak(until: breakEnd)
+            }
+            lockIn.activeModal = .executionBlock
+            return true
+        }
+
+        // Manual session break. The block survived the break (beginBreak keeps
+        // it, endTimestamp rewritten to the fixed end) — it's the source of
+        // truth for the resume; a missing block means the session was torn
+        // down elsewhere and the snapshot is orphaned.
+        guard let active = LockModeService.shared.loadActiveExecutionBlock() else {
+            LockModeService.shared.clearActiveBreakState()
+            NotificationService.shared.cancelBreakEnded()
+            return false
+        }
+
+        if now < breakEnd {
+            // Still mid-break → resume the break in place. No shield (the
+            // break lifted it; the OS re-applies at breakEnd), no budget hit.
+            activeSession.start(
+                durationMinutes: active.durationMinutes,
+                hardcore: br.hardcore,
+                resumeEndTimestamp: fixedEnd,
+                goal: onboarding.primaryGoal,
+                streak: home.consecutiveStreak
+            )
+            activeSession.resumeBreak(until: breakEnd)
+            lockIn.activeModal = .executionBlock
+            return true
+        }
+
+        if now < fixedEnd {
+            // Break over, session still running → resume focus. Defensive
+            // shield re-apply (see the scheduled branch above); the
+            // break-resume monitor + fixed-end timestamp stay armed for the
+            // background un-shield at the fixed end.
+            LockModeService.shared.clearActiveBreakState()
+            NotificationService.shared.cancelBreakEnded()
+            ScreenTimeModule.shared.shieldApps()
+            activeSession.start(
+                durationMinutes: active.durationMinutes,
+                hardcore: br.hardcore,
+                resumeEndTimestamp: fixedEnd,
+                goal: onboarding.primaryGoal,
+                streak: home.consecutiveStreak
+            )
+            lockIn.activeModal = .executionBlock
+            return true
+        }
+
+        // The whole session elapsed while dead (break included) → clear the
+        // break and let the caller's expired-block path credit it once (the
+        // block's endTimestamp == fixed end, so the credit lands correctly).
+        LockModeService.shared.clearActiveBreakState()
+        NotificationService.shared.cancelBreakEnded()
+        return false
+    }
+
     /// If a scheduled session's auto-block window is in progress right now,
     /// **promote it into the normal manual lock-in flow** (e.g. the user tapped
     /// the "locking in" notification mid-window, or the window started while the
@@ -652,7 +880,23 @@ public struct MainNavigator: View {
         guard scheduledSessions.isHydrated else { return }
         guard lockIn.activeModal == nil else { return }
         guard !activeSession.isActive else { return }
+        // Mid-credit limbo: the just-resolved session's deferred `complete()`
+        // hasn't run yet — starting a promoted session now would race its
+        // teardown. The next foreground/30s pass retries.
+        guard !activeSession.isFinishing else { return }
         guard let active = scheduledSessions.currentActiveOccurrence() else { return }
+
+        // A persisted break for THIS occurrence (app killed mid-break) belongs
+        // to the break-recovery path — promoting to "running" here would
+        // re-shield mid-break and cut a budgeted break short. Delegate: the
+        // recovery path re-checks its own guards and either resumes the break
+        // or invalidates the stale snapshot (after which the next pass of this
+        // sweep promotes normally).
+        if let br = LockModeService.shared.loadActiveBreakState(),
+           br.scheduledOccurrenceId == active.occurrenceId {
+            resumeActiveExecutionBlockIfNeeded()
+            return
+        }
 
         // Re-assert the shield immediately as an in-app fail-safe: if the
         // background DAM `intervalDidStart` never landed, opening the app now
@@ -674,6 +918,46 @@ public struct MainNavigator: View {
             scheduledOccurrenceId: active.occurrenceId
         )
         lockIn.activeModal = .executionBlock
+    }
+
+    /// Foreground fail-safe (Fix 16): clear a shield stranded with no owner.
+    /// The classic case is a manual session whose DeviceActivity monitor
+    /// registration FAILED (so no extension callback will ever un-shield) and
+    /// whose app process was then killed — nothing is left to lift the shield
+    /// at session end. The App Group `sessionEndTimestamp` has always been
+    /// documented as feeding a foreground sweep; this implements it.
+    ///
+    /// Runs at the END of the scenePhase-active handler so every legitimate
+    /// claim on the shield (in-memory session, mid-credit limbo, persisted
+    /// break, still-running persisted block, live scheduled window) has been
+    /// re-asserted first — each of those is a bail-out below.
+    private func sweepStaleShieldIfNeeded() {
+        // An unhydrated store cannot prove no scheduled window owns the
+        // shield — `currentActiveOccurrence()` silently reads nil over an
+        // empty session list, and on a cold launch this scenePhase handler
+        // can run before the `.task` hydration. Bail: the sweep re-runs on
+        // every foreground, so a genuinely stale shield still gets cleared
+        // on the next (hydrated) pass.
+        guard scheduledSessions.isHydrated else { return }
+        if activeSession.isActive || activeSession.isFinishing { return }
+        if LockModeService.shared.loadActiveBreakState() != nil { return }
+        if let block = LockModeService.shared.loadActiveExecutionBlock(),
+           block.endTimestamp > Date().timeIntervalSince1970 * 1000 { return }
+        if scheduledSessions.currentActiveOccurrence() != nil { return }
+
+        // No owner. A PAST `sessionEndTimestamp` means a manual monitor was
+        // supposed to clean up and evidently didn't; an in-process shield flag
+        // with no owner is stale by definition. Either way, sweep — this also
+        // stops the manual monitor and clears the timestamp.
+        let endMs = SharedScreenTime.sharedDefaults()?
+            .double(forKey: SharedScreenTime.Keys.sessionEndTimestamp) ?? 0
+        let hasPastEnd = endMs > 0 && endMs <= Date().timeIntervalSince1970 * 1000
+        guard hasPastEnd || ScreenTimeModule.shared.isShielding() else { return }
+
+        ScreenTimeModule.shared.removeShield()
+        AnalyticsService.shared.track("stale_shield_swept", properties: [
+            "had_past_end_timestamp": hasPastEnd,
+        ])
     }
 
     /// Credit any scheduled lock-in sessions that auto-ran (shield applied by
@@ -713,4 +997,18 @@ public extension Notification.Name {
     /// app open. `userInfo["count"]` is the number credited. RootView shows a
     /// lightweight summary toast.
     static let lockedInScheduledSessionsCredited = Notification.Name("lockedInScheduledSessionsCredited")
+
+    /// Posted by `LockInIntentServiceImpl.startSession` after an EXTERNALLY
+    /// initiated session (Siri / Shortcuts / widget deep-link handoff)
+    /// persisted its block and applied the shield (contract C4 — the name
+    /// literal is frozen cross-workstream). `MainNavigator` observes it to
+    /// rehydrate the just-written block and present the live timer.
+    static let lockedInSessionExternallyStarted = Notification.Name("lockedInSessionExternallyStarted")
+
+    /// Posted by `RootView.startExternallyRequestedSession` when an external
+    /// start (widget deep link / pending-intent handoff) was refused with
+    /// `IntentServiceError.notAuthorized` / `.setupRequired`. `MainNavigator`
+    /// observes it and presents `LockInSetupSheet` so the refusal is visible
+    /// and fixable instead of a silently dead tap.
+    static let lockedInExternalStartSetupRequired = Notification.Name("lockedInExternalStartSetupRequired")
 }
